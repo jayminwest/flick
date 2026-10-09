@@ -43,6 +43,7 @@ modules! {
         mod flick => "builtin", || flick::Flick;
         mod clipboard => "clip", || clipboard::Clipboard;
         mod keys => "keys", keys::Keys::default;
+        mod rebuild => "flick", rebuild::Rebuild::default;
     }
 }
 
