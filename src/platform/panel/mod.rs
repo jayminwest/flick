@@ -23,8 +23,7 @@ use objc2_foundation::{
     NSRunLoop, NSSize,
 };
 
-#[expect(unused_imports, reason = "the controller starts using forms in flick-1875")]
-pub use form::{FORM_FIELDS, FormField, FormFrame, field_value, focused_field, render_form};
+pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
 pub use rows::{Frame, Icon, Row, render};
 use rows::{RowViews, label, make_row, ns, separator, top_rect};

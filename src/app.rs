@@ -1,5 +1,8 @@
-//! Controller: launcher state, the view stack, and routing to modules. Knows no feature:
-//! modules come from `crate::modules::registry`. All calls happen on the main thread.
+//! Controller: launcher state, the screen on the panel, and routing to modules. Knows no
+//! feature: modules come from `crate::modules::registry`. All calls happen on the main thread.
+
+mod overlay;
+mod screen;
 
 use std::cell::RefCell;
 
@@ -13,6 +16,7 @@ use crate::platform::panel::Key;
 use crate::root;
 use crate::store::{self, Store};
 use crate::ui::{self, VISIBLE_ROWS, View};
+use screen::{Back, Screen};
 
 const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
 
@@ -30,8 +34,7 @@ impl Env {
 }
 
 pub struct State {
-    /// The module view on screen; `None` is root search.
-    view: Option<ListView>,
+    screen: Screen,
     registry: Registry,
     env: Env,
     results: Vec<Item>,
@@ -76,7 +79,7 @@ pub fn init(config: Config, store: Store) -> String {
     let (config, registry) = modules_for(config, registry);
     let launcher = config.hotkey.clone();
     let mut state = State {
-        view: None,
+        screen: Screen::Root,
         registry,
         env: Env { config, store, ranker: Ranker::new() },
         results: vec![],
@@ -113,12 +116,7 @@ pub fn hotkey(module: &str, key: &str) {
 /// Show `request` (root search for `None`), or hide the launcher if it already shows it.
 fn toggle_view(request: Option<ListView>) {
     let visible = ui::is_visible();
-    let showing = |s: &mut State| match (&s.view, &request) {
-        (None, None) => true,
-        (Some(view), Some(r)) => view.is(r.module, &r.name),
-        _ => false,
-    };
-    if visible && with_state(showing).unwrap_or(false) {
+    if visible && with_state(|s| s.screen.shows(request.as_ref())).unwrap_or(false) {
         ui::hide();
         return;
     }
@@ -151,34 +149,59 @@ pub fn query_changed() {
     });
 }
 
-/// Keyboard commands from the search field. Returns true when handled.
-pub fn command(key: Key) -> bool {
+/// Form field `index` changed: keep the form's value in step with the panel.
+pub fn field_changed(index: usize) {
     with_state(|s| {
+        if let Screen::Form(form) = &mut s.screen {
+            form.set_value(index, ui::field_value(index));
+        }
+    });
+}
+
+/// Keyboard commands from the panel. Returns true when handled.
+pub fn command(key: Key) -> bool {
+    with_state(|s| match s.screen {
+        Screen::Root | Screen::List(_) => s.list_key(key),
+        Screen::Form(_) => s.form_key(key),
+        Screen::Actions { .. } => s.actions_key(key),
+        Screen::Confirm { .. } => s.confirm_key(key),
+    })
+    .unwrap_or(false)
+}
+
+impl State {
+    /// A key on root search or a module list.
+    fn list_key(&mut self, key: Key) -> bool {
+        let list = match &self.screen {
+            Screen::List(view) => Some(view),
+            _ => None,
+        };
         if key == Key::Up {
-            s.move_selection(-1);
+            self.move_selection(-1);
         } else if key == Key::Down {
-            s.move_selection(1);
+            self.move_selection(1);
         } else if key == Key::Enter {
-            s.activate();
+            self.activate();
         } else if key == Key::Tab {
             // Tab fills in a quicklink's argument, like Raycast.
-            if s.results.get(s.selected).is_some_and(|i| i.tab) {
-                s.activate();
+            if self.results.get(self.selected).is_some_and(|i| i.tab) {
+                self.activate();
             }
         } else if key == Key::Escape {
-            if s.view.as_ref().is_none_or(|v| v.escape_hides) {
+            if list.is_none_or(|v| v.escape_hides) {
                 ui::hide();
             } else {
-                s.enter(None);
+                self.enter(None);
             }
-        } else if key == Key::Backspace && s.view.is_some() && ui::query().is_empty() {
-            s.enter(None);
+        } else if key == Key::Backspace && list.is_some() && ui::query().is_empty() {
+            self.enter(None);
+        } else if key == Key::CmdK {
+            return self.open_actions();
         } else {
             return false;
         }
         true
-    })
-    .unwrap_or(false)
+    }
 }
 
 /// A platform event: every module handles it, and a visible view they report stale
@@ -190,7 +213,11 @@ pub fn on_event(event: Event) {
         if let Some(s) = s.as_mut() {
             let stale = s.registry.dispatch(event, &mut s.env.cx(""));
             control::publish(event);
-            if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
+            let list = match &s.screen {
+                Screen::List(view) => Some(view.module),
+                _ => None,
+            };
+            if list.is_some_and(|m| stale.contains(&m)) && ui::is_visible() {
                 s.refresh();
             }
             // A screen the open panel was on may have moved or gone.
@@ -243,51 +270,97 @@ impl State {
         hotkey::register(wanted)
     }
 
-    /// Show `view` (a request its module opens), or root search for `None`.
-    fn enter(&mut self, view: Option<ListView>) {
-        self.view = match view {
-            None => None,
+    /// Show `view` (a request its module opens), or root search for `None`. False when the
+    /// module has no such view; the screen does not change.
+    fn enter(&mut self, view: Option<ListView>) -> bool {
+        let screen = match view {
+            None => Screen::Root,
             Some(request) => match self.registry.open(&request, &mut self.env.cx("")) {
-                Some(view) => Some(view),
-                None => return,
+                Some(view) => Screen::List(view),
+                None => return false,
             },
         };
-        let placeholder = self.view.as_ref().map_or(ROOT_PLACEHOLDER, |v| v.placeholder.as_str());
-        ui::set_query("", placeholder);
+        self.show(screen, "");
+        true
+    }
+
+    /// Put `screen` on the panel with `query` in the search field.
+    fn show(&mut self, screen: Screen, query: &str) {
+        self.screen = screen;
+        let placeholder = match &self.screen {
+            Screen::Root => ROOT_PLACEHOLDER,
+            Screen::List(view) => view.placeholder.as_str(),
+            Screen::Actions { .. } => "Search actions…",
+            Screen::Form(_) | Screen::Confirm { .. } => "",
+        };
+        ui::set_query(query, placeholder);
         self.refresh();
     }
 
     fn refresh(&mut self) {
-        let query = ui::query();
-        self.results = match &mut self.view {
-            None => {
-                let usage = self.env.store.usage();
-                let items = self.registry.items(&mut self.env.cx(&query));
-                let direct = self.registry.direct(&mut self.env.cx(&query));
-                root::rank(&mut self.env.ranker, &query, items, direct, &usage, store::now())
-            }
-            Some(view) => {
-                self.registry.refresh(view, &mut self.env.cx(&query));
-                std::mem::take(&mut view.items)
-            }
-        };
+        self.fill();
         self.selected = 0;
         self.scroll = 0;
         self.render();
     }
 
-    fn render(&self) {
-        let footer = match (&self.status, &self.view) {
-            (Some(status), _) => status.as_str(),
-            (None, None) => "Flick",
-            (None, Some(view)) => view.footer.as_str(),
+    /// Recompute `results` for the screen and the search field.
+    fn fill(&mut self) {
+        let query = ui::query();
+        self.results = match &mut self.screen {
+            Screen::Root => {
+                let usage = self.env.store.usage();
+                let items = self.registry.items(&mut self.env.cx(&query));
+                let direct = self.registry.direct(&mut self.env.cx(&query));
+                root::rank(&mut self.env.ranker, &query, items, direct, &usage, store::now())
+            }
+            Screen::List(view) => {
+                self.registry.refresh(view, &mut self.env.cx(&query));
+                std::mem::take(&mut view.items)
+            }
+            Screen::Actions { actions, .. } => {
+                screen::action_items(&mut self.env.ranker, &query, actions)
+            }
+            Screen::Confirm { confirm, .. } => screen::confirm_items(confirm),
+            Screen::Form(_) => vec![],
         };
+    }
+
+    fn render(&mut self) {
+        let has_actions = self.screen.is_list()
+            && self.results.get(self.selected).is_some_and(|item| {
+                let query = ui::query();
+                !self.registry.actions(&item.id, &mut self.env.cx(&query)).is_empty()
+            });
+        let item = self.results.get(self.selected);
+        let (title, footer, empty, action) = match &self.screen {
+            Screen::Form(form) => {
+                ui::render_form(form, self.status.as_deref().unwrap_or("⇥  Next Field"));
+                return;
+            }
+            Screen::Root => (None, "Flick", "No Results", screen::list_hint(item, has_actions)),
+            Screen::List(view) => (
+                None,
+                view.footer.as_str(),
+                view.empty.as_str(),
+                screen::list_hint(item, has_actions),
+            ),
+            Screen::Actions { target, .. } => {
+                (None, target.title.as_str(), "No Actions", screen::list_hint(item, false))
+            }
+            Screen::Confirm { confirm, .. } => {
+                (Some(confirm.title.as_str()), "", "", screen::confirm_hint(confirm))
+            }
+        };
+        let rows = !matches!(self.screen, Screen::Confirm { .. });
         ui::render(&View {
+            title,
             items: &self.results,
-            selected: self.selected,
+            selected: rows.then_some(self.selected),
             scroll: self.scroll,
-            footer,
-            empty: self.view.as_ref().map_or("No Results", |v| v.empty.as_str()),
+            footer: self.status.as_deref().unwrap_or(footer),
+            empty,
+            action: &action,
         });
     }
 
@@ -313,20 +386,45 @@ impl State {
     /// Route the selected item to its module and apply the outcome.
     fn activate(&mut self) {
         let Some(item) = self.results.get(self.selected).cloned() else { return };
-        if self.view.as_ref().is_none_or(|v| v.record_use) {
+        let record = match &self.screen {
+            Screen::Root => true,
+            Screen::List(view) => view.record_use,
+            _ => false,
+        };
+        if record {
             self.env.store.record_use(item.id.as_str());
         }
         let query = ui::query();
-        match self.registry.activate(&item.id, &mut self.env.cx(&query)) {
+        let outcome = self.registry.activate(&item.id, &mut self.env.cx(&query));
+        self.apply(outcome, None);
+    }
+
+    /// Apply a module's `outcome`. `back` is the screen an action menu or a confirmation
+    /// returns to; `None` when the outcome came from the screen on the panel.
+    fn apply(&mut self, outcome: Outcome, back: Option<Back>) {
+        match outcome {
             Outcome::Hide => ui::hide(),
             Outcome::Stay(status) => {
+                if let Some(back) = back {
+                    self.restore(back);
+                }
                 if let Some(status) = status {
                     self.set_status(status);
                 }
             }
-            Outcome::Push(view) => self.enter(Some(view)),
-            // TODO(flick-1875): show form and confirm screens; no module returns these yet.
-            Outcome::Form { .. } | Outcome::Confirm(_) => {}
+            Outcome::Push(view) => {
+                if !self.enter(Some(view))
+                    && let Some(back) = back
+                {
+                    self.restore(back);
+                }
+            }
+            Outcome::Form { module, name } => self.open_form(module, &name, back),
+            Outcome::Confirm(confirm) => {
+                let back = back.unwrap_or_else(|| self.back());
+                self.status = None;
+                self.show(Screen::Confirm { confirm, back }, "");
+            }
             Outcome::ReloadConfig => {
                 let status = self.reload().unwrap_or_else(|e| e);
                 self.set_status(status);
