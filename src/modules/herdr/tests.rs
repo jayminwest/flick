@@ -276,3 +276,8 @@ fn an_agent_that_starts_to_wait_posts_one_notification_and_a_click_jumps() {
     assert!(NOTES.take().is_empty());
     test_cx("", |cx| assert!(h.command(&args(&["status"]), cx).unwrap().ends_with("notifications: off")));
 }
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("herdr");
+}

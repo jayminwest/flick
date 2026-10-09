@@ -274,3 +274,8 @@ fn mark_resolved_in_recent_feedback() {
     assert!(matches!(test_cx("", |cx| f.act(&view.items[0].id, "other", cx)), Outcome::Stay(None)));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("feedback");
+}
