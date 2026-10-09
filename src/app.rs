@@ -14,7 +14,8 @@ use objc2_foundation::{NSString, NSURL};
 
 use crate::apps::{self, App};
 use crate::config::{self, Config};
-use crate::search::{Action, Icon, Item, Ranker, frecency};
+use crate::root::{rank_root, root_items};
+use crate::search::{Action, Icon, Item, Ranker};
 use crate::store::{self, Store};
 use crate::ui::{self, VISIBLE_ROWS, View};
 use crate::windows::{self, WindowAction};
@@ -190,60 +191,6 @@ fn open_url(url: &str) {
     }
 }
 
-fn root_items(s: &State) -> Vec<Item> {
-    let mut items: Vec<Item> = s
-        .apps
-        .iter()
-        .map(|a| Item {
-            id: format!("app:{}", a.path.display()),
-            title: a.name.clone(),
-            subtitle: String::new(),
-            accessory: "Application".into(),
-            icon: Icon::File(a.path.clone()),
-            action: Action::LaunchApp(a.path.clone()),
-            keywords: vec![],
-        })
-        .collect();
-
-    items.extend(WindowAction::ALL.iter().map(|&w| Item {
-        id: format!("window:{}", w.title()),
-        title: w.title().into(),
-        subtitle: "Window Management".into(),
-        accessory: "Command".into(),
-        icon: Icon::Symbol(w.symbol()),
-        action: Action::Window(w),
-        keywords: vec!["window".into()],
-    }));
-
-    items.extend(s.config.quicklinks.iter().enumerate().map(|(index, q)| Item {
-        id: format!("quicklink:{}", q.name),
-        title: q.name.clone(),
-        subtitle: q.keyword.clone().unwrap_or_default(),
-        accessory: "Quicklink".into(),
-        icon: Icon::Symbol("link"),
-        action: Action::Quicklink { index, query: (!q.takes_query()).then(String::new) },
-        keywords: q.keyword.iter().cloned().collect(),
-    }));
-
-    let builtins = [
-        ("Clipboard History", "doc.on.clipboard", Action::ClipboardHistory, "paste"),
-        ("Switch Windows", "macwindow.on.rectangle", Action::SwitchWindows, "focus alt tab"),
-        ("Open Flick Config", "gearshape", Action::OpenConfig, "settings preferences"),
-        ("Reload Flick Config", "arrow.clockwise", Action::ReloadConfig, "refresh"),
-        ("Quit Flick", "power", Action::Quit, "exit"),
-    ];
-    items.extend(builtins.into_iter().map(|(title, symbol, action, keywords)| Item {
-        id: format!("builtin:{title}"),
-        title: title.into(),
-        subtitle: "Flick".into(),
-        accessory: "Command".into(),
-        icon: Icon::Symbol(symbol),
-        action,
-        keywords: vec![keywords.into()],
-    }));
-    items
-}
-
 fn relative_time(ts: i64) -> String {
     let secs = (store::now() - ts).max(0);
     match secs {
@@ -299,31 +246,8 @@ impl State {
 
     fn root_results(&mut self, query: &str) -> Vec<Item> {
         let usage = self.store.usage();
-        let now = store::now();
-        let items = root_items(self);
-        let mut results = self.ranker.rank(query, items, |i| frecency(&usage, &i.id, now));
-
-        // "<keyword> <text>" runs a quicklink directly.
-        if let Some((keyword, rest)) = query.split_once(' ') {
-            let link = self.config.quicklinks.iter().enumerate().find(|(_, q)| {
-                q.takes_query() && q.keyword.as_deref() == Some(keyword) && !rest.trim().is_empty()
-            });
-            if let Some((index, q)) = link {
-                results.insert(
-                    0,
-                    Item {
-                        id: format!("quicklink:{}", q.name),
-                        title: q.name.clone(),
-                        subtitle: format!("“{}”", rest.trim()),
-                        accessory: "Quicklink".into(),
-                        icon: Icon::Symbol("link"),
-                        action: Action::Quicklink { index, query: Some(rest.trim().to_string()) },
-                        keywords: vec![],
-                    },
-                );
-            }
-        }
-        results
+        let items = root_items(&self.apps, &self.config.quicklinks);
+        rank_root(&mut self.ranker, query, items, &self.config.quicklinks, &usage, store::now())
     }
 
     fn window_results(&mut self, query: &str) -> Vec<Item> {

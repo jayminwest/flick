@@ -1,8 +1,11 @@
 mod app;
 mod apps;
+#[cfg(test)]
+mod characterization;
 mod config;
 mod hotkey;
 mod raycast;
+mod root;
 mod search;
 mod spaces;
 mod store;

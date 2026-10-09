@@ -366,6 +366,23 @@ fn screen_areas(mtm: MainThreadMarker) -> Vec<Rect> {
     screens.iter().map(|s| flip(s.visibleFrame())).collect()
 }
 
+/// The frame `action` gives a window at `current`, on the screen (of usable `areas`) that
+/// holds its center, else the first. Display moves wrap around.
+pub fn frame_for(
+    action: WindowAction,
+    current: Rect,
+    areas: &[Rect],
+) -> Result<Rect, &'static str> {
+    let index = areas.iter().position(|a| a.contains(current.center())).unwrap_or(0);
+    let area = *areas.get(index).ok_or("No screens")?;
+    let n = areas.len();
+    Ok(match action {
+        WindowAction::NextDisplay => move_between(current, area, areas[(index + 1) % n]),
+        WindowAction::PreviousDisplay => move_between(current, area, areas[(index + n - 1) % n]),
+        _ => action.cycled(area, current),
+    })
+}
+
 pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static str> {
     // Hide acts on the app, like cmd+H: instant, and needs no Accessibility permission.
     if action == WindowAction::Hide {
@@ -383,15 +400,7 @@ pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static
         return Ok(());
     }
     let current = window_frame(&win).ok_or("Can't read window frame")?;
-    let areas = screen_areas(mtm);
-    let index = areas.iter().position(|a| a.contains(current.center())).unwrap_or(0);
-    let area = *areas.get(index).ok_or("No screens")?;
-    let n = areas.len();
-    let target = match action {
-        WindowAction::NextDisplay => move_between(current, area, areas[(index + 1) % n]),
-        WindowAction::PreviousDisplay => move_between(current, area, areas[(index + n - 1) % n]),
-        _ => action.cycled(area, current),
-    };
+    let target = frame_for(action, current, &screen_areas(mtm))?;
     set_window_frame(&win, target);
     Ok(())
 }
@@ -523,65 +532,5 @@ pub fn focus(w: &AppWindow) {
     set_bool_attr(el, "AXMain", true);
     if !make_frontmost(w.pid) {
         crate::spaces::open_app(&app);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const AREA: Rect = Rect { x: 0.0, y: 25.0, w: 1200.0, h: 800.0 };
-    const WIN: Rect = Rect { x: 100.0, y: 100.0, w: 400.0, h: 300.0 };
-
-    #[test]
-    fn halves_and_quarters() {
-        assert_eq!(
-            WindowAction::LeftHalf.target(AREA, WIN),
-            Rect { x: 0.0, y: 25.0, w: 600.0, h: 800.0 }
-        );
-        assert_eq!(
-            WindowAction::BottomRight.target(AREA, WIN),
-            Rect { x: 600.0, y: 425.0, w: 600.0, h: 400.0 }
-        );
-        assert_eq!(
-            WindowAction::LastTwoThirds.target(AREA, WIN),
-            Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 }
-        );
-    }
-
-    #[test]
-    fn repeated_halves_cycle_sizes() {
-        let half = WindowAction::RightHalf.cycled(AREA, WIN);
-        assert_eq!(half, Rect { x: 600.0, y: 25.0, w: 600.0, h: 800.0 });
-        let two_thirds = WindowAction::RightHalf.cycled(AREA, half);
-        assert_eq!(two_thirds, Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 });
-        let third = WindowAction::RightHalf.cycled(AREA, Rect { w: 799.0, ..two_thirds });
-        assert_eq!(third, Rect { x: 800.0, y: 25.0, w: 400.0, h: 800.0 });
-        assert_eq!(WindowAction::RightHalf.cycled(AREA, third), half);
-        assert_eq!(WindowAction::Maximize.cycled(AREA, AREA), AREA);
-    }
-
-    #[test]
-    fn slugs_round_trip() {
-        for a in WindowAction::ALL {
-            assert_eq!(WindowAction::from_slug(&a.slug()), Some(a));
-        }
-        assert_eq!(WindowAction::LeftHalf.slug(), "left-half");
-    }
-
-    #[test]
-    fn center_keeps_size() {
-        assert_eq!(
-            WindowAction::Center.target(AREA, WIN),
-            Rect { x: 400.0, y: 275.0, w: 400.0, h: 300.0 }
-        );
-    }
-
-    #[test]
-    fn next_display_keeps_relative_position() {
-        let to = Rect { x: 1200.0, y: 0.0, w: 2400.0, h: 1600.0 };
-        let left = Rect { x: 0.0, y: 25.0, w: 400.0, h: 300.0 };
-        let moved = move_between(left, AREA, to);
-        assert_eq!((moved.x, moved.y, moved.w), (1200.0, 0.0, 400.0));
     }
 }
