@@ -5,7 +5,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{self, Quicklink};
+use crate::config;
+use crate::modules::quicklinks::{self, Quicklink};
 
 #[derive(Deserialize)]
 struct RaycastLink {
@@ -73,7 +74,7 @@ fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
 pub fn import_file(path: &Path) -> Result<String, String> {
     let json = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let config = config::load()?;
-    let import = convert(&json, &config.quicklinks)?;
+    let import = convert(&json, &quicklinks::links(&config)?)?;
 
     #[derive(Serialize)]
     struct Section<'a> {

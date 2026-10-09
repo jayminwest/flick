@@ -1,6 +1,6 @@
 //! Launcher ranking: fuzzy score plus frecency over the real root items.
 
-use crate::config::Config;
+use super::legacy_view::Config;
 use crate::core::{Ranker, Usage};
 use crate::modules::apps::App;
 use crate::root::{rank_root, root_items};
