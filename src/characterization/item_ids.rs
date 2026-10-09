@@ -1,9 +1,10 @@
 //! Item ids are written to the `usage` table; a changed id loses that item's history.
 
 use super::legacy_view::Config;
-use crate::core::Item;
+use crate::core::{Item, ListView, test_cx};
 use crate::modules::apps::App;
 use crate::modules::quicklinks::Quicklink;
+use crate::modules::with_apps;
 use crate::root::root_items;
 
 fn app(name: &str, path: &str) -> App {
@@ -131,4 +132,31 @@ fn root_items_are_apps_then_windows_then_quicklinks_then_builtins() {
     let mut runs = prefixes.clone();
     runs.dedup();
     assert_eq!(runs, known);
+}
+
+#[test]
+fn capture_ids_are_fixed_keys() {
+    let items = root_items(&[], &[]);
+    let capture: Vec<&str> =
+        ids(&items).into_iter().filter(|id| id.starts_with("capture:")).collect();
+    assert_eq!(capture, ["capture:area", "capture:window", "capture:screen", "capture:recent"]);
+    // Recent Captures rows are `capture:shot/<row id>`.
+    let file = std::env::temp_dir().join(format!("flick-char-{}-shot.png", std::process::id()));
+    std::fs::write(&file, b"png").unwrap();
+    let mut registry = with_apps(&crate::config::Config::default(), vec![]).unwrap();
+    let shots = test_cx("", |cx| {
+        registry.migrate(cx.store).unwrap();
+        cx.store
+            .conn()
+            .execute(
+                "INSERT INTO capture_shots (id, path, kind, width, height, taken) VALUES (7, ?1, 'area', 1, 1, 0)",
+                [file.display().to_string()],
+            )
+            .unwrap();
+        let mut view = registry.open(&ListView::new("capture", "recent"), cx).unwrap();
+        registry.refresh(&mut view, cx);
+        view.items.into_iter().map(|i| i.id.to_string()).collect::<Vec<_>>()
+    });
+    std::fs::remove_file(file).unwrap();
+    assert_eq!(shots, ["capture:shot/7"]);
 }
