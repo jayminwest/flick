@@ -9,7 +9,7 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread. |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread, except `keytap`'s (any thread). |
 | core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
@@ -136,7 +136,7 @@ the list, refreshed) or `Hide`.
 
 `Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
-`ModuleChanged { module }`. Each serializes as `{"event":"<snake_case>",...}`.
+`ModuleChanged { module }`, `Chord { index, down }`. Each serializes as `{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
 named module's view is stale whatever its `on_event` returns.
 
@@ -148,6 +148,7 @@ Sources:
 - `app::init` dispatches `Started` to modules, and a config reload to the modules it
   enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
+- The key tap thread posts `Chord` (see below).
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
 `control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
@@ -164,6 +165,34 @@ Main-thread rules:
   `events::on_main(job)`. Both go through `dispatch_async_f` on the main queue. A panic in an
   `on_main` job is logged and does not unwind into libdispatch.
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
+
+### Key tap
+
+`platform::keytap` owns the one active `CGEventTap` (session level, key down, key up,
+flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
+
+- The tap runs on its own thread with its own `CFRunLoop`, so a busy main thread never makes
+  macOS time it out and stall keyboard input. The handler runs on that thread: one
+  `core::keys::Engine::process` step under a short `Mutex`, then `events::post` of each chord
+  edge as `Event::Chord { index, down }`. `index` is the chord's position in
+  `[[keys.chord]]`. `Keys::on_event` (main thread) only sends the chord's action to the
+  module's FIFO worker thread. Actions never run on the tap or main thread.
+- The tap exists only while the rules are non-empty, from `Event::Started` on. A reload
+  installs new rules in place and posts `up` for chords held under the old ones.
+- Re-arm: the callback re-enables the tap on a disable notice, and a 5 s timer on the tap
+  thread re-enables it or creates it again (creation fails without Accessibility, so a later
+  grant needs no restart). After a re-arm, and on `Event::Wake`, `Engine::resync` posts `up`
+  for chords no longer held, so push-to-talk never stays on.
+- Events posted by `keytap::post_key` (the hyper tap key) carry a mark, and the tap passes
+  them untouched.
+- `platform::hid` maps Caps Lock to F18 with `hidutil property UserKeyMapping` for
+  `hyper = "caps_lock"`. The list is global: set and clear read, merge and write, and touch
+  only Flick's entry. The mapping outlives the process. The first time Flick sets it, it
+  installs `app::on_terminate` (clear on quit) and `app::quit_on_sigterm` (SIGTERM quits
+  through `terminate:`, so the hook runs). Before that, SIGTERM has its default action.
+- Conflict checks (Hyperkey with the remap, Hammerspoon with chords, a global hotkey on the
+  hyper key or a chord key) run in `flick keys status` and at `Started`. At `Started`,
+  hotkeys are not bound yet, so the log misses the hotkey conflicts.
 
 ## Store
 

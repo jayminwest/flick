@@ -12,7 +12,7 @@
 
 ## A keyboard-first launcher and window manager for macOS.
 
-Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
+Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls of its own. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
 
 <p align="center">
   <img src="docs/screenshots/launcher.png" alt="The Flick launcher over a blurred desktop: an empty search field and suggestions ranked by recent use: commands, quicklinks, and applications" width="750">
@@ -106,7 +106,7 @@ hotkey = "cmd+Space"               # window switcher
 hotkey = "cmd+Backquote"           # most recent app on another desktop
 
 [window.keys]
-# Hyper (cmd+ctrl+alt+shift), e.g. Caps Lock via Hyperkey
+# Hyper (cmd+ctrl+alt+shift): Caps Lock with [keys] hyper, see Key triggers
 left-half = "cmd+ctrl+alt+shift+KeyH"
 right-half = "cmd+ctrl+alt+shift+KeyL"
 maximize = "cmd+ctrl+alt+shift+KeyK"
@@ -124,12 +124,55 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `keys`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
 > [!WARNING]
 > A global hotkey overrides that shortcut in every app. For example, `cmd+KeyL` would replace the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
+
+### Key triggers
+
+The `keys` module replaces Hyperkey and small Hammerspoon configs. It turns one key into Hyper, and runs an action when a set of keys goes down and again when it comes up (push-to-talk). It is off until you add a `[keys]` table: with no table, Flick creates no key tap and does not remap Caps Lock.
+
+```toml
+[keys]
+hyper = "caps_lock"                # Caps Lock adds hyper_mods to keys held with it
+hyper_mods = "cmd+ctrl+alt+shift"  # the default
+hyper_tap = "Escape"               # a tap shorter than hyper_tap_ms sends this; "" for nothing
+hyper_tap_ms = 300
+
+[[keys.chord]]
+name = "ptt"
+keys = ["right_cmd", "right_alt"]  # modifiers plus at most one other key
+on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
+on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+```
+
+- **Hyper.** While the hyper key is held, Flick adds `hyper_mods` to each key event, so `[window.keys]` bindings such as `cmd+ctrl+alt+shift+KeyH` fire. `hyper = "caps_lock"` remaps Caps Lock to F18 with `hidutil`, so Caps Lock never toggles uppercase; any other key name (for example `hyper = "F18"`) uses that key and skips the remap.
+- **Chords.** Key names: `cmd`, `alt`, `ctrl`, `shift` (either side), `left_cmd`, `right_cmd`, `left_alt`, `right_alt`, `left_ctrl`, `right_ctrl`, `left_shift`, `right_shift`, `fn`, and one hotkey key name such as `KeyA` or `F13`. A sided name does not match the other side. Modifiers pass through to apps; a chord's other key does not type. Key repeat never fires a chord again.
+- **Actions.** `{ http = "[METHOD ]http://host[:port]/path" }` sends one request with an empty body (method defaults to `POST`; `http://` only, 2 s timeout). `{ shell = "..." }` runs `/bin/sh -c` with `FLICK_CHORD=<name>` and `FLICK_CHORD_STATE=down|up`. Actions run in order on one worker thread, so an `up` never overtakes its `down`.
+- **Events.** Each edge is also an event: `flick events` prints `{"event":"chord","index":0,"down":true}`.
+
+```bash
+flick keys list                # <index>\t<name>\t<keys>\tdown: <action>\tup: <action>, then hyper
+flick keys status              # key tap, secure input, Caps Lock remap, conflicts
+flick keys fire ptt down       # run a chord's action without the keyboard
+```
+
+`flick keys status` reports conflicts: Hyperkey running with `hyper = "caps_lock"` (two remaps of one key), Hammerspoon running with a chord configured (its taps may run the same chord), a global hotkey on the hyper key (the tap swallows it), and a chord key that is also a global hotkey. The startup log lists the same conflicts, but it misses hotkey conflicts, because hotkeys bind after the key tap starts.
+
+Limits:
+
+- The key tap needs Accessibility. Without it, `flick keys status` says `Accessibility needed`, and with `hyper = "caps_lock"` Caps Lock does nothing (it sends F18) until you grant it. Flick retries every 5 s, so a grant needs no restart.
+- Secure input (password fields, Terminal's Secure Keyboard Entry) hides key presses from the tap: Hyper and chords with a non-modifier key pause there. Modifier-only chords still work.
+- Flick clears the Caps Lock remap when it quits through **Quit Flick** or SIGTERM (launchd stop, `kill`). It handles SIGTERM itself only after it has set the remap; before that, SIGTERM ends Flick at once, with nothing to clear. After a crash, Caps Lock stays F18 until Flick starts again. To reset it by hand:
+
+  ```bash
+  hidutil property --set '{"UserKeyMapping":[]}'   # clears every hidutil key mapping
+  ```
+
+[docs/keys.md](docs/keys.md) has the steps to move from Hyperkey and Hammerspoon, and a manual test checklist.
 
 ### Import Raycast quicklinks
 
@@ -194,11 +237,10 @@ macOS has no public API for Spaces. Flick switches desktops by activating an app
 
 `flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the screenshots hold no personal data.
 
-Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network.
+Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions.
 
 ## Roadmap
 
-- **Triggers.** Hotkeys that run shell commands or HTTP requests, and hold-a-modifier triggers, to replace small Hammerspoon configs.
 - **Mouse support.** Hover and click on results.
 - **Actions menu.** `⌘K` on a result: copy path, reveal in Finder, quit app.
 - **Clipboard images.**
