@@ -54,6 +54,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$bundle_version</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSAppleEventsUsageDescription</key><string>With [activity] urls = true, Flick reads the front tab URL of your browser to record it in activity spans on this Mac.</string>
 </dict>
 </plist>
 PLIST
