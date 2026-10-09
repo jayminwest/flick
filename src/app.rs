@@ -25,7 +25,7 @@ struct Env {
 
 impl Env {
     fn cx<'a>(&'a mut self, query: &'a str) -> Cx<'a> {
-        Cx { query, store: &self.store, ranker: &mut self.ranker, hide: ui::hide }
+        Cx { query, store: &self.store, ranker: &mut self.ranker, hide: ui::hide, json: false }
     }
 }
 
@@ -206,13 +206,14 @@ pub fn on_event(event: Event) {
 }
 
 /// A control request: `reload`, or `<module> <verb> [args...]` for that module.
-pub fn control(words: &[String]) -> Result<String, String> {
+/// `json`: the request asked for structured output (`Cx::json`).
+pub fn control(words: &[String], json: bool) -> Result<String, String> {
     STATE.with(|s| {
         let Ok(mut s) = s.try_borrow_mut() else { return Err("Flick is busy; try again".into()) };
         let s = s.as_mut().ok_or("Flick is still starting")?;
         match words {
             [verb] if verb == "reload" => s.reload(),
-            _ => s.registry.command(words, &mut s.env.cx("")),
+            _ => s.registry.command(words, &mut Cx { json, ..s.env.cx("") }),
         }
     })
 }

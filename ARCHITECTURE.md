@@ -182,6 +182,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   A socket that a live process answers on is an error, not stolen.
 - Request: one line, a JSON array of strings, `["<module>","<verb>",args...]`. Reply: one
   line, `{"ok":"<text>"}` or `{"error":"<message>"}`. A connection may send many requests.
+- Structured replies: a request whose last word is `--json` asks for JSON. The control glue
+  (`control::on_main`) takes that word off and sets `Cx::json` for `Module::command` (false
+  for events, hotkeys and the launcher). A module that reads it may return a JSON object or
+  array as its `Ok` text; the reply is then `{"ok":<value>}`, re-serialized on one line.
+  Any other text, and every reply to a request without `--json`, stays `{"ok":"<text>"}`, so
+  modules that ignore `Cx::json` answer exactly as before. Only a trailing `--json` counts.
 - `["reload"]` is handled by the controller. Every other request goes to
   `Registry::command`, which matches the first word against module ids.
 - `["events"]` turns the connection into an event stream, one JSON object per line. A
@@ -192,7 +198,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
-  sends a request; `--json` (first or last) prints the raw reply line. Exit 0 for `ok`, 1 for
+  sends a request; `--json` (first or last) sends `--json` as the last request word and
+  prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
 
