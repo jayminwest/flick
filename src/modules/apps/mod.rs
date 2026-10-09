@@ -2,11 +2,12 @@
 
 mod actions;
 mod leftovers;
+mod uninstall;
 
 use std::path::{Path, PathBuf};
 
 use crate::core::{Action, Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
-use crate::platform::{app, workspace};
+use crate::platform::{app, files, workspace};
 
 #[derive(Clone)]
 pub struct App {
@@ -23,6 +24,10 @@ const ROOTS: [&str; 4] = [
 
 /// `command` verbs that take an app name.
 const NAME_VERBS: [&str; 4] = ["open", "reveal", "quit", "force-quit"];
+
+/// How uninstall removes a path. Tests get one that refuses, so no test can reach the Trash.
+const TRASH: fn(&Path) -> Result<PathBuf, String> =
+    if cfg!(test) { |_| Err("tests never use the Trash".into()) } else { files::trash };
 
 /// Scan the standard app folders, one level into subfolders (e.g. "/Applications/Adobe Photoshop/").
 pub fn scan() -> Vec<App> {
@@ -56,15 +61,21 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<App>) {
 }
 
 /// Module `app`: one root item per installed app; ids are `app:<bundle path>`.
+#[expect(clippy::struct_field_names, reason = "`apps` is the index; renaming it churns every use")]
 pub struct Apps {
     apps: Vec<App>,
-    /// Flick's own bundle, which offers no Quit.
+    /// Flick's own bundle, which offers no Quit or Uninstall.
     own: Option<PathBuf>,
+    /// The user's home, whose `~/Library` holds the leftovers an uninstall finds.
+    home: PathBuf,
+    /// The uninstall waiting for its confirmation; its paths are exactly what was shown.
+    pending: Option<uninstall::Plan>,
 }
 
 impl Apps {
     pub fn new(apps: Vec<App>) -> Apps {
-        Apps { apps, own: app::own_bundle() }
+        let home = dirs::home_dir().unwrap_or_default();
+        Apps { apps, own: app::own_bundle(), home, pending: None }
     }
 
     /// The indexed app named `name`, any case.
@@ -108,6 +119,10 @@ impl Module for Apps {
         self.run_action(Path::new(id.key()), key, cx)
     }
 
+    fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
+        self.confirm_uninstall(token, TRASH)
+    }
+
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
     /// keystroke, so no view goes stale.
@@ -124,11 +139,12 @@ impl Module for Apps {
     }
 
     fn verbs(&self) -> &'static str {
-        "app list | app open|quit|force-quit|reveal <name>"
+        "app list | app open|quit|force-quit|reveal <name> | app uninstall <name> --dry-run|--yes"
     }
 
     /// `list`: `<name>\t<path>` per app. `open|quit|force-quit|reveal <name>`: act on the app
     /// with that name, any case; `quit` prints the status, e.g. "Asked Safari to quit".
+    /// `uninstall <name> --dry-run|--yes`: see `uninstall_command`.
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {
             [verb] if verb == "list" => Ok(self
@@ -137,6 +153,7 @@ impl Module for Apps {
                 .map(|a| format!("{}\t{}", a.name, a.path.display()))
                 .collect::<Vec<_>>()
                 .join("\n")),
+            [verb, rest @ ..] if verb == "uninstall" => self.uninstall_command(rest, TRASH),
             [verb, name @ ..] if !name.is_empty() && NAME_VERBS.contains(&verb.as_str()) => {
                 let path = self.named(&name.join(" "))?.path.clone();
                 match verb.as_str() {
