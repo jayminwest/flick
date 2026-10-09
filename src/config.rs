@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, activity, keys, herdr, flick.
+# builtin, clip, activity, keys, herdr, task, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -86,6 +86,12 @@ hotkey = "alt+shift+Space"
 # hotkey = "cmd+ctrl+alt+shift+KeyA"
 # preview_lines = 6
 # notify = ["blocked", "done"]
+
+# Tasks: a task list and a timer for the one running task, in flick.db. "Start Task" in
+# the launcher or "flick task start <title>"; a trailing #word sets the project. Idle,
+# sleep and screen lock pause the timer. hotkey opens the task picker; unbound by default.
+# [task]
+# hotkey = "cmd+ctrl+alt+shift+KeyT"
 
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
@@ -303,6 +309,7 @@ mod tests {
         assert!(keys(&c).is_empty());
         assert!(c.section("keys").unwrap().unwrap().get::<Table>().unwrap().is_empty());
         assert!(c.section("activity").unwrap().unwrap().get::<Table>().unwrap().is_empty());
+        assert!(c.section("task").unwrap().unwrap().get::<Table>().unwrap().is_empty());
     }
 
     /// The commented example in `DEFAULT_CONFIG` from `marker` to the next blank line, with
@@ -345,6 +352,14 @@ mod tests {
         assert_eq!(herdr.get("remote_refresh_secs").and_then(Value::as_integer), Some(60));
         assert_eq!(herdr.get("notify").and_then(Value::as_array).map(Vec::len), Some(2));
         assert!(!DEFAULT_CONFIG.contains("\n[herdr]"), "the default leaves [herdr] commented");
+    }
+
+    #[test]
+    fn default_config_task_example_parses_uncommented() {
+        let example = uncommented("# [task]");
+        let task: Table = parse(&example).unwrap().section("task").unwrap().unwrap().get().unwrap();
+        assert_eq!(task.get("hotkey").and_then(Value::as_str), Some("cmd+ctrl+alt+shift+KeyT"));
+        assert!(!DEFAULT_CONFIG.contains("\n[task]"), "the default leaves [task] commented");
     }
 
     #[test]
