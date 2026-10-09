@@ -21,8 +21,7 @@ pub struct Store {
 pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 impl Store {
@@ -30,6 +29,10 @@ impl Store {
         Self::init(Connection::open(path)?)
     }
 
+    #[expect(
+        clippy::unwrap_used,
+        reason = "an in-memory SQLite database with a fixed schema cannot fail to open"
+    )]
     pub fn in_memory() -> Store {
         Self::init(Connection::open_in_memory().unwrap()).unwrap()
     }
@@ -68,7 +71,8 @@ impl Store {
         }
         // Re-insert so the clip gets the newest id; ids give the order.
         let _ = self.conn.execute("DELETE FROM clips WHERE text = ?1", [text]);
-        let _ = self.conn.execute("INSERT INTO clips (text, ts) VALUES (?1, ?2)", params![text, now()]);
+        let _ =
+            self.conn.execute("INSERT INTO clips (text, ts) VALUES (?1, ?2)", params![text, now()]);
         let _ = self.conn.execute(
             "DELETE FROM clips WHERE id NOT IN (SELECT id FROM clips ORDER BY id DESC LIMIT ?1)",
             params![MAX_CLIPS],
@@ -77,7 +81,8 @@ impl Store {
 
     /// Clips, newest first.
     pub fn clips(&self) -> Vec<Clip> {
-        let Ok(mut stmt) = self.conn.prepare("SELECT id, text, ts FROM clips ORDER BY id DESC") else {
+        let Ok(mut stmt) = self.conn.prepare("SELECT id, text, ts FROM clips ORDER BY id DESC")
+        else {
             return vec![];
         };
         stmt.query_map([], |r| Ok(Clip { id: r.get(0)?, text: r.get(1)?, ts: r.get(2)? }))

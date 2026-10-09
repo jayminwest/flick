@@ -13,6 +13,11 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSRunningApplication};
 use objc2_foundation::NSBundle;
 
+#[expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "startup invariants: no UI without the main thread or the database"
+)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("snapshot") {
@@ -48,7 +53,8 @@ fn main() {
         config::Config::default()
     });
     let db = config::data_dir().join("flick.db");
-    let store = store::Store::open(&db).unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
+    let store = store::Store::open(&db)
+        .unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
 
     if let Err(e) = hotkey::init().and_then(|()| hotkey::register(&config)) {
         eprintln!("flick: {e}");
@@ -79,6 +85,7 @@ fn already_running() -> bool {
 
 /// `flick snapshot <out.png> [query]`: draw the launcher to a PNG without showing it.
 /// Uses the default config and an empty database, so no personal data appears.
+#[expect(clippy::expect_used, reason = "the CLI entry point always runs on the main thread")]
 fn snapshot(args: &[String]) {
     let Some(out) = args.first() else {
         eprintln!("usage: flick snapshot <out.png> [query]");

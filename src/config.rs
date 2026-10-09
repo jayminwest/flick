@@ -76,6 +76,10 @@ fn default_hotkey() -> String {
 }
 
 impl Default for Config {
+    #[expect(
+        clippy::expect_used,
+        reason = "DEFAULT_CONFIG is a compile-time constant covered by tests"
+    )]
     fn default() -> Self {
         toml::from_str(DEFAULT_CONFIG).expect("default config parses")
     }
@@ -126,11 +130,14 @@ impl Quicklink {
     }
 }
 
+#[expect(clippy::format_push_string, reason = "pre-gate code; behavior frozen until flick-ea94")]
 fn percent_encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -150,7 +157,8 @@ mod tests {
 
     #[test]
     fn expands_query_and_paths() {
-        let q = Quicklink { name: "G".into(), url: "https://x.com/?q={query}".into(), keyword: None };
+        let q =
+            Quicklink { name: "G".into(), url: "https://x.com/?q={query}".into(), keyword: None };
         assert!(q.takes_query());
         assert_eq!(q.expand("rust lang&co"), "https://x.com/?q=rust%20lang%26co");
         let p = Quicklink { name: "P".into(), url: "/tmp".into(), keyword: None };

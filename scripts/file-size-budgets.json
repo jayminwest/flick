@@ -1,0 +1,7 @@
+{
+  "$comment": "check:size (scripts/checks/size.sh). Rust files over `limit` lines need an entry here, and may not grow past it. Lower an entry when its file shrinks; delete it once the file is at or under the limit. Never raise one without a human-reviewed reason.",
+  "limit": 500,
+  "budgets": {
+    "src/windows.rs": 587
+  }
+}
