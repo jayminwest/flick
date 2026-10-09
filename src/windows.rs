@@ -3,31 +3,10 @@
 //! Geometry uses the Accessibility coordinate space: origin at the top-left of the
 //! primary screen, y grows downward.
 
-#![expect(
-    clippy::undocumented_unsafe_blocks,
-    clippy::multiple_unsafe_ops_per_block,
-    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
-)]
-
-use std::ffi::c_void;
-use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use std::path::PathBuf;
 
-use objc2::MainThreadMarker;
-use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSScreen, NSWorkspace};
-use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSPoint, NSRect, NSSize, NSString};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
+pub use crate::platform::Rect;
+use crate::platform::{ax, screens, workspace};
 
 impl Rect {
     fn center(&self) -> (f64, f64) {
@@ -214,157 +193,7 @@ fn move_between(current: Rect, from: Rect, to: Rect) -> Rect {
     }
 }
 
-// --- Accessibility FFI ---
-
-type CFTypeRef = *const c_void;
-type AXUIElementRef = *const c_void;
-
-const AX_VALUE_CGPOINT: u32 = 1;
-const AX_VALUE_CGSIZE: u32 = 2;
-const CG_HID_EVENT_TAP: u32 = 0;
-const CG_EVENT_FLAG_COMMAND: u64 = 1 << 20;
-const KEY_V: u16 = 9;
-
-#[link(name = "ApplicationServices", kind = "framework")]
-unsafe extern "C" {
-    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
-    fn AXUIElementCopyAttributeValue(
-        el: AXUIElementRef,
-        attr: CFTypeRef,
-        value: *mut CFTypeRef,
-    ) -> i32;
-    fn AXUIElementSetAttributeValue(el: AXUIElementRef, attr: CFTypeRef, value: CFTypeRef) -> i32;
-    fn AXValueCreate(kind: u32, value: *const c_void) -> CFTypeRef;
-    fn AXValueGetValue(v: CFTypeRef, kind: u32, out: *mut c_void) -> bool;
-    fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
-    fn AXUIElementSetMessagingTimeout(el: AXUIElementRef, seconds: f32) -> i32;
-    fn AXUIElementPerformAction(el: AXUIElementRef, action: CFTypeRef) -> i32;
-    fn CGEventCreateKeyboardEvent(source: CFTypeRef, key: u16, down: bool) -> *mut c_void;
-    fn CGEventSetFlags(event: *mut c_void, flags: u64);
-    fn CGEventPost(tap: u32, event: *mut c_void);
-}
-
-#[link(name = "CoreFoundation", kind = "framework")]
-unsafe extern "C" {
-    fn CFRelease(cf: CFTypeRef);
-}
-
-/// Owned CoreFoundation reference.
-struct Cf(CFTypeRef);
-
-impl Drop for Cf {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe { CFRelease(self.0) }
-        }
-    }
-}
-
-// NSString is toll-free bridged to CFString.
-fn cfstr(s: &NSString) -> CFTypeRef {
-    s as *const NSString as CFTypeRef
-}
-
-/// Whether Flick may control other apps; if not, show macOS's permission dialog once per launch.
-pub fn ensure_trusted() -> bool {
-    static PROMPTED: AtomicBool = AtomicBool::new(false);
-    is_trusted(false) || (!PROMPTED.swap(true, Ordering::Relaxed) && is_trusted(true))
-}
-
-/// Whether Flick may control other apps. With `prompt`, macOS shows its permission dialog.
-pub fn is_trusted(prompt: bool) -> bool {
-    let key = NSString::from_str("AXTrustedCheckOptionPrompt");
-    let value = NSNumber::new_bool(prompt);
-    let options = NSDictionary::from_retained_objects(&[&*key], &[value]);
-    unsafe { AXIsProcessTrustedWithOptions(Retained::as_ptr(&options) as CFTypeRef) }
-}
-
-/// Press Cmd+V in the frontmost app.
-pub fn send_paste() {
-    unsafe {
-        for down in [true, false] {
-            let event = CGEventCreateKeyboardEvent(ptr::null(), KEY_V, down);
-            if event.is_null() {
-                return;
-            }
-            CGEventSetFlags(event, CG_EVENT_FLAG_COMMAND);
-            CGEventPost(CG_HID_EVENT_TAP, event);
-            CFRelease(event);
-        }
-    }
-}
-
-/// Activate app `pid` through Accessibility. Returns false if that failed.
-pub fn make_frontmost(pid: i32) -> bool {
-    if !is_trusted(false) {
-        return false;
-    }
-    let app_el = Cf(unsafe { AXUIElementCreateApplication(pid) });
-    let attr = NSString::from_str("AXFrontmost");
-    // NSNumber's YES is the kCFBooleanTrue singleton.
-    let yes = NSNumber::new_bool(true);
-    let value = Retained::as_ptr(&yes) as CFTypeRef;
-    unsafe { AXUIElementSetAttributeValue(app_el.0, cfstr(&attr), value) == 0 }
-}
-
-fn focused_window() -> Option<Cf> {
-    let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
-    let pid = app.processIdentifier();
-    let app_el = Cf(unsafe { AXUIElementCreateApplication(pid) });
-    let attr = NSString::from_str("AXFocusedWindow");
-    let mut win: CFTypeRef = ptr::null();
-    let err = unsafe { AXUIElementCopyAttributeValue(app_el.0, cfstr(&attr), &mut win) };
-    (err == 0 && !win.is_null()).then(|| Cf(win))
-}
-
-fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
-    let attr = NSString::from_str(attr);
-    let mut value: CFTypeRef = ptr::null();
-    if unsafe { AXUIElementCopyAttributeValue(win.0, cfstr(&attr), &mut value) } != 0
-        || value.is_null()
-    {
-        return None;
-    }
-    let value = Cf(value);
-    let mut out = T::default();
-    unsafe { AXValueGetValue(value.0, kind, &mut out as *mut T as *mut c_void) }.then_some(out)
-}
-
-fn set_value<T>(win: &Cf, attr: &str, kind: u32, v: &T) {
-    let attr = NSString::from_str(attr);
-    let value = Cf(unsafe { AXValueCreate(kind, v as *const T as *const c_void) });
-    unsafe { AXUIElementSetAttributeValue(win.0, cfstr(&attr), value.0) };
-}
-
-fn window_frame(win: &Cf) -> Option<Rect> {
-    let p: NSPoint = get_value(win, "AXPosition", AX_VALUE_CGPOINT)?;
-    let s: NSSize = get_value(win, "AXSize", AX_VALUE_CGSIZE)?;
-    Some(Rect { x: p.x, y: p.y, w: s.width, h: s.height })
-}
-
-fn set_window_frame(win: &Cf, r: Rect) {
-    let pos = NSPoint::new(r.x, r.y);
-    let size = NSSize::new(r.w, r.h);
-    // Position, size, position: moving across screens can clamp the size otherwise.
-    set_value(win, "AXPosition", AX_VALUE_CGPOINT, &pos);
-    set_value(win, "AXSize", AX_VALUE_CGSIZE, &size);
-    set_value(win, "AXPosition", AX_VALUE_CGPOINT, &pos);
-}
-
-/// Usable area (minus menu bar and Dock) of each screen, in Accessibility coordinates.
-fn screen_areas(mtm: MainThreadMarker) -> Vec<Rect> {
-    let screens = NSScreen::screens(mtm);
-    let Some(primary_h) = screens.iter().next().map(|s| s.frame().size.height) else {
-        return vec![];
-    };
-    let flip = |f: NSRect| Rect {
-        x: f.origin.x,
-        y: primary_h - (f.origin.y + f.size.height),
-        w: f.size.width,
-        h: f.size.height,
-    };
-    screens.iter().map(|s| flip(s.visibleFrame())).collect()
-}
+pub use crate::platform::ax::{ensure_trusted, is_trusted, send_paste};
 
 /// The frame `action` gives a window at `current`, on the screen (of usable `areas`) that
 /// holds its center, else the first. Display moves wrap around.
@@ -383,25 +212,22 @@ pub fn frame_for(
     })
 }
 
-pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static str> {
+pub fn apply(action: WindowAction) -> Result<(), &'static str> {
     // Hide acts on the app, like cmd+H: instant, and needs no Accessibility permission.
     if action == WindowAction::Hide {
-        let app =
-            NSWorkspace::sharedWorkspace().frontmostApplication().ok_or("No frontmost app")?;
-        app.hide();
-        return Ok(());
+        return workspace::hide_frontmost();
     }
     if !ensure_trusted() {
         return Err("Flick needs Accessibility permission");
     }
-    let win = focused_window().ok_or("No focused window")?;
+    let win = ax::focused_window().ok_or("No focused window")?;
     if action == WindowAction::Minimize {
-        set_bool_attr(win.0, "AXMinimized", true);
+        win.minimize();
         return Ok(());
     }
-    let current = window_frame(&win).ok_or("Can't read window frame")?;
-    let target = frame_for(action, current, &screen_areas(mtm))?;
-    set_window_frame(&win, target);
+    let current = win.frame().ok_or("Can't read window frame")?;
+    let target = frame_for(action, current, &screens::visible_areas())?;
+    win.set_frame(target);
     Ok(())
 }
 
@@ -415,40 +241,13 @@ pub struct AppWindow {
     pub app: String,
     pub bundle: Option<PathBuf>,
     pub minimized: bool,
-    element: Option<Retained<AnyObject>>,
+    element: Option<ax::AxWindow>,
 }
 
 impl AppWindow {
     pub fn on_other_desktop(&self) -> bool {
         self.element.is_none()
     }
-}
-
-/// Copy an attribute as an Objective-C object (CF types are toll-free bridged).
-fn copy_attr(el: CFTypeRef, attr: &str) -> Option<Retained<AnyObject>> {
-    let attr = NSString::from_str(attr);
-    let mut value: CFTypeRef = ptr::null();
-    if unsafe { AXUIElementCopyAttributeValue(el, cfstr(&attr), &mut value) } != 0 {
-        return None;
-    }
-    // "Copy" returns +1, which Retained takes over.
-    unsafe { Retained::from_raw(value as *mut AnyObject) }
-}
-
-fn string_attr(el: CFTypeRef, attr: &str) -> Option<String> {
-    copy_attr(el, attr)?.downcast::<NSString>().ok().map(|s| s.to_string())
-}
-
-fn bool_attr(el: CFTypeRef, attr: &str) -> bool {
-    copy_attr(el, attr).and_then(|v| v.downcast::<NSNumber>().ok()).is_some_and(|n| n.boolValue())
-}
-
-fn set_bool_attr(el: CFTypeRef, attr: &str, value: bool) {
-    let attr = NSString::from_str(attr);
-    let value = NSNumber::new_bool(value);
-    unsafe {
-        AXUIElementSetAttributeValue(el, cfstr(&attr), Retained::as_ptr(&value) as CFTypeRef)
-    };
 }
 
 /// Standard windows of every regular app, apps in `recent` order (most recent first).
@@ -458,39 +257,23 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
         return vec![];
     }
     let me = std::process::id() as i32;
-    let elsewhere = crate::spaces::window_pids(false);
+    let elsewhere = crate::platform::spaces::window_pids(false);
     let mut out = Vec::new();
-    for app in &NSWorkspace::sharedWorkspace().runningApplications() {
-        let pid = app.processIdentifier();
-        if pid == me || app.activationPolicy() != NSApplicationActivationPolicy::Regular {
-            continue;
-        }
-        let name = app.localizedName().map(|n| n.to_string()).unwrap_or_default();
-        let bundle = app.bundleURL().and_then(|u| u.path()).map(|p| PathBuf::from(p.to_string()));
-        let app_el = Cf(unsafe { AXUIElementCreateApplication(pid) });
-        // A hung app must not stall the switcher.
-        unsafe { AXUIElementSetMessagingTimeout(app_el.0, 0.25) };
-
+    for app in workspace::regular_apps(me) {
+        let (pid, name, bundle) = (app.pid, app.name, app.bundle);
         let before = out.len();
-        let windows = copy_attr(app_el.0, "AXWindows").and_then(|w| w.downcast::<NSArray>().ok());
-        for win in windows.iter().flat_map(|w| w.iter()) {
-            let el = Retained::as_ptr(&win) as CFTypeRef;
-            if string_attr(el, "AXSubrole").as_deref() != Some("AXStandardWindow") {
-                continue;
-            }
-            let title = string_attr(el, "AXTitle")
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| name.clone());
+        for win in ax::standard_windows(pid) {
+            let title = win.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
             out.push(AppWindow {
                 pid,
                 title,
                 app: name.clone(),
                 bundle: bundle.clone(),
-                minimized: bool_attr(el, "AXMinimized"),
+                minimized: win.minimized,
                 element: Some(win),
             });
         }
-        if out.len() == before && elsewhere.contains(&pid) && !app.isHidden() {
+        if out.len() == before && elsewhere.contains(&pid) && !app.hidden {
             out.push(AppWindow {
                 pid,
                 title: name.clone(),
@@ -513,24 +296,5 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
 
 /// Raise `w` and activate its app (switching desktops if needed).
 pub fn focus(w: &AppWindow) {
-    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid) else {
-        return;
-    };
-    if app.isHidden() {
-        app.unhide();
-    }
-    let Some(el) = &w.element else {
-        crate::spaces::open_app(&app);
-        return;
-    };
-    let el = Retained::as_ptr(el) as CFTypeRef;
-    if w.minimized {
-        set_bool_attr(el, "AXMinimized", false);
-    }
-    let raise = NSString::from_str("AXRaise");
-    unsafe { AXUIElementPerformAction(el, cfstr(&raise)) };
-    set_bool_attr(el, "AXMain", true);
-    if !make_frontmost(w.pid) {
-        crate::spaces::open_app(&app);
-    }
+    ax::focus(w.pid, w.element.as_ref(), w.minimized);
 }

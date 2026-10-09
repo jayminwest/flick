@@ -24,7 +24,7 @@ why = "only src/platform may hold unsafe code or touch objc2/AppKit/CF/AX/Carbon
 paths = "src"
 except = "src/platform"
 pattern = '\bunsafe\b|\bobjc2|\bblock2\b|extern "C"'
-enabled = false # enabled by flick-ee5b, which moves the FFI into src/platform
+enabled = true
 
 [[rule]]
 name = "core-is-pure"
