@@ -1,34 +1,28 @@
-//! Controller: launcher state, modes, and actions. All calls happen on the main thread.
+//! Controller: launcher state, the view stack, and routing to modules. All calls happen
+//! on the main thread.
 
 use std::cell::RefCell;
 
-use crate::apps::{self, App};
-use crate::config::{self, Config};
+use crate::apps;
+use crate::config::Config;
+use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::platform::panel::Key;
-use crate::platform::{app as platform_app, pasteboard, timer, workspace};
-use crate::root::{rank_root, root_items};
-use crate::search::{Action, Icon, Item, Ranker};
+use crate::platform::pasteboard;
+use crate::root::{rank_root, registry};
 use crate::store::{self, Store};
 use crate::ui::{self, VISIBLE_ROWS, View};
 use crate::windows::{self, WindowAction};
 
-#[derive(Clone, Copy, PartialEq)]
-enum Mode {
-    Root,
-    Clipboard,
-    Windows,
-    /// Typing the argument for quicklink `index`.
-    Argument(usize),
-}
+const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
 
 pub struct State {
-    mode: Mode,
+    /// The module view on screen; `None` is root search.
+    view: Option<ListView>,
     config: Config,
-    apps: Vec<App>,
+    registry: Registry,
     store: Store,
     ranker: Ranker,
     results: Vec<Item>,
-    windows: Vec<windows::AppWindow>,
     selected: usize,
     scroll: usize,
     status: Option<String>,
@@ -43,16 +37,29 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     STATE.with(|s| s.borrow_mut().as_mut().map(f))
 }
 
+/// A module context over `state`'s fields. A macro, not a method, so the borrow covers
+/// only those fields and `state.registry` stays free to call.
+macro_rules! cx {
+    ($state:expr, $query:expr) => {
+        Cx {
+            query: $query,
+            config: &mut $state.config,
+            store: &$state.store,
+            ranker: &mut $state.ranker,
+            hide: ui::hide,
+        }
+    };
+}
+
 pub fn init(config: Config, store: Store) {
     let pasteboard_count = pasteboard::change_count();
     let state = State {
-        mode: Mode::Root,
+        view: None,
         config,
-        apps: apps::scan(),
+        registry: registry(apps::scan()),
         store,
         ranker: Ranker::new(),
         results: vec![],
-        windows: vec![],
         selected: 0,
         scroll: 0,
         status: None,
@@ -61,28 +68,34 @@ pub fn init(config: Config, store: Store) {
     STATE.with(|s| *s.borrow_mut() = Some(state));
 }
 
+/// The launcher hotkey: show root search, or hide it if it's showing.
 pub fn toggle() {
-    open_in(Mode::Root);
-}
-
-/// The window switcher hotkey.
-pub fn toggle_windows() {
-    open_in(Mode::Windows);
-}
-
-/// Show the panel in `mode`; hide it if it's already showing that mode.
-fn open_in(mode: Mode) {
     let visible = ui::is_visible();
-    if visible && with_state(|s| s.mode == mode).unwrap_or(false) {
+    if visible && with_state(|s| s.view.is_none()).unwrap_or(false) {
         ui::hide();
         return;
     }
     with_state(|s| {
-        if mode == Mode::Root {
-            s.apps = apps::scan();
-        }
+        s.registry.dispatch(Event::LauncherOpened, &mut cx!(s, ""));
         s.status = None;
-        s.enter(mode);
+        s.enter(None);
+    });
+    if !visible {
+        ui::show();
+    }
+}
+
+/// The window switcher hotkey: show the switcher, or hide it if it's showing.
+pub fn toggle_windows() {
+    let visible = ui::is_visible();
+    let showing = |s: &mut State| s.view.as_ref().is_some_and(|v| v.is("switcher", "windows"));
+    if visible && with_state(showing).unwrap_or(false) {
+        ui::hide();
+        return;
+    }
+    with_state(|s| {
+        s.status = None;
+        s.enter(Some(ListView::new("switcher", "windows")));
     });
     if !visible {
         ui::show();
@@ -91,16 +104,14 @@ fn open_in(mode: Mode) {
 
 /// A window action from a global hotkey, without the panel.
 pub fn window_action(action: WindowAction) {
-    if let Err(e) = windows::apply(action) {
-        eprintln!("flick: {}: {e}", action.title());
-    }
+    windows::run(action);
 }
 
 /// Show `query` in the root search (for `flick snapshot`).
 pub fn set_root_query(query: &str) {
     with_state(|s| {
-        s.enter(Mode::Root);
-        ui::set_query(query, "Search for apps and commands…");
+        s.enter(None);
+        ui::set_query(query, ROOT_PLACEHOLDER);
         s.refresh();
     });
 }
@@ -123,20 +134,17 @@ pub fn command(key: Key) -> bool {
             s.activate();
         } else if key == Key::Tab {
             // Tab fills in a quicklink's argument, like Raycast.
-            if matches!(
-                s.results.get(s.selected).map(|i| &i.action),
-                Some(Action::Quicklink { query: None, .. })
-            ) {
+            if s.results.get(s.selected).is_some_and(|i| i.tab) {
                 s.activate();
             }
         } else if key == Key::Escape {
-            if matches!(s.mode, Mode::Root | Mode::Windows) {
+            if s.view.as_ref().is_none_or(|v| v.escape_hides) {
                 ui::hide();
             } else {
-                s.enter(Mode::Root);
+                s.enter(None);
             }
-        } else if key == Key::Backspace && s.mode != Mode::Root && ui::query().is_empty() {
-            s.enter(Mode::Root);
+        } else if key == Key::Backspace && s.view.is_some() && ui::query().is_empty() {
+            s.enter(None);
         } else {
             return false;
         }
@@ -155,59 +163,40 @@ pub fn poll_clipboard() {
         s.pasteboard_count = count;
         if let Some(text) = pasteboard::copied_text() {
             s.store.add_clip(&text);
-            if s.mode == Mode::Clipboard && ui::is_visible() {
+            if s.view.as_ref().is_some_and(|v| v.is("clip", "history")) && ui::is_visible() {
                 s.refresh();
             }
         }
     });
 }
 
-fn relative_time(ts: i64) -> String {
-    let secs = (store::now() - ts).max(0);
-    match secs {
-        0..60 => "Just now".into(),
-        60..3600 => format!("{}m ago", secs / 60),
-        3600..86_400 => format!("{}h ago", secs / 3600),
-        _ => format!("{}d ago", secs / 86_400),
-    }
-}
-
 impl State {
-    fn enter(&mut self, mode: Mode) {
-        self.mode = mode;
-        let placeholder = match mode {
-            Mode::Root => "Search for apps and commands…".to_string(),
-            Mode::Clipboard => "Search clipboard history…".to_string(),
-            Mode::Windows => "Search windows…".to_string(),
-            Mode::Argument(i) => format!("{} query…", self.config.quicklinks[i].name),
+    /// Show `view` (a request its module opens), or root search for `None`.
+    fn enter(&mut self, view: Option<ListView>) {
+        self.view = match view {
+            None => None,
+            Some(request) => match self.registry.open(&request, &mut cx!(self, "")) {
+                Some(view) => Some(view),
+                None => return,
+            },
         };
-        ui::set_query("", &placeholder);
-        if mode == Mode::Windows {
-            self.windows =
-                windows::list_windows(&crate::spaces::recent(), crate::spaces::frontmost_pid());
-        }
+        let placeholder = self.view.as_ref().map_or(ROOT_PLACEHOLDER, |v| v.placeholder.as_str());
+        ui::set_query("", placeholder);
         self.refresh();
     }
 
     fn refresh(&mut self) {
         let query = ui::query();
-        self.results = match self.mode {
-            Mode::Root => self.root_results(&query),
-            Mode::Clipboard => self.clip_results(&query),
-            Mode::Windows => self.window_results(&query),
-            Mode::Argument(index) => {
-                let q = &self.config.quicklinks[index];
-                let subtitle =
-                    if query.is_empty() { "Type a query".into() } else { q.expand(&query) };
-                vec![Item {
-                    id: format!("quicklink:{}", q.name),
-                    title: q.name.clone(),
-                    subtitle,
-                    accessory: "Quicklink".into(),
-                    icon: Icon::Symbol("link"),
-                    action: Action::Quicklink { index, query: Some(query.clone()) },
-                    keywords: vec![],
-                }]
+        self.results = match &mut self.view {
+            None => {
+                let usage = self.store.usage();
+                let items = self.registry.items(&mut cx!(self, &query));
+                let links = &self.config.quicklinks;
+                rank_root(&mut self.ranker, &query, items, links, &usage, store::now())
+            }
+            Some(view) => {
+                self.registry.refresh(view, &mut cx!(self, &query));
+                std::mem::take(&mut view.items)
             }
         };
         self.selected = 0;
@@ -215,90 +204,18 @@ impl State {
         self.render();
     }
 
-    fn root_results(&mut self, query: &str) -> Vec<Item> {
-        let usage = self.store.usage();
-        let items = root_items(&self.apps, &self.config.quicklinks);
-        rank_root(&mut self.ranker, query, items, &self.config.quicklinks, &usage, store::now())
-    }
-
-    fn window_results(&mut self, query: &str) -> Vec<Item> {
-        let items = self
-            .windows
-            .iter()
-            .enumerate()
-            .map(|(i, w)| Item {
-                id: format!("window-item:{i}"),
-                title: w.title.clone(),
-                subtitle: if w.title == w.app { String::new() } else { w.app.clone() },
-                accessory: if w.on_other_desktop() {
-                    "Other Desktop".into()
-                } else if w.minimized {
-                    "Minimized".into()
-                } else {
-                    String::new()
-                },
-                icon: w.bundle.clone().map_or(Icon::Symbol("macwindow"), Icon::File),
-                action: Action::FocusWindow(i),
-                keywords: vec![w.app.clone()],
-            })
-            .collect();
-        // Bonus keeps most-recent-first order for equal scores.
-        self.ranker.rank(query, items, |item| match item.action {
-            Action::FocusWindow(i) => -(i as f64) * 1e-3,
-            _ => 0.0,
-        })
-    }
-
-    fn clip_results(&mut self, query: &str) -> Vec<Item> {
-        let clips = self.store.clips();
-        let items = clips
-            .iter()
-            .map(|c| {
-                let mut lines = c.text.trim().lines();
-                let first: String = lines.next().unwrap_or("").trim().chars().take(100).collect();
-                let more = lines.count();
-                Item {
-                    id: format!("clip:{}", c.id),
-                    title: first,
-                    subtitle: if more > 0 { format!("+{more} lines") } else { String::new() },
-                    accessory: relative_time(c.ts),
-                    icon: Icon::Symbol("doc.text"),
-                    action: Action::PasteClip(c.id),
-                    keywords: vec![c.text.chars().take(2000).collect()],
-                }
-            })
-            .enumerate()
-            .collect::<Vec<_>>();
-        // Bonus keeps newest-first order for equal scores.
-        let order: std::collections::HashMap<String, usize> =
-            items.iter().map(|(i, item)| (item.id.clone(), *i)).collect();
-        let items = items.into_iter().map(|(_, i)| i).collect();
-        self.ranker.rank(query, items, |i| -(order[&i.id] as f64) * 1e-3)
-    }
-
     fn render(&self) {
-        let footer = match (&self.status, self.mode) {
-            (Some(status), _) => status.clone(),
-            (None, Mode::Root) => "Flick".into(),
-            (None, Mode::Clipboard) => "Clipboard History  ·  esc to go back".into(),
-            (None, Mode::Windows) => format!("{} windows", self.windows.len()),
-            (None, Mode::Argument(i)) => {
-                format!("{}  ·  esc to go back", self.config.quicklinks[i].name)
-            }
-        };
-        let empty = match self.mode {
-            Mode::Clipboard if ui::query().is_empty() => "Clipboard history is empty",
-            Mode::Windows if self.windows.is_empty() => {
-                "No windows (Flick needs Accessibility permission)"
-            }
-            _ => "No Results",
+        let footer = match (&self.status, &self.view) {
+            (Some(status), _) => status.as_str(),
+            (None, None) => "Flick",
+            (None, Some(view)) => view.footer.as_str(),
         };
         ui::render(&View {
             items: &self.results,
             selected: self.selected,
             scroll: self.scroll,
-            footer: &footer,
-            empty,
+            footer,
+            empty: self.view.as_ref().map_or("No Results", |v| v.empty.as_str()),
         });
     }
 
@@ -316,71 +233,32 @@ impl State {
         self.render();
     }
 
-    fn set_status(&mut self, status: impl Into<String>) {
-        self.status = Some(status.into());
+    fn set_status(&mut self, status: String) {
+        self.status = Some(status);
         self.render();
     }
 
+    /// Route the selected item to its module and apply the outcome.
     fn activate(&mut self) {
         let Some(item) = self.results.get(self.selected).cloned() else { return };
-        if !matches!(item.action, Action::PasteClip(_) | Action::FocusWindow(_)) {
-            self.store.record_use(&item.id);
+        if self.view.as_ref().is_none_or(|v| v.record_use) {
+            self.store.record_use(item.id.as_str());
         }
-        match item.action {
-            Action::LaunchApp(path) => {
-                ui::hide();
-                workspace::open_file(&path);
-            }
-            Action::Window(action) => {
-                ui::hide();
-                if let Err(e) = windows::apply(action) {
-                    eprintln!("flick: {}: {e}", action.title());
+        let query = ui::query();
+        match self.registry.activate(&item.id, &mut cx!(self, &query)) {
+            Outcome::Hide => ui::hide(),
+            Outcome::Stay(status) => {
+                if let Some(status) = status {
+                    self.set_status(status);
                 }
             }
-            Action::ClipboardHistory => self.enter(Mode::Clipboard),
-            Action::SwitchWindows => self.enter(Mode::Windows),
-            Action::FocusWindow(i) => {
-                ui::hide();
-                if let Some(w) = self.windows.get(i) {
-                    windows::focus(w);
+            Outcome::Push(view) => self.enter(Some(view)),
+            Outcome::Pop(status) => {
+                self.enter(None);
+                if let Some(status) = status {
+                    self.set_status(status);
                 }
             }
-            Action::Quicklink { index, query: None } => self.enter(Mode::Argument(index)),
-            Action::Quicklink { index, query: Some(query) } => {
-                let link = &self.config.quicklinks[index];
-                if link.takes_query() && query.trim().is_empty() {
-                    return;
-                }
-                ui::hide();
-                workspace::open_url(&link.expand(query.trim()));
-            }
-            Action::PasteClip(id) => {
-                let Some(text) = self.store.clip_text(id) else { return };
-                pasteboard::set_text(&text);
-                ui::hide();
-                // Give focus a moment to return to the previous app, then paste there.
-                if windows::ensure_trusted() {
-                    timer::after(0.08, windows::send_paste);
-                }
-            }
-            Action::OpenConfig => {
-                ui::hide();
-                let _ =
-                    std::process::Command::new("open").arg("-t").arg(config::config_path()).spawn();
-            }
-            Action::ReloadConfig => match config::load() {
-                Ok(config) => {
-                    let hotkey = crate::hotkey::register(&config);
-                    self.config = config;
-                    self.enter(Mode::Root);
-                    match hotkey {
-                        Ok(()) => self.set_status("Config reloaded"),
-                        Err(e) => self.set_status(e),
-                    }
-                }
-                Err(e) => self.set_status(e),
-            },
-            Action::Quit => platform_app::quit(),
         }
     }
 }

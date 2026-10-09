@@ -2,8 +2,8 @@
 
 use crate::apps::App;
 use crate::config::Config;
+use crate::core::{Ranker, Usage};
 use crate::root::{rank_root, root_items};
-use crate::search::{Action, Ranker, Usage};
 
 const NOW: i64 = 1_700_000_000;
 const DAY: i64 = 86_400;
@@ -43,7 +43,7 @@ fn ranked(query: &str, take: usize) -> Vec<String> {
     rank_root(&mut Ranker::new(), query, items, &links, &usage(), NOW)
         .into_iter()
         .take(take)
-        .map(|i| i.id)
+        .map(|i| i.id.to_string())
         .collect()
 }
 
@@ -128,7 +128,7 @@ fn keyword_and_text_runs_the_quicklink_first() {
     let out = rank_root(&mut Ranker::new(), "gh  flick ", items, &links, &usage(), NOW);
     assert_eq!(out[0].id, "quicklink:GitHub Search");
     assert_eq!(out[0].subtitle, "\u{201c}flick\u{201d}");
-    assert_eq!(out[0].action, Action::Quicklink { index: 1, query: Some("flick".into()) });
+    assert_eq!(out[0].id.arg(), Some("flick"));
     assert_eq!(ranked("g rust lang", 8), ["quicklink:Google"]);
     // A keyword with no text after it ranks normally: no extra quicklink item.
     let plain = ranked("g ", 99);

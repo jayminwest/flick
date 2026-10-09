@@ -1,63 +1,32 @@
-//! Root search: the items every launch lists and their ranking. Pure Rust, no `AppKit`.
+//! Root search: the registered modules and the ranking of their items. Pure Rust, no `AppKit`.
 
-use crate::apps::App;
+use crate::apps::{App, Apps};
+use crate::builtins::Builtins;
+use crate::clipboard::Clipboard;
 use crate::config::Quicklink;
-use crate::search::{Action, Icon, Item, Ranker, Usage, frecency};
-use crate::windows::WindowAction;
+use crate::core::{Item, Ranker, Registry, Usage, frecency};
+use crate::quicklinks::{Quicklinks, keyword_item};
+use crate::switcher::Switcher;
+use crate::windows;
 
-/// Every root-search item: apps, window commands, quicklinks, builtins. Item ids feed the
-/// `usage` table, so their format is pinned by `crate::characterization`.
+/// Every module, in root-search order: apps, window commands, quicklinks, builtins. Item
+/// ids feed the `usage` table, so their format is pinned by `crate::characterization`.
+pub fn registry(apps: Vec<App>) -> Registry {
+    Registry::new(vec![
+        Box::new(Apps::new(apps)),
+        Box::new(windows::Commands),
+        Box::new(Quicklinks),
+        Box::new(Builtins),
+        Box::new(Clipboard),
+        Box::new(Switcher::default()),
+    ])
+}
+
+/// Every root-search item for `apps` and `quicklinks`, through the real registry.
+#[cfg(test)]
 pub fn root_items(apps: &[App], quicklinks: &[Quicklink]) -> Vec<Item> {
-    let mut items: Vec<Item> = apps
-        .iter()
-        .map(|a| Item {
-            id: format!("app:{}", a.path.display()),
-            title: a.name.clone(),
-            subtitle: String::new(),
-            accessory: "Application".into(),
-            icon: Icon::File(a.path.clone()),
-            action: Action::LaunchApp(a.path.clone()),
-            keywords: vec![],
-        })
-        .collect();
-
-    items.extend(WindowAction::ALL.iter().map(|&w| Item {
-        id: format!("window:{}", w.title()),
-        title: w.title().into(),
-        subtitle: "Window Management".into(),
-        accessory: "Command".into(),
-        icon: Icon::Symbol(w.symbol()),
-        action: Action::Window(w),
-        keywords: vec!["window".into()],
-    }));
-
-    items.extend(quicklinks.iter().enumerate().map(|(index, q)| Item {
-        id: format!("quicklink:{}", q.name),
-        title: q.name.clone(),
-        subtitle: q.keyword.clone().unwrap_or_default(),
-        accessory: "Quicklink".into(),
-        icon: Icon::Symbol("link"),
-        action: Action::Quicklink { index, query: (!q.takes_query()).then(String::new) },
-        keywords: q.keyword.iter().cloned().collect(),
-    }));
-
-    let builtins = [
-        ("Clipboard History", "doc.on.clipboard", Action::ClipboardHistory, "paste"),
-        ("Switch Windows", "macwindow.on.rectangle", Action::SwitchWindows, "focus alt tab"),
-        ("Open Flick Config", "gearshape", Action::OpenConfig, "settings preferences"),
-        ("Reload Flick Config", "arrow.clockwise", Action::ReloadConfig, "refresh"),
-        ("Quit Flick", "power", Action::Quit, "exit"),
-    ];
-    items.extend(builtins.into_iter().map(|(title, symbol, action, keywords)| Item {
-        id: format!("builtin:{title}"),
-        title: title.into(),
-        subtitle: "Flick".into(),
-        accessory: "Command".into(),
-        icon: Icon::Symbol(symbol),
-        action,
-        keywords: vec![keywords.into()],
-    }));
-    items
+    let config = crate::config::Config { quicklinks: quicklinks.to_vec(), ..Default::default() };
+    crate::core::test_cx("", config, |cx| registry(apps.to_vec()).items(cx))
 }
 
 /// Rank root `items` for `query` by fuzzy score plus frecency; "<keyword> <text>" puts the
@@ -70,25 +39,14 @@ pub fn rank_root(
     usage: &Usage,
     now: i64,
 ) -> Vec<Item> {
-    let mut results = ranker.rank(query, items, |i| frecency(usage, &i.id, now));
+    let mut results = ranker.rank(query, items, |i| frecency(usage, i.id.as_str(), now));
     // "<keyword> <text>" runs a quicklink directly.
     if let Some((keyword, rest)) = query.split_once(' ') {
-        let link = quicklinks.iter().enumerate().find(|(_, q)| {
+        let link = quicklinks.iter().find(|q| {
             q.takes_query() && q.keyword.as_deref() == Some(keyword) && !rest.trim().is_empty()
         });
-        if let Some((index, q)) = link {
-            results.insert(
-                0,
-                Item {
-                    id: format!("quicklink:{}", q.name),
-                    title: q.name.clone(),
-                    subtitle: format!("“{}”", rest.trim()),
-                    accessory: "Quicklink".into(),
-                    icon: Icon::Symbol("link"),
-                    action: Action::Quicklink { index, query: Some(rest.trim().to_string()) },
-                    keywords: vec![],
-                },
-            );
+        if let Some(q) = link {
+            results.insert(0, keyword_item(q, rest.trim()));
         }
     }
     results

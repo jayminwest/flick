@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, params};
 
-use crate::search::Usage;
+use crate::core::Usage;
 
 const MAX_CLIPS: i64 = 500;
 
