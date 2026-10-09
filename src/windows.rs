@@ -5,6 +5,7 @@
 
 use std::ffi::c_void;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
@@ -237,8 +238,14 @@ fn cfstr(s: &NSString) -> CFTypeRef {
     s as *const NSString as CFTypeRef
 }
 
+/// Whether Flick may control other apps; if not, show macOS's permission dialog once per launch.
+pub fn ensure_trusted() -> bool {
+    static PROMPTED: AtomicBool = AtomicBool::new(false);
+    is_trusted(false) || (!PROMPTED.swap(true, Ordering::Relaxed) && is_trusted(true))
+}
+
 /// Whether Flick may control other apps. With `prompt`, macOS shows its permission dialog.
-pub fn is_trusted(prompt: bool) -> bool {
+fn is_trusted(prompt: bool) -> bool {
     let key = NSString::from_str("AXTrustedCheckOptionPrompt");
     let value = NSNumber::new_bool(prompt);
     let options = NSDictionary::from_retained_objects(&[&*key], &[value]);
@@ -331,7 +338,7 @@ fn screen_areas(mtm: MainThreadMarker) -> Vec<Rect> {
 }
 
 pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static str> {
-    if !is_trusted(true) {
+    if !ensure_trusted() {
         return Err("Flick needs Accessibility permission");
     }
     let win = focused_window().ok_or("No focused window")?;

@@ -23,8 +23,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$app"
-echo "built $app"
+# A stable identity keeps macOS privacy grants (Accessibility) across rebuilds;
+# ad-hoc signatures change every build, so macOS would ask again each time.
+identity="${FLICK_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')}"
+if [[ -z "$identity" ]]; then
+  identity=-
+  echo "warning: no Apple Development identity; ad-hoc signing (Accessibility resets on rebuild)" >&2
+fi
+codesign --force --sign "$identity" "$app"
+echo "built $app (signed: $identity)"
 
 if [[ "${1:-}" == "--install" ]]; then
   # A launchd agent (e.g. home-manager's launchd.agents.flick) owns the process
