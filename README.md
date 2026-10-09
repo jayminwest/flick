@@ -12,7 +12,7 @@
 
 ## A keyboard-first launcher and window manager for macOS.
 
-Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The whole app is about 2,300 lines of Rust and a 3.4 MB binary.
+Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
 
 <p align="center">
   <img src="docs/screenshots/launcher.png" alt="The Flick launcher over a blurred desktop: an empty search field and suggestions ranked by recent use: commands, quicklinks, and applications" width="750">
@@ -98,10 +98,14 @@ Flick reads `~/.config/flick/config.toml` and writes a commented default on firs
 
 ```toml
 hotkey = "ctrl+Space"              # launcher
-windows_hotkey = "cmd+Space"       # window switcher
-desktop_toggle = "cmd+Backquote"   # most recent app on another desktop
 
-[window_keys]
+[switcher]
+hotkey = "cmd+Space"               # window switcher
+
+[desktop]
+hotkey = "cmd+Backquote"           # most recent app on another desktop
+
+[window.keys]
 # Hyper (cmd+ctrl+alt+shift), e.g. Caps Lock via Hyperkey
 left-half = "cmd+ctrl+alt+shift+KeyH"
 right-half = "cmd+ctrl+alt+shift+KeyL"
@@ -110,15 +114,17 @@ hide = "cmd+ctrl+alt+shift+KeyJ"
 next-display = "cmd+ctrl+alt+shift+KeyN"
 previous-display = "cmd+ctrl+alt+shift+KeyP"
 
-[[quicklinks]]
+[[quicklink.links]]
 name = "GitHub Search"
 keyword = "gh"
 url = "https://github.com/search?q={query}&type=repositories"
 
-[[quicklinks]]
+[[quicklink.links]]
 name = "Projects"
 url = "~/Projects"
 ```
+
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
@@ -167,16 +173,18 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 | Path | Role |
 |---|---|
 | [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
-| [`core/`](src/core) | Items and their ids, the `Module` trait and registry, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
+| [`core/`](src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
 | [`root.rs`](src/root.rs) | Root search ranking |
 | [`ui.rs`](src/ui.rs) | The launcher view over the platform panel |
 | [`hotkey.rs`](src/hotkey.rs) | Global hotkey bindings |
-| [`store.rs`](src/store.rs) | SQLite: usage counts and clipboard history |
-| [`config.rs`](src/config.rs) | TOML config and quicklinks |
+| [`store.rs`](src/store.rs) | SQLite: one connection, per-module migrations, usage counts |
+| [`config.rs`](src/config.rs) | TOML config: per-module tables, legacy keys |
 | [`raycast.rs`](src/raycast.rs) | Raycast quicklink import |
 | [`control/`](src/control), [`cli/`](src/cli) | Control socket server, and the command-line client |
+
+[ARCHITECTURE.md](ARCHITECTURE.md) has the layer rules, the module contract, and how to add a module.
 
 The panel is a non-activating `NSPanel`, so the app you came from stays active while Flick has keyboard focus. That is why window commands and paste act on the right app.
 
