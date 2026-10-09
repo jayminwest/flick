@@ -234,6 +234,8 @@ flick app list                 # <name>\t<path> per app
 flick app open Safari
 flick app quit Safari          # asks it to quit, like cmd+Q; force-quit forces it
 flick app reveal Safari        # show the bundle in Finder
+flick app uninstall Foo --dry-run  # <size>\t<path> for the bundle and its leftovers
+flick app uninstall Foo --yes  # move exactly those to the Trash
 flick clip list                # <id>\t<first line>, newest first
 flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
