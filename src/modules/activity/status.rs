@@ -1,5 +1,6 @@
 //! `flick activity status`: recording, the title and URL switches with their permissions,
-//! and the open span.
+//! and the open span. Also the Today view's footer, which names browsers that refused
+//! Automation.
 
 use crate::core::store::Store;
 
@@ -31,5 +32,17 @@ impl Activity {
             None => "none".into(),
         };
         format!("recording: {on}\ntitles: {titles}\nurls: {urls}\nopen span: {open}")
+    }
+
+    /// The Today view's footer. It names the browsers that refused Automation: their spans
+    /// have no URL, so the view shows no domain for them.
+    pub(super) fn today_footer(&self) -> String {
+        match self.urls.denied() {
+            [] => "Activity Today  ·  esc to go back".into(),
+            names => format!(
+                "Activity Today  ·  no URLs from {}: allow Flick in Privacy & Security > Automation  ·  esc to go back",
+                names.join(", ")
+            ),
+        }
     }
 }
