@@ -1,14 +1,46 @@
 #!/usr/bin/env bash
-# Build Flick.app (release) into target/, or install it with --install.
+# Build Flick.app (release) into $CARGO_TARGET_DIR (default target/).
+# --install [relaunch.sh options]: then install and restart it with scripts/relaunch.sh.
+#
+# The build stamp goes to cargo as FLICK_BUILD_SHA (full sha), FLICK_BUILD_DIRTY (1/0),
+# FLICK_BUILD_TIME (RFC 3339 UTC) and FLICK_BUILD_SOURCE (checkout path). Each one
+# defaults to the value of this checkout; a caller can set it first (an exported tree
+# has no .git). FLICK_CARGO_ARGS adds cargo build flags, e.g. "--locked --offline".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cargo build --release
-app=target/Flick.app
+install=false
+if [[ "${1:-}" == "--install" ]]; then
+  install=true
+  shift
+elif [[ $# -gt 0 ]]; then
+  echo "usage: scripts/bundle.sh [--install [relaunch.sh options]]" >&2
+  exit 2
+fi
+
+if [[ -z "${FLICK_BUILD_SHA:-}" ]]; then
+  FLICK_BUILD_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+fi
+if [[ -z "${FLICK_BUILD_DIRTY:-}" ]]; then
+  FLICK_BUILD_DIRTY=0
+  [[ -n "$(git status --porcelain 2>/dev/null)" ]] && FLICK_BUILD_DIRTY=1
+fi
+FLICK_BUILD_TIME="${FLICK_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+FLICK_BUILD_SOURCE="${FLICK_BUILD_SOURCE:-$(pwd -P)}"
+export FLICK_BUILD_SHA FLICK_BUILD_DIRTY FLICK_BUILD_TIME FLICK_BUILD_SOURCE
+echo "stamp: $FLICK_BUILD_SHA dirty=$FLICK_BUILD_DIRTY $FLICK_BUILD_TIME $FLICK_BUILD_SOURCE"
+
+# FLICK_CARGO_ARGS is split on spaces on purpose.
+# shellcheck disable=SC2086
+cargo build --release ${FLICK_CARGO_ARGS:-}
+target="${CARGO_TARGET_DIR:-target}"
+app="$target/Flick.app"
 version="$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)"
+bundle_version="$version+${FLICK_BUILD_SHA:0:7}"
+[[ "$FLICK_BUILD_DIRTY" == 1 ]] && bundle_version="$bundle_version-dirty"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp target/release/flick "$app/Contents/MacOS/Flick"
+cp "$target/release/flick" "$app/Contents/MacOS/Flick"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -19,7 +51,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>Flick</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
-  <key>CFBundleVersion</key><string>$version</string>
+  <key>CFBundleVersion</key><string>$bundle_version</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
 </dict>
@@ -33,23 +65,8 @@ if [[ -z "$identity" ]]; then
   echo "warning: no Apple Development identity; ad-hoc signing (Accessibility resets on rebuild)" >&2
 fi
 codesign --force --sign "$identity" "$app"
-echo "built $app (signed: $identity)"
+echo "built $app ($bundle_version, signed: $identity)"
 
-if [[ "${1:-}" == "--install" ]]; then
-  # A launchd agent (e.g. home-manager's launchd.agents.flick) owns the process
-  # when present; restart through it so there is only ever one Flick.
-  agent="gui/$(id -u)/org.nix-community.home.flick"
-  launchd=false
-  launchctl print "$agent" >/dev/null 2>&1 && launchd=true
-  # Stop every copy, including one opened by hand next to the agent's.
-  pkill -x Flick || true
-  rm -rf ~/Applications/Flick.app
-  mkdir -p ~/Applications
-  cp -R "$app" ~/Applications/
-  if $launchd; then
-    launchctl kickstart -k "$agent"
-  else
-    open ~/Applications/Flick.app
-  fi
-  echo "installed ~/Applications/Flick.app"
+if $install; then
+  exec scripts/relaunch.sh --install "$app" "$@"
 fi
