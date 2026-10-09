@@ -82,8 +82,10 @@ the release:
 
 The gates keep AGENTS.md honest (`check:agents`), so this pass is prose only:
 
-- `README.md`: features, configuration examples and install steps match what
-  ships. Never add line counts or binary sizes to the README (user request).
+- `README.md` is a router: pitch, feature list, quickstart, links into `docs/`.
+  Keep detail out of it. Never add line counts or binary sizes (user request).
+- `docs/`: configuration examples, commands and install steps match what ships.
+  A new module gets its own page and a line in `docs/README.md`.
 - `ARCHITECTURE.md` and `AGENTS.md` only if layers, contracts or commands changed
   and the change missed them.
 
