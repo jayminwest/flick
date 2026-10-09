@@ -9,8 +9,8 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread, except `keytap`'s (any thread). |
-| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `clock` (local UTC offset). Every function runs on the main thread, except `keytap`'s (any thread). |
+| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`), the span clock (`core::track`: idle backdating, pause/resume, title normalization, flicker merge, local-day split). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
@@ -153,6 +153,11 @@ Sources:
 - `platform::axwatch::follow(pid, on_change)` installs one AX observer on an app; the
   `activity` module follows the front app only while recording with `titles = true` and posts
   `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
+- `platform::status_item::show(symbol, tooltip, menu)` puts one `NSStatusItem` in the menu
+  bar (the `activity` recording dot); `hide` removes it. A menu entry is a plain `fn()` that
+  runs inside `AppKit`'s event handling, so it only posts an event (the module reads a flag
+  on `ModuleChanged`), never borrows the state. The item does not activate Flick or change
+  its accessory activation policy.
 - `app::init` dispatches `Started` to modules, and a config reload to the modules it
   enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
@@ -173,6 +178,9 @@ Main-thread rules:
   `events::on_main(job)`. Both go through `dispatch_async_f` on the main queue. A panic in an
   `on_main` job is logged and does not unwind into libdispatch.
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
+- `app::on_terminate` hooks can run while the controller holds the state (**Quit Flick**
+  calls `app::quit` from `activate`). A hook uses only data it owns: `activity` closes its
+  open span through a second `Store` connection to the same file.
 
 Background work (pattern of `src/modules/rebuild/`): slow work (git, cargo, any child
 process) never runs on the main thread, because a stalled main thread freezes the launcher
