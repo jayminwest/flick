@@ -174,7 +174,7 @@ pub fn command(key: Key) -> bool {
 }
 
 /// A platform event: every module handles it, and a visible view they report stale
-/// refreshes. One that arrives while the controller is busy (a notification posted inside a
+/// refreshes. `DisplaysChanged` re-places a visible panel. One that arrives while the controller is busy (a notification posted inside a
 /// call) is posted back to the main queue instead of re-entering.
 pub fn on_event(event: Event) {
     let busy = STATE.with(|s| {
@@ -184,6 +184,10 @@ pub fn on_event(event: Event) {
             control::publish(event);
             if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
                 s.refresh();
+            }
+            // A screen the open panel was on may have moved or gone.
+            if event == Event::DisplaysChanged && ui::is_visible() {
+                ui::place();
             }
         }
         false

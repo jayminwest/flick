@@ -86,12 +86,16 @@ impl Module for Apps {
         Outcome::Hide
     }
 
-    /// Rescans on `LauncherOpened`, so new apps show up, and on `Started` when it has no
-    /// index yet (a config reload enabled it). Root search re-ranks on every keystroke, so
-    /// no view goes stale.
+    /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
+    /// has no index yet (a config reload enabled it). Root search re-ranks on every
+    /// keystroke, so no view goes stale.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        let empty = self.apps.is_empty();
-        if event == Event::LauncherOpened || (event == Event::Started && empty) {
+        let rescan = match event {
+            Event::LauncherOpened | Event::Wake => true,
+            Event::Started => self.apps.is_empty(),
+            _ => false,
+        };
+        if rescan {
             self.apps = scan();
         }
         false
@@ -154,5 +158,20 @@ mod tests {
         assert_eq!(names(&kept), ["Safari"]);
         // A scan always finds Finder.
         assert!(names(&fresh).contains(&"Finder".to_string()));
+    }
+
+    #[test]
+    fn wake_rescans_and_other_events_do_not() {
+        let gone = App { name: "Gone".into(), path: "/nowhere/Gone.app".into() };
+        let mut apps = Apps::new(vec![gone]);
+        let has_gone = |a: &Apps| a.apps.iter().any(|a| a.name == "Gone");
+        test_cx("", |cx| {
+            for event in [Event::DisplaysChanged, Event::PasteboardChanged, Event::Active] {
+                assert!(!apps.on_event(event, cx));
+            }
+            assert!(has_gone(&apps));
+            assert!(!apps.on_event(Event::Wake, cx));
+        });
+        assert!(!has_gone(&apps));
     }
 }

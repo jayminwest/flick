@@ -5,7 +5,7 @@ use crate::core::{Icon, Item};
 use crate::platform::panel::{self, Frame, Handlers, Row};
 
 pub use crate::platform::panel::{
-    VISIBLE_ROWS, hide, is_visible, query, set_query, show, snapshot,
+    VISIBLE_ROWS, hide, is_visible, place, query, set_query, show, snapshot,
 };
 
 pub fn init() {
