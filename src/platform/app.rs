@@ -1,10 +1,24 @@
 //! The process as a macOS app: main thread, activation policy, run loop, single instance.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::ptr::NonNull;
 
+use block2::RcBlock;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSRunningApplication};
-use objc2_foundation::NSBundle;
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSApplicationWillTerminateNotification,
+    NSRunningApplication,
+};
+use objc2_foundation::{NSBundle, NSNotification, NSNotificationCenter, NSObjectProtocol};
+
+thread_local! {
+    /// `on_terminate` observers; dropping one ends its registration.
+    static TERMINATE: RefCell<Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>> =
+        const { RefCell::new(Vec::new()) };
+}
 
 /// Panic unless called on the main thread; `AppKit` works nowhere else.
 #[expect(clippy::expect_used, reason = "startup invariant: no UI without the main thread")]
@@ -25,6 +39,25 @@ pub fn run() {
 
 pub fn quit() {
     NSApplication::sharedApplication(super::mtm()).terminate(None);
+}
+
+/// Run `hook` on the main thread when the app quits through `quit` (or Quit from any menu):
+/// `applicationWillTerminate`, just before exit. Not on a crash or a signal (launchd stop).
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-d717 step 5"))]
+pub fn on_terminate(hook: impl Fn() + 'static) {
+    let block = RcBlock::new(move |_n: NonNull<NSNotification>| hook());
+    // SAFETY: the name is an immutable framework constant; the block is 'static, takes the
+    // `NSNotification` argument the center passes, and runs on the posting (main) thread; the
+    // observer is kept below, which keeps the registration.
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(NSApplicationWillTerminateNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    TERMINATE.with(|t| t.borrow_mut().push(observer));
 }
 
 /// Another Flick.app is running (e.g. opened by hand next to the login agent's copy).
@@ -48,6 +81,23 @@ pub fn own_bundle() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_terminate_runs_the_hook_on_will_terminate() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let ran = Rc::new(Cell::new(0));
+        let seen = Rc::clone(&ran);
+        on_terminate(move || seen.set(seen.get() + 1));
+        // Posted by hand, without an NSApplication: nothing quits.
+        // SAFETY: an immutable framework constant as the name, and no object.
+        unsafe {
+            NSNotificationCenter::defaultCenter()
+                .postNotificationName_object(NSApplicationWillTerminateNotification, None);
+        }
+        assert_eq!(ran.get(), 1);
+    }
 
     #[test]
     fn a_bare_test_binary_has_no_own_bundle() {
