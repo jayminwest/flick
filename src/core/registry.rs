@@ -31,7 +31,7 @@ impl Registry {
         })
     }
 
-    fn get(&mut self, id: &str) -> Option<&mut Box<dyn Module>> {
+    pub(super) fn get(&mut self, id: &str) -> Option<&mut Box<dyn Module>> {
         self.modules.iter_mut().find(|m| m.id() == id)
     }
 
