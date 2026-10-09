@@ -2,6 +2,8 @@
 
 Flick reads `~/.config/flick/config.toml` and writes a commented default on first run. Set `FLICK_CONFIG` to use a different path. Run **Reload Flick Config** from the launcher after you edit it.
 
+Every option, with its default and a one-line note, is in [`config.example.toml`](../config.example.toml). `flick config example` prints that file, so you can read it also when home-manager or another tool writes your config. Delete the `#` in front of a setting to use it.
+
 ```toml
 hotkey = "ctrl+Space"              # launcher
 
