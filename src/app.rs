@@ -374,7 +374,7 @@ impl State {
                 pb.setString_forType(&NSString::from_str(&text), unsafe { NSPasteboardTypeString });
                 ui::hide();
                 // Give focus a moment to return to the previous app, then paste there.
-                if windows::is_trusted(true) {
+                if windows::ensure_trusted() {
                     ui::after(0.08, windows::send_paste);
                 }
             }
