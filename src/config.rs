@@ -2,11 +2,13 @@
 //! module (keyed by module id). Each module deserializes its own table; this file knows no
 //! module's settings, only the legacy flat keys it maps into those tables.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use toml::{Table, Value};
+
+pub mod edit;
 
 const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 
@@ -146,13 +148,18 @@ pub fn data_dir() -> PathBuf {
 pub fn load() -> Result<Config, String> {
     let path = config_path();
     if !path.exists() {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&path, DEFAULT_CONFIG);
+        write_default(&path);
     }
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Write the commented default config to `path`. Errors surface when it is read.
+fn write_default(path: &Path) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, DEFAULT_CONFIG);
 }
 
 /// Parse config.toml text. Checks the syntax, `hotkey` and the legacy keys; module tables
