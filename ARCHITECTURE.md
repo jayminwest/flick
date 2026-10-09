@@ -121,9 +121,11 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
   field (read-only); `Confirm::rows` are read-only rows (Up/Down scroll). Non-destructive:
   Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
   `Press ⌘↵ to <label>`. Escape cancels back to `back` and the module hears nothing.
-- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled fields (`FORM_FIELDS` in the panel),
-  focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵ submits,
-  Escape goes back to root search. A blank required field is an inline
+- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled field rows (`FORM_FIELDS` in the
+  panel); a `Field::multiline()` field takes 3 rows and wraps, and fields past the last row are
+  not shown. Focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵
+  submits; in a multiline field Return inserts a newline and only ⌘↵ submits, and the footer
+  shows `⌘↵` (`Form::submit_hint`). Escape goes back to root search. A blank required field is an inline
   `<Label> is required` error, and `submit` is not called.
 
 `Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it. Module
