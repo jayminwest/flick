@@ -1,7 +1,10 @@
-//! The general pasteboard, as plain text.
+//! The general pasteboard: plain text, and PNG images.
 
-use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-use objc2_foundation::NSString;
+use objc2_app_kit::{
+    NSBitmapImageRep, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
+    NSPasteboardTypeTIFF,
+};
+use objc2_foundation::{NSData, NSString};
 
 /// Bumps whenever any app writes the pasteboard; there is no change notification to observe.
 pub fn change_count() -> isize {
@@ -32,4 +35,21 @@ pub fn set_text(text: &str) {
     // SAFETY: NSPasteboardTypeString is an immutable framework constant, set at load time.
     let string_type = unsafe { NSPasteboardTypeString };
     pb.setString_forType(&NSString::from_str(text), string_type);
+}
+
+/// Replace the pasteboard's contents with a PNG image (`bytes` is the whole file). Also
+/// writes TIFF, for apps that read only TIFF; skipped when `NSBitmapImageRep` cannot decode
+/// `bytes`.
+#[expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)")]
+pub fn set_png(bytes: &[u8]) {
+    let png = NSData::with_bytes(bytes);
+    let tiff = NSBitmapImageRep::imageRepWithData(&png).and_then(|rep| rep.TIFFRepresentation());
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    // SAFETY: the pasteboard type names are immutable framework constants, set at load time.
+    let (png_type, tiff_type) = unsafe { (NSPasteboardTypePNG, NSPasteboardTypeTIFF) };
+    pb.setData_forType(Some(&png), png_type);
+    if let Some(tiff) = tiff {
+        pb.setData_forType(Some(&tiff), tiff_type);
+    }
 }
