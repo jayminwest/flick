@@ -191,10 +191,7 @@ impl State {
         } else if key == Key::Enter {
             self.activate();
         } else if key == Key::Tab {
-            // Tab fills in a quicklink's argument, like Raycast.
-            if self.results.get(self.selected).is_some_and(|i| i.tab) {
-                self.activate();
-            }
+            self.tab();
         } else if key == Key::Escape {
             if list.is_none_or(|v| v.escape_hides) {
                 ui::hide();
@@ -378,6 +375,7 @@ impl State {
             }
         };
         let rows = !matches!(self.screen, Screen::Confirm { .. });
+        let text = if let Screen::List(view) = &self.screen { view.text.as_str() } else { "" };
         ui::render(&View {
             title,
             items: &self.results,
@@ -386,6 +384,7 @@ impl State {
             footer: self.status.as_deref().unwrap_or(footer),
             empty,
             action: &action,
+            text,
         });
     }
 

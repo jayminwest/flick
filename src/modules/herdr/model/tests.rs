@@ -356,19 +356,3 @@ fn summary_and_machine_set() {
     assert_eq!(fleet.machine("local"), None);
     assert_eq!(fleet.summary(), Summary { blocked: 0, done: 0, agents: 0, machines: 2 });
 }
-
-#[test]
-fn previews_keep_the_last_non_empty_lines() {
-    let text = parse_read(&value(READ)).unwrap();
-    assert_eq!(preview(&text, 3), ["test b ... ok", "test c ... ok", "test result: ok. 3 passed"]);
-    assert_eq!(preview(&text, 100).len(), 7);
-    assert_eq!(preview(&text, 100)[2], " running 3 tests");
-    assert!(preview(&text, 0).is_empty());
-    assert!(preview("", 6).is_empty());
-    assert_eq!(preview("a\r\nb\u{7}c\n  \n", 6), ["a", "bc"]);
-    let long = "é".repeat(PREVIEW_WIDTH + 5);
-    let cut = &preview(&long, 1)[0];
-    assert_eq!(cut.chars().count(), PREVIEW_WIDTH);
-    assert!(cut.ends_with('…'));
-    assert_eq!(preview(&"x".repeat(PREVIEW_WIDTH), 1)[0].len(), PREVIEW_WIDTH);
-}

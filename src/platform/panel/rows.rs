@@ -10,7 +10,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
-use super::{H, LIST_PAD, ROW_H, SEARCH_H, Ui, VISIBLE_ROWS, W, with_ui};
+use super::{FOOTER_H, H, LIST_PAD, ROW_H, SEARCH_H, Ui, VISIBLE_ROWS, W, with_ui};
 
 /// A row's icon: a file's Finder icon, or an SF Symbol name.
 pub enum Icon<'a> {
@@ -38,6 +38,8 @@ pub struct Frame<'a> {
     pub footer: &'a str,
     /// Right-aligned footer text: what Return does.
     pub action: &'a str,
+    /// Read-only text under the rows, word-wrapped in a fixed-width font. Empty: none.
+    pub text: &'a str,
 }
 
 pub(super) struct RowViews {
@@ -70,6 +72,18 @@ pub(super) fn separator(mtm: MainThreadMarker, frame: NSRect) -> Retained<NSBox>
     let b = NSBox::initWithFrame(NSBox::alloc(mtm), frame);
     b.setBoxType(NSBoxType::Separator);
     b
+}
+
+/// The read-only text block under the rows (`Frame::text`), hidden until a frame has text.
+pub(super) fn make_text(mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let text = NSTextField::wrappingLabelWithString(&ns(""), mtm);
+    text.setFont(NSFont::userFixedPitchFontOfSize(12.0).as_deref());
+    text.setTextColor(Some(&NSColor::labelColor()));
+    if let Some(cell) = text.cell() {
+        cell.setTruncatesLastVisibleLine(true);
+    }
+    text.setHidden(true);
+    text
 }
 
 pub(super) fn make_row(mtm: MainThreadMarker, index: usize) -> RowViews {
@@ -154,6 +168,10 @@ pub fn render(frame: &Frame) {
         for row in &ui.rows[shown..] {
             row.view.setHidden(true);
         }
+        let top = SEARCH_H + LIST_PAD + shown as f64 * ROW_H + 6.0;
+        ui.text.setFrame(top_rect(H, 20.0, top, W - 40.0, (H - FOOTER_H - top - 8.0).max(0.0)));
+        ui.text.setStringValue(&ns(frame.text));
+        ui.text.setHidden(frame.text.is_empty());
 
         ui.empty.setStringValue(&ns(frame.empty));
         ui.footer_left.setStringValue(&ns(frame.footer));

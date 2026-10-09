@@ -31,6 +31,7 @@
     "src/modules/herdr/model.rs": 100.0,
     "src/modules/herdr/mod.rs": 99.0,
     "src/modules/herdr/remote.rs": 99.1,
+    "src/modules/herdr/reply.rs": 100.0,
     "src/modules/herdr/views.rs": 100.0,
     "src/modules/quicklinks/editor.rs": 99.6,
     "src/modules/remote/mod.rs": 99.4,
