@@ -109,7 +109,9 @@ Sources:
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
-`control::publish` → refresh of a visible stale view.
+`control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
+also re-places a visible panel (`ui::place`). The `app` module rescans installed apps on
+`LauncherOpened` and `Wake`.
 
 Main-thread rules:
 
