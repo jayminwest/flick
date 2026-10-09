@@ -164,4 +164,9 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn the_example_config_lists_every_key() {
+        crate::config::example::assert_documents::<Settings>("window");
+    }
 }
