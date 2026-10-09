@@ -3,13 +3,10 @@
 //! key engine.
 //! Plain Rust: no `crate::platform`, so everything here unit-tests without `AppKit`.
 
-#[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
 mod action;
-#[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
 mod confirm;
 pub mod control;
 mod event;
-#[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
 mod form;
 mod item;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-df71"))]
@@ -24,10 +21,8 @@ mod view;
 
 pub use action::Action;
 pub use confirm::Confirm;
-#[expect(unused_imports, reason = "used from flick-1875 on")]
 pub use confirm::ConfirmRow;
 pub use event::{Event, RecentPids};
-#[cfg_attr(not(test), expect(unused_imports, reason = "used from flick-1875 on"))]
 pub use form::Field;
 pub use form::Form;
 pub use item::{Icon, Item, ItemId};

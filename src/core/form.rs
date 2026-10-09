@@ -17,6 +17,7 @@ pub struct Field {
 
 impl Field {
     /// An optional, empty field with no placeholder.
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn new(key: &'static str, label: impl Into<String>) -> Field {
         Field {
             key,
@@ -27,18 +28,21 @@ impl Field {
         }
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     #[must_use]
     pub fn required(mut self) -> Field {
         self.required = true;
         self
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     #[must_use]
     pub fn value(mut self, value: impl Into<String>) -> Field {
         self.value = value.into();
         self
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     #[must_use]
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Field {
         self.placeholder = placeholder.into();
@@ -70,6 +74,7 @@ pub struct Form {
 
 impl Form {
     /// A form with no fields, focus on the first, "Submit" as its label and no error.
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn new(module: &'static str, name: impl Into<String>, title: impl Into<String>) -> Form {
         Form {
             module,
@@ -83,6 +88,7 @@ impl Form {
     }
 
     /// Same module and name.
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn is(&self, module: &str, name: &str) -> bool {
         self.module == module && self.name == name
     }
@@ -109,6 +115,7 @@ impl Form {
     }
 
     /// The value of the field with `key`, untrimmed. `None` when there is no such field.
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn value(&self, key: &str) -> Option<&str> {
         self.fields.iter().find(|f| f.key == key).map(|f| f.value.as_str())
     }
