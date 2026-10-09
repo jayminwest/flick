@@ -11,6 +11,10 @@
 #              other running Flick is stopped too.
 # --no-restart Install only; do not stop or start Flick.
 #
+# After an install, link the CLI: $FLICK_CLI_DIR/flick (default ~/.local/bin/flick) points
+# at the app's binary. A `flick` there that is not a symlink to some Flick.app is left
+# alone; FLICK_CLI_DIR= (empty) skips the link.
+#
 # Restart: stop each Flick and wait until it exits (10 s, then kill -9), so the new copy
 # does not see an old one and exit as "already running". Then start Flick through the
 # launchd agent when it exists (launchctl kickstart -k), else with open.
@@ -33,6 +37,29 @@ while [[ $# -gt 0 ]]; do
     *) usage ;;
   esac
 done
+
+# The `flick` command: a symlink to the installed binary, never over a file we did not make.
+link_cli() {
+  local bin_dir="${FLICK_CLI_DIR-$HOME/.local/bin}"
+  [[ -n "$bin_dir" ]] || return 0
+  local target="$app/Contents/MacOS/Flick" link="$bin_dir/flick"
+  if [[ -L "$link" ]]; then
+    case "$(readlink "$link")" in
+      */Flick.app/Contents/MacOS/Flick) ;;
+      *) echo "relaunch: $link links elsewhere; CLI not linked" >&2; return 0 ;;
+    esac
+  elif [[ -e "$link" ]]; then
+    echo "relaunch: $link exists and is not a symlink; CLI not linked" >&2
+    return 0
+  fi
+  mkdir -p "$bin_dir"
+  ln -sfn "$target" "$link"
+  echo "relaunch: linked $link -> $target"
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) echo "relaunch: $bin_dir is not on PATH; add it to run flick" >&2 ;;
+  esac
+}
 
 dir="${FLICK_INSTALL_DIR:-$HOME/Applications}"
 app="$dir/Flick.app"
@@ -61,6 +88,7 @@ if [[ -n "$src" ]]; then
   mv "$new" "$app"
   rm -rf "$old"
   echo "relaunch: installed $app"
+  link_cli
 fi
 
 $restart || exit 0
