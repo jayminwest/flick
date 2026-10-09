@@ -65,7 +65,6 @@ thread_local! {
 /// its title changes. Replaces any earlier `follow`; following the same pid again only swaps
 /// the callback. Returns false, and follows nothing, without Accessibility permission or for a
 /// pid that is not a running app.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
 pub fn follow(pid: i32, on_change: fn(i32)) -> bool {
     if following() == Some(pid) {
         TARGET.set(Some((pid, on_change)));
@@ -81,7 +80,6 @@ pub fn follow(pid: i32, on_change: fn(i32)) -> bool {
 }
 
 /// Remove the observer, if any, and drop a pending change.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
 pub fn stop() {
     GENERATION.set(GENERATION.get().wrapping_add(1));
     PENDING.set(false);
@@ -91,7 +89,6 @@ pub fn stop() {
 }
 
 /// The pid being followed, if an observer is installed.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
 pub fn following() -> Option<i32> {
     WATCH.with(|w| w.borrow().as_ref().map(|w| w.pid))
 }

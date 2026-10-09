@@ -136,7 +136,8 @@ the list, refreshed) or `Hide`.
 
 `Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
-`ModuleChanged { module }`. Each serializes as `{"event":"<snake_case>",...}`.
+`ModuleChanged { module }`, `Chord { index, down }`, `WindowChanged { pid }`, `Sleep`,
+`Locked`, `Unlocked`. Each serializes as `{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
 named module's view is stale whatever its `on_event` returns. Root search lists every
 module's items, so a visible root search refreshes on any `ModuleChanged` too. Both refreshes
@@ -145,8 +146,13 @@ keep the selected item when it is still in the list (`refresh_keeping_selection`
 Sources:
 
 - `platform::events::start` registers `NSWorkspace`/`NSNotificationCenter` observers
-  (activation, wake, screen parameters) and one 0.5 s timer. The timer compares the pasteboard
-  change count, and every 10th tick (5 s) checks idle time against 60 s. Nothing else polls.
+  (activation, wake, screen parameters, and through `events::on_session` sleep, screen
+  lock/unlock and fast user switching as `Sleep`/`Locked`/`Unlocked`) and one 0.5 s timer.
+  The timer compares the pasteboard change count, and every 10th tick (5 s) checks idle time
+  against 60 s. Nothing else polls.
+- `platform::axwatch::follow(pid, on_change)` installs one AX observer on an app; the
+  `activity` module follows the front app only while recording with `titles = true` and posts
+  `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
 - `app::init` dispatches `Started` to modules, and a config reload to the modules it
   enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.

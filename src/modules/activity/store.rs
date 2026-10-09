@@ -36,6 +36,8 @@ pub trait Spans {
     #[cfg(test)]
     fn open_span(&self) -> Option<i64>;
     fn set_open_span(&self, id: Option<i64>);
+    /// End the span stored as open at `at` and clear it (on quit, from a second connection).
+    fn close_open(&self, at: i64);
     /// Delete spans that end after `ts`; how many.
     fn forget_since(&self, ts: i64) -> usize;
     /// Delete spans of app `app` (bundle id or name); how many.
@@ -104,6 +106,13 @@ impl Spans for Store {
 
     fn set_open_span(&self, id: Option<i64>) {
         set_state(self, OPEN, id.map(|id| id.to_string()).as_deref());
+    }
+
+    fn close_open(&self, at: i64) {
+        if let Some(id) = state(self, OPEN).and_then(|v| v.parse().ok()) {
+            self.span_end(id, at);
+        }
+        set_state(self, OPEN, None);
     }
 
     fn forget_since(&self, ts: i64) -> usize {
@@ -184,6 +193,11 @@ mod tests {
         s.set_recording(false);
         s.set_open_span(None);
         assert!(!s.recording() && s.open_span().is_none());
+        let id = s.span_open(&Subject::new("a", "a", None, None), 10).unwrap();
+        s.set_open_span(Some(id));
+        s.close_open(25);
+        s.close_open(40); // nothing open: no change
+        assert_eq!((s.spans(0, 99)[0].end, s.open_span()), (25, None));
         // Without the tables everything reads as empty and writes do nothing.
         let bare = Store::in_memory();
         bare.set_recording(true);

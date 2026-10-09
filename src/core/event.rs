@@ -30,6 +30,15 @@ pub enum Event {
     /// Key chord `index` (into the `keys` module's chords) went down or up. Posted from the
     /// key tap thread with `events::post`.
     Chord { index: u16, down: bool },
+    /// The focused window of followed app `pid` changed, or its title did (coalesced, at
+    /// most once a second). Only while a module follows an app (`platform::axwatch`).
+    WindowChanged { pid: i32 },
+    /// The system is about to sleep.
+    Sleep,
+    /// The screen locked, or another user's session took over.
+    Locked,
+    /// The screen unlocked, or this session became active again.
+    Unlocked,
 }
 
 /// Pids of activated apps, most recent first, at most `RECENT_MAX`.
@@ -83,6 +92,10 @@ mod tests {
                 r#"{"event":"module_changed","module":"flick"}"#,
             ),
             (Event::Chord { index: 0, down: true }, r#"{"event":"chord","index":0,"down":true}"#),
+            (Event::WindowChanged { pid: 1 }, r#"{"event":"window_changed","pid":1}"#),
+            (Event::Sleep, r#"{"event":"sleep"}"#),
+            (Event::Locked, r#"{"event":"locked"}"#),
+            (Event::Unlocked, r#"{"event":"unlocked"}"#),
         ];
         for (event, json) in cases {
             assert_eq!(serde_json::to_string(&event).unwrap(), json);
