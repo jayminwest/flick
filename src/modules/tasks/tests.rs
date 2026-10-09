@@ -227,3 +227,131 @@ fn json_answers_carry_the_task_and_running_id() {
         assert!(t.verbs().starts_with("task start|switch"));
     });
 }
+
+fn item_ids(items: &[Item]) -> Vec<String> {
+    items.iter().map(|i| i.id.to_string()).collect()
+}
+
+/// View `name` opened and refreshed for `query`.
+fn list(t: &mut Tasks, cx: &mut Cx, name: &str, query: &str) -> Vec<Item> {
+    let mut view = t.open(name, cx).unwrap();
+    let mut cx = Cx { query, ranker: &mut *cx.ranker, ..*cx };
+    t.refresh(&mut view, &mut cx);
+    view.items
+}
+
+/// What an outcome shows: `hide`, `push task/<name>` or the status of `Stay`.
+fn shown(outcome: Outcome) -> String {
+    match outcome {
+        Outcome::Hide => "hide".into(),
+        Outcome::Push(v) => format!("push {}/{}", v.module, v.name),
+        Outcome::Stay(text) => text.unwrap_or_default(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn status(outcome: Outcome) -> Option<String> {
+    match outcome {
+        Outcome::Stay(text) => text,
+        other => panic!("not Stay: {other:?}"),
+    }
+}
+
+#[test]
+fn the_launcher_starts_a_new_task_and_stops_it() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        assert_eq!(item_ids(&t.items(cx)), ["task:start", "task:today"]);
+        assert_eq!(shown(t.activate(&ItemId::new("task", "start"), cx)), "push task/pick");
+        assert!(t.open("nope", cx).is_none());
+        let items = list(&mut t, cx, "pick", "Review PR #kota");
+        assert_eq!(item_ids(&items), ["task:new"]);
+        assert_eq!(shown(t.activate(&items[0].id, cx)), "hide");
+        assert_eq!(calls(), ["on_quit".to_string(), changed(Some(1))]);
+        assert!(t.on_event(Event::TaskChanged { task: Some(1) }, cx));
+        at(T + 185);
+        let root = t.items(cx);
+        assert_eq!(item_ids(&root), ["task:stop", "task:switch", "task:today"]);
+        assert_eq!(root[0].title, "Stop Task: Review PR · 0:03");
+        assert_eq!(shown(t.activate(&root[1].id, cx)), "push task/pick");
+        assert_eq!(status(t.activate(&root[0].id, cx)).as_deref(), Some("Stopped Review PR #kota"));
+        assert_eq!(status(t.activate(&root[0].id, cx)).as_deref(), Some("No task running"));
+    });
+}
+
+#[test]
+fn launcher_rows_start_existing_tasks() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "Review PR", "--project", "kota"]).unwrap();
+        // The same title and project starts the existing task, even when it is done.
+        cx.store.task_set_status(1, Status::Done, T);
+        let new = ItemId::new("task", "new").with_arg("Review PR #kota");
+        assert_eq!(shown(t.activate(&new, cx)), "hide");
+        assert_eq!((t.running, cx.store.task_list(true).len()), (Some(1), 1));
+        assert_eq!(status(t.activate(&ItemId::new("task", "run/9"), cx)).as_deref(), Some("task: no task 9"));
+        assert_eq!(status(t.activate(&ItemId::new("task", "project/x"), cx)), None);
+    });
+    // Without the tables a new task cannot be added.
+    test_cx("", |cx| {
+        let new = ItemId::new("task", "new").with_arg("A");
+        assert!(status(tasks().activate(&new, cx)).unwrap().starts_with("task: "));
+    });
+}
+
+#[test]
+fn today_counts_the_running_task_up_to_now() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["start", "A"]).unwrap();
+        at(T + 600);
+        run(&mut t, cx, &["start", "B", "--project", "p"]).unwrap();
+        at(T + 720); // no event since the switch: B's row still ends at T + 600
+        let items = list(&mut t, cx, "today", "");
+        assert_eq!(item_ids(&items), ["task:run/2", "task:run/1", "task:project/", "task:project/p"]);
+        assert_eq!((items[0].accessory.as_str(), items[1].accessory.as_str()), ("Running · 0:02", "0:10"));
+        assert_eq!(shown(t.activate(&items[1].id, cx)), "hide");
+        assert_eq!(t.running, Some(1));
+        let pick = list(&mut t, cx, "pick", "");
+        assert_eq!(item_ids(&pick), ["task:run/1", "task:run/2"]);
+        assert_eq!(pick[1].accessory, "0:02");
+    });
+}
+
+#[test]
+fn task_rows_have_start_done_and_stop_actions() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "A"]).unwrap();
+        let (row, root) = (ItemId::new("task", "run/1"), ItemId::new("task", "start"));
+        let keys = |t: &mut Tasks, cx: &mut Cx| t.actions(&row, cx).into_iter().map(|a| a.key).collect::<Vec<_>>();
+        assert_eq!(keys(&mut t, cx), ["start", "done"]);
+        assert!(t.actions(&root, cx).is_empty());
+        assert_eq!(shown(t.act(&row, "start", cx)), "hide");
+        assert_eq!(keys(&mut t, cx), ["done", "stop"]);
+        at(T + 60);
+        assert_eq!(status(t.act(&row, "stop", cx)).as_deref(), Some("Stopped A"));
+        assert_eq!(status(t.act(&row, "done", cx)).as_deref(), Some("Done 1: A"));
+        assert_eq!(status(t.act(&ItemId::new("task", "run/7"), "done", cx)).as_deref(), Some("task: no task 7"));
+        assert_eq!(status(t.act(&row, "nope", cx)), None);
+        assert_eq!(status(t.act(&root, "done", cx)), None);
+        assert!(list(&mut t, cx, "pick", "").is_empty());
+    });
+}
+
+#[test]
+fn the_hotkey_opens_the_pick_view() {
+    let section = |text: &str| crate::config::parse(text).unwrap().section("task").unwrap().unwrap();
+    let mut t = tasks();
+    assert!(t.hotkeys().is_empty());
+    t.configure(&section("[task]\nhotkey = \"cmd+shift+T\"")).unwrap();
+    let bindings = t.hotkeys();
+    assert_eq!((bindings[0].spec.as_str(), bindings[0].key.as_deref()), ("cmd+shift+T", Ok("pick")));
+    test_cx("", |cx| {
+        assert!(t.hotkey("pick", cx).is_some_and(|v| v.is("task", "pick")));
+        assert!(t.hotkey("other", cx).is_none());
+    });
+    t.configure(&section("[task]\nhotkey = \" \"")).unwrap();
+    assert!(t.hotkeys().is_empty());
+    assert!(t.configure(&section("[task]\nhotky = \"x\"")).is_err());
+}

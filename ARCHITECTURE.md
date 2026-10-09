@@ -172,6 +172,14 @@ Sources:
   `activity` (the status item's Stop Recording), `herdr` (its I/O threads and notification
   clicks), `capture` (its shutter thread, and the annotation editor's `on_done` when it
   closes).
+- `TaskChanged { task }` is the one link between `task` and `activity`, which never read
+  each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
+  `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
+  running task was restored, so it arrives on the next main-queue turn, after the current
+  dispatch. Consumers: `activity` closes the open span and opens the same app with the new
+  task id (`activity_spans.task`); `task` marks its views stale. `flick events` publishes it.
+  The `task` timer is its own `core::track::Clock` on `Idle`/`Active`, `Sleep`/`Wake` and
+  `Locked`/`Unlocked`, so a task's `task_time` and the activity spans tagged with it agree.
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
 `control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
@@ -189,8 +197,8 @@ Main-thread rules:
   `on_main` job is logged and does not unwind into libdispatch.
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
 - `app::on_terminate` hooks can run while the controller holds the state (**Quit Flick**
-  calls `app::quit` from `activate`). A hook uses only data it owns: `activity` closes its
-  open span through a second `Store` connection to the same file.
+  calls `app::quit` from `activate`). A hook uses only data it owns: `activity` and `task`
+  each close their open row through a second `Store` connection to the same file.
 
 Background work (pattern of `src/modules/rebuild/`): slow work (git, cargo, any child
 process) never runs on the main thread, because a stalled main thread freezes the launcher
