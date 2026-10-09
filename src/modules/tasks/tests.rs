@@ -449,3 +449,8 @@ fn the_hotkey_opens_the_pick_view() {
     assert!(t.hotkeys().is_empty());
     assert!(t.configure(&section("[task]\nhotky = \"x\"")).is_err());
 }
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("task");
+}

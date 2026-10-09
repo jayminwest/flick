@@ -16,7 +16,7 @@ this file in the same commit.
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/core/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server and the network transport over Tailscale (`control::net`). Runs requests on the main thread. Streams events. |
-| cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
+| cli | `src/cli/` | Argument parsing and the socket client. `snapshot`, `import-raycast` and `config example` run in-process. |
 
 There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code that uses
 `crate::modules::quicklinks` directly.
@@ -291,7 +291,16 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 ## Config
 
 `src/config.rs`. File: `$FLICK_CONFIG`, else `~/.config/flick/config.toml`. The first run
-writes a commented default.
+writes a commented default (`DEFAULT_CONFIG`).
+
+- `config.example.toml` (repo root, embedded by `src/config/example.rs`, printed by `flick
+  config example`) lists every table and key, commented out, with its default. A setting line
+  is `#` then a letter or `[`; a note is `# `. Tests keep it exact: each module with settings
+  calls `config::example::assert_documents::<Settings>("<id>")` (also for nested array
+  tables, e.g. `"keys.chord"`), which compares the table's keys with the type's serde
+  fields; `src/characterization/config_example.rs` checks one table per module id and that
+  every module's `configure` accepts the uncommented file. A new or renamed key goes in the
+  example in the same commit.
 
 - Top-level `hotkey` is the launcher hotkey. The controller owns it.
 - Every other top-level key is a module table, `[<module id>]`. `Config::section(id)` returns
@@ -389,13 +398,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `$FLICK_REMOTE` set and not empty, the client sends `--remote` before `--json` (`flick
   events` ignores it). Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
-  `flick snapshot` and `flick import-raycast` do not use the socket.
+  `flick snapshot`, `flick import-raycast` and `flick config example` do not use the socket.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
   to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
-  runs in this process (launcher, help, snapshot, import-raycast) is a usage error;
+  runs in this process (launcher, help, snapshot, import-raycast, config example) is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 
 ## Build stamp, install and rebuild
@@ -458,7 +467,9 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
    `crate::config::Section` and `crate::core::store`. Never import another module.
 3. Settings: a private `Settings` type with `#[derive(Default, Deserialize)]` and
    `#[serde(default)]`, read in `configure` with `table.get()?`. Keep runtime state outside
-   `Settings` because `configure` runs again on reload.
+   `Settings` because `configure` runs again on reload. Add a commented `#[toy]` table with
+   every key and its default to `config.example.toml` (even with no settings: `#enabled =
+   true`), and a test calling `crate::config::example::assert_documents::<Settings>("toy")`.
 4. Items: build ids with `ItemId::new("toy", key)`. Treat the key format as permanent once
    shipped. In `activate`, match on `id.key()`.
 5. Views: return a `ListView` from `open` for each view name you own. Fill `view.items` in
@@ -475,8 +486,8 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
    in-memory store, and `crate::config::parse` plus `section("toy")` for config.
 10. Run `scripts/check-all.sh`.
 
-Nothing else changes: `git diff --stat` shows `src/modules/toy/` and one line in
-`src/modules/mod.rs`. The characterization tests pin only the modules they name (root item
+Nothing else changes: `git diff --stat` shows `src/modules/toy/`, one line in
+`src/modules/mod.rs` and the `[toy]` table in `config.example.toml`. The characterization tests pin only the modules they name (root item
 prefixes, ranking, tables, hotkey owners, `flick help` verbs), so a new default-enabled module does not break them. A new
 table must start with its module id, or `schema_is_usage_and_clips` fails.
 
