@@ -1,6 +1,5 @@
 //! Local time: the UTC offset of the system time zone, so core and modules can split days
 //! without FFI or a time zone crate.
-#![cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a513 step 6 (flick-a30b)"))]
 
 use std::ffi::{c_char, c_int, c_long};
 

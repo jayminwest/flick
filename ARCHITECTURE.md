@@ -138,7 +138,9 @@ the list, refreshed) or `Hide`.
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
 `ModuleChanged { module }`, `Chord { index, down }`. Each serializes as `{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
-named module's view is stale whatever its `on_event` returns.
+named module's view is stale whatever its `on_event` returns. Root search lists every
+module's items, so a visible root search refreshes on any `ModuleChanged` too. Both refreshes
+keep the selected item when it is still in the list (`refresh_keeping_selection`).
 
 Sources:
 
@@ -165,6 +167,22 @@ Main-thread rules:
   `events::on_main(job)`. Both go through `dispatch_async_f` on the main queue. A panic in an
   `on_main` job is logged and does not unwind into libdispatch.
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
+
+Background work (pattern of `src/modules/rebuild/`): slow work (git, cargo, any child
+process) never runs on the main thread, because a stalled main thread freezes the launcher
+and every hotkey.
+
+- The module starts a named `std::thread` from `on_event`, `activate` or `command`, and
+  moves only owned data and an `Arc<Mutex<..>>` into it, never the module.
+- The thread writes its result or progress into that shared value, then posts
+  `Event::ModuleChanged { module: "<id>" }`.
+- `items` and `refresh` read the shared value without waiting (`lock`, not a join). The
+  first refresh after the event shows the new state.
+- Post `ModuleChanged` only while work runs (the runner posts once a second during a
+  build), so an idle Flick has no timers. Rate-limit work started from events (the git
+  check runs at most once per 30 s).
+- Give every child process a time budget. A command that must answer at once may run a
+  short bounded call on the main thread (`flick flick version`: git with a 2 s budget).
 
 ### Key tap
 
@@ -270,6 +288,55 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
+
+## Build stamp, install and rebuild
+
+- Stamp: `scripts/bundle.sh` exports `FLICK_BUILD_SHA`, `FLICK_BUILD_DIRTY` (`1`/`0`),
+  `FLICK_BUILD_TIME` (RFC 3339 UTC) and `FLICK_BUILD_SOURCE` (checkout path) to cargo. Each
+  defaults to the checkout's value; a caller may set it first (an exported tree has no
+  `.git`). `src/modules/rebuild/stamp.rs` reads them with `option_env!`; a plain
+  `cargo build` has no sha (`dev`). `FLICK_CARGO_ARGS` adds cargo flags.
+- Install: `scripts/relaunch.sh [--install <Flick.app>] [--wait-pid PID] [--no-restart]`
+  is the only installer. It copies to `.Flick.app.new`, runs `codesign --verify`, and swaps
+  with two renames; it restores `.Flick.app.old` when `Flick.app` is missing. Restart stops
+  every Flick, waits for each to exit (10 s, then `kill -9`) so the new copy does not exit as
+  already running, then uses the launchd agent or `open`. `FLICK_INSTALL_DIR` replaces
+  `~/Applications`.
+- Rebuild (module `flick`, `src/modules/rebuild/`): one build at a time on a thread.
+  A rev build exports the rev with `git archive` to `~/Library/Caches/Flick/rebuild/src`;
+  a dirty build runs in the checkout. Both run `bundle.sh` through `$SHELL -lc` with
+  `CARGO_TARGET_DIR=<source>/target/flick-rebuild` and `--locked --offline`, optionally after
+  `scripts/check-all.sh --bail` (`[flick] gates`). Output: `~/Library/Logs/Flick/rebuild.log`.
+  The build and relaunch.sh each run in their own process group: Cancel kills the build's
+  group, and the installer outlives Flick when it restarts it.
+- No network: `git::git` allows only `rev-parse`, `rev-list`, `log`, `status`, `archive`
+  and `merge-base`, and a unit test pins that list.
+- Tests never install or restart the real app: they set `restart = false` and a temp
+  `install_dir`, and never run `relaunch.sh` or `bundle.sh --install` without them.
+
+Manual smoke check after a change to bundle.sh, relaunch.sh or the rebuild module. It
+restarts the real Flick, so run it by hand, not from tests or agents:
+
+1. Install with `scripts/bundle.sh --install`. `flick flick version` prints the checkout's
+   full `HEAD` sha, the build time and `clean`. `defaults read
+   ~/Applications/Flick.app/Contents/Info.plist CFBundleVersion` prints `0.0.1+<short sha>`.
+2. Make a local commit and open the launcher. **Rebuild Available** shows, and the **Flick
+   Version** subtitle reads `1 commit newer in ~/Projects/flick: <subject>`.
+3. Leave an uncommitted edit and run **Rebuild Flick**. The build view counts seconds and
+   shows the last log line; `flick flick status` prints `building <n>s`. Flick restarts,
+   `pgrep -x Flick | wc -l` prints 1, and the version is the new sha, `clean`.
+4. Run **Rebuild Flick (Dirty)**. After the restart the version ends in `-dirty`.
+5. Add a compile error and run a dirty build. The log opens, the view shows **Build Failed
+   (see log)**, and `pgrep -x Flick` and `flick flick version` do not change.
+6. Start a build and run **Cancel Build**. `pgrep cargo` prints nothing.
+7. With the launcher closed, run `flick flick rebuild` in a terminal. It returns at once
+   and Flick restarts on the new build.
+8. Repeat step 3 under the launchd agent (`launchctl print
+   gui/$(id -u)/org.nix-community.home.flick`) and without it. Each time one Flick runs, and
+   with an Apple Development identity, window snap works without an Accessibility prompt.
+9. `flick flick rebuild --source <agent worktree>` installs that worktree's `HEAD`, and
+   `flick flick version` reports its sha.
+10. With no build running, Activity Monitor shows Flick near 0% CPU over 60 s.
 
 ## How to add a module
 

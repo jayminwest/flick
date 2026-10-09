@@ -213,12 +213,15 @@ pub fn on_event(event: Event) {
         if let Some(s) = s.as_mut() {
             let stale = s.registry.dispatch(event, &mut s.env.cx(""));
             control::publish(event);
-            let list = match &s.screen {
-                Screen::List(view) => Some(view.module),
-                _ => None,
+            // Root search lists every module's items, so a module's own background change
+            // refreshes it too.
+            let changed = match &s.screen {
+                Screen::List(view) => stale.contains(&view.module),
+                Screen::Root => matches!(event, Event::ModuleChanged { .. }),
+                _ => false,
             };
-            if list.is_some_and(|m| stale.contains(&m)) && ui::is_visible() {
-                s.refresh();
+            if changed && ui::is_visible() {
+                s.refresh_keeping_selection();
             }
             // A screen the open panel was on may have moved or gone.
             if event == Event::DisplaysChanged && ui::is_visible() {
@@ -303,6 +306,17 @@ impl State {
         self.selected = 0;
         self.scroll = 0;
         self.render();
+    }
+
+    /// `refresh` for a change the user did not make: the selected item stays selected
+    /// while it is still listed.
+    fn refresh_keeping_selection(&mut self) {
+        let selected = self.results.get(self.selected).map(|i| i.id.clone());
+        self.refresh();
+        let at = selected.and_then(|id| self.results.iter().position(|i| i.id == id));
+        if let Some(at) = at.filter(|&at| at > 0) {
+            self.move_selection(at as isize);
+        }
     }
 
     /// Recompute `results` for the screen and the search field.
