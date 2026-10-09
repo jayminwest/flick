@@ -44,8 +44,8 @@ Limits:
 The `keys` module replaces two background apps:
 
 - **Hyperkey** turns Caps Lock into Hyper (`cmd+ctrl+alt+shift`), and a quick press into Escape.
-- **Hammerspoon** runs `~/.hammerspoon/init.lua` (written by kota-voice
-  `src/trigger/hammerspoon.ts`). It starts kota-voice listening while right-Command and
+- **Hammerspoon** runs `~/.hammerspoon/init.lua` (written by a voice app).
+  It starts the voice app listening while right-Command and
   right-Option are both held, and stops it when one is released.
 
 This section has the dotfiles config, the steps to move over, and a manual test checklist.
@@ -63,7 +63,7 @@ hyper = "caps_lock"
 hyper_tap = "Escape"
 hyper_tap_ms = 300
 
-# kota-voice push-to-talk: hold right-Command and right-Option. Replaces Hammerspoon.
+# Voice push-to-talk: hold right-Command and right-Option. Replaces Hammerspoon.
 # The endpoints are idempotent, and both keys still reach the app under them.
 [[keys.chord]]
 name = "ptt"
@@ -100,8 +100,8 @@ Do the steps in this order. Hyperkey and Flick must never both remap Caps Lock.
 7. Do the manual tests below.
 8. Remove the old apps from the dotfiles: the `"hammerspoon"` cask in
    `~/.dotfiles/hosts/workstation.nix` and `~/.dotfiles/hosts/mbp-server.nix`. Hyperkey is not
-   in the dotfiles: move `Hyperkey.app` to the Trash by hand. Then stop kota-voice from writing `~/.hammerspoon/init.lua`
-   (`src/trigger/hammerspoon.ts` in kota-voice), and delete that file.
+   in the dotfiles: move `Hyperkey.app` to the Trash by hand. Then stop the voice app
+   from writing `~/.hammerspoon/init.lua`, and delete that file.
 
 To go back: remove the `[keys]` table, reload Flick (this clears the Caps Lock remap), and
 start Hyperkey and Hammerspoon again.
@@ -123,8 +123,8 @@ Push-to-talk:
 
 - [ ] In one terminal, run `flick events`. Hold right-Command + right-Option, then release one.
       Expect `{"event":"chord","index":0,"down":true}`, then `..."down":false}`.
-- [ ] kota-voice starts listening on the press and stops on the release (its log shows one
-      start and one stop). Without kota-voice: quit it, run `nc -l 8600`, and expect one
+- [ ] The voice app starts listening on the press and stops on the release (its log shows one
+      start and one stop). Without the voice app: quit it, run `nc -l 8600`, and expect one
       `POST /pipeline/listen/start` request per press (start `nc` again for the stop).
 - [ ] 20 presses in a row: each one starts and stops listening.
 - [ ] Left-Command + left-Option does nothing. Right-Command + right-Option + a letter still
@@ -149,7 +149,7 @@ Everything else still works:
 
 Recovery:
 
-- [ ] Sleep the Mac while holding right-Command + right-Option, wake it: kota-voice stops
+- [ ] Sleep the Mac while holding right-Command + right-Option, wake it: the voice app stops
       listening, and push-to-talk and Hyper work again within 5 s.
 - [ ] Turn Flick off in Accessibility: `flick keys status` says `Accessibility needed`, and
       Caps Lock does nothing. Turn it on again: within 5 s the status says
