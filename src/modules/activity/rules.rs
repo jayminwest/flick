@@ -1,6 +1,6 @@
-//! Table `[activity]`: privacy switches (`titles`, `exclude`), the recording `hotkey`,
-//! `merge_secs`, and `[[activity.rules]]`, which name a project and category for spans at
-//! report time (never stored, so editing a rule recategorizes history).
+//! Table `[activity]`: privacy switches (`titles`, `remote_titles`, `exclude`), the
+//! recording `hotkey`, `merge_secs`, and `[[activity.rules]]`, which name a project and
+//! category for spans at report time (never stored, so editing a rule recategorizes history).
 
 use regex_lite::{Regex, RegexBuilder};
 use serde::Deserialize;
@@ -16,6 +16,7 @@ const EXCLUDE: [&str; 3] =
 #[serde(default)]
 struct Settings {
     titles: bool,
+    remote_titles: bool,
     exclude: Vec<String>,
     hotkey: String,
     merge_secs: i64,
@@ -26,6 +27,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             titles: false,
+            remote_titles: false,
             exclude: EXCLUDE.map(String::from).to_vec(),
             hotkey: String::new(),
             merge_secs: MERGE_SECS,
@@ -63,6 +65,8 @@ impl Rule {
 pub struct Config {
     /// Read and store window titles (off: Flick never reads them).
     pub titles: bool,
+    /// Remote callers (`Cx::remote`) with a grant see window titles (off: titles dropped).
+    pub remote_titles: bool,
     /// Lowercased bundle ids and app names never recorded.
     exclude: Vec<String>,
     pub hotkey: Option<String>,
@@ -75,6 +79,7 @@ impl Default for Config {
         let s = Settings::default();
         Config {
             titles: s.titles,
+            remote_titles: s.remote_titles,
             exclude: s.exclude.iter().map(|e| e.to_lowercase()).collect(),
             hotkey: None,
             merge_secs: s.merge_secs,
@@ -131,6 +136,7 @@ fn compile(s: Settings) -> Result<Config, String> {
         .collect::<Result<_, String>>()?;
     Ok(Config {
         titles: s.titles,
+        remote_titles: s.remote_titles,
         exclude: s.exclude.iter().map(|e| e.to_lowercase()).collect(),
         hotkey: Some(s.hotkey).filter(|h| !h.trim().is_empty()),
         merge_secs: s.merge_secs,
