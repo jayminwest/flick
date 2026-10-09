@@ -54,6 +54,8 @@ modules! {
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
+// Not registered yet: its `modules!` line, with `control::net::HOOKS`, lands in flick-3537.
+mod remote;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;
