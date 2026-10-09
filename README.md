@@ -148,6 +148,8 @@ A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mod
 ```bash
 flick app list                 # <name>\t<path> per app
 flick app open Safari
+flick app quit Safari          # asks it to quit, like cmd+Q; force-quit forces it
+flick app reveal Safari        # show the bundle in Finder
 flick clip list                # <id>\t<first line>, newest first
 flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
