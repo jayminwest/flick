@@ -1,0 +1,43 @@
+# Layer boundaries, enforced by scripts/checks/layers.sh (gate check:layers).
+#
+# A small awk reader parses this file: only [[rule]] and [[allow]] tables, and
+# one-line `key = 'literal'`, `key = "string"` or `key = true|false` pairs.
+#
+# [[rule]]
+#   name     unique id; [[allow]] entries refer to it
+#   why      what the boundary protects (required)
+#   paths    directory the rule scans (*.rs files under it); a missing directory passes
+#   except   optional directory under `paths` that the rule skips
+#   each     true: check each child directory of `paths` on its own; `{self}` in
+#            `ignore` becomes that directory's name
+#   pattern  extended regex (grep -E); a matching non-comment line is a violation
+#   ignore   optional extended regex; matching lines are not violations
+#   enabled  false parks a rule until the layout can pass it; say which seed enables it
+#
+# [[allow]]  one file exempt from one rule
+#   rule, path, why (all required). An allow entry that no longer matches a
+#   violation of an enabled rule fails the gate: delete it.
+
+[[rule]]
+name = "platform-owns-ffi"
+why = "only src/platform may hold unsafe code or touch objc2/AppKit/CF/AX/Carbon; everything else calls its safe API"
+paths = "src"
+except = "src/platform"
+pattern = '\bunsafe\b|\bobjc2|\bblock2\b|extern "C"'
+enabled = false # enabled by flick-ee5b, which moves the FFI into src/platform
+
+[[rule]]
+name = "core-is-pure"
+why = "src/core stays plain Rust that unit tests can run without AppKit"
+paths = "src/core"
+pattern = 'crate::platform|\bunsafe\b|\bobjc2'
+enabled = true
+
+[[rule]]
+name = "modules-are-independent"
+why = "a module depends on core and platform only, so removing one never breaks another"
+paths = "src/modules"
+each = true
+pattern = 'crate::modules::|super::super::'
+ignore = 'crate::modules::{self}\b'
+enabled = true

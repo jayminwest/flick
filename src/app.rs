@@ -1,17 +1,22 @@
 //! Controller: launcher state, modes, and actions. All calls happen on the main thread.
 
+#![expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
+)]
+
 use std::cell::RefCell;
 
 use objc2::runtime::Sel;
-use objc2::{sel, MainThreadMarker};
+use objc2::{MainThreadMarker, sel};
 use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSWorkspace};
 use objc2_foundation::{NSString, NSURL};
 
 use crate::apps::{self, App};
 use crate::config::{self, Config};
-use crate::search::{frecency, Action, Icon, Item, Ranker};
+use crate::search::{Action, Icon, Item, Ranker, frecency};
 use crate::store::{self, Store};
-use crate::ui::{self, View, VISIBLE_ROWS};
+use crate::ui::{self, VISIBLE_ROWS, View};
 use crate::windows::{self, WindowAction};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -45,6 +50,7 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     STATE.with(|s| s.borrow_mut().as_mut().map(f))
 }
 
+#[expect(clippy::expect_used, reason = "AppKit callbacks only ever run on the main thread")]
 fn mtm() -> MainThreadMarker {
     MainThreadMarker::new().expect("Flick UI runs on the main thread")
 }
@@ -129,7 +135,10 @@ pub fn command(sel: Sel) -> bool {
             s.activate();
         } else if sel == sel!(insertTab:) {
             // Tab fills in a quicklink's argument, like Raycast.
-            if matches!(s.results.get(s.selected).map(|i| &i.action), Some(Action::Quicklink { query: None, .. })) {
+            if matches!(
+                s.results.get(s.selected).map(|i| &i.action),
+                Some(Action::Quicklink { query: None, .. })
+            ) {
                 s.activate();
             }
         } else if sel == sel!(cancelOperation:) {
@@ -256,7 +265,8 @@ impl State {
         };
         ui::set_query("", &placeholder);
         if mode == Mode::Windows {
-            self.windows = windows::list_windows(&crate::spaces::recent(), crate::spaces::frontmost_pid());
+            self.windows =
+                windows::list_windows(&crate::spaces::recent(), crate::spaces::frontmost_pid());
         }
         self.refresh();
     }
@@ -269,7 +279,8 @@ impl State {
             Mode::Windows => self.window_results(&query),
             Mode::Argument(index) => {
                 let q = &self.config.quicklinks[index];
-                let subtitle = if query.is_empty() { "Type a query".into() } else { q.expand(&query) };
+                let subtitle =
+                    if query.is_empty() { "Type a query".into() } else { q.expand(&query) };
                 vec![Item {
                     id: format!("quicklink:{}", q.name),
                     title: q.name.clone(),
@@ -298,15 +309,18 @@ impl State {
                 q.takes_query() && q.keyword.as_deref() == Some(keyword) && !rest.trim().is_empty()
             });
             if let Some((index, q)) = link {
-                results.insert(0, Item {
-                    id: format!("quicklink:{}", q.name),
-                    title: q.name.clone(),
-                    subtitle: format!("“{}”", rest.trim()),
-                    accessory: "Quicklink".into(),
-                    icon: Icon::Symbol("link"),
-                    action: Action::Quicklink { index, query: Some(rest.trim().to_string()) },
-                    keywords: vec![],
-                });
+                results.insert(
+                    0,
+                    Item {
+                        id: format!("quicklink:{}", q.name),
+                        title: q.name.clone(),
+                        subtitle: format!("“{}”", rest.trim()),
+                        accessory: "Quicklink".into(),
+                        icon: Icon::Symbol("link"),
+                        action: Action::Quicklink { index, query: Some(rest.trim().to_string()) },
+                        keywords: vec![],
+                    },
+                );
             }
         }
         results
@@ -373,14 +387,24 @@ impl State {
             (None, Mode::Root) => "Flick".into(),
             (None, Mode::Clipboard) => "Clipboard History  ·  esc to go back".into(),
             (None, Mode::Windows) => format!("{} windows", self.windows.len()),
-            (None, Mode::Argument(i)) => format!("{}  ·  esc to go back", self.config.quicklinks[i].name),
+            (None, Mode::Argument(i)) => {
+                format!("{}  ·  esc to go back", self.config.quicklinks[i].name)
+            }
         };
         let empty = match self.mode {
             Mode::Clipboard if ui::query().is_empty() => "Clipboard history is empty",
-            Mode::Windows if self.windows.is_empty() => "No windows (Flick needs Accessibility permission)",
+            Mode::Windows if self.windows.is_empty() => {
+                "No windows (Flick needs Accessibility permission)"
+            }
             _ => "No Results",
         };
-        ui::render(&View { items: &self.results, selected: self.selected, scroll: self.scroll, footer: &footer, empty });
+        ui::render(&View {
+            items: &self.results,
+            selected: self.selected,
+            scroll: self.scroll,
+            footer: &footer,
+            empty,
+        });
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -410,9 +434,9 @@ impl State {
         match item.action {
             Action::LaunchApp(path) => {
                 ui::hide();
-                NSWorkspace::sharedWorkspace().openURL(&NSURL::fileURLWithPath(&NSString::from_str(
-                    &path.display().to_string(),
-                )));
+                NSWorkspace::sharedWorkspace().openURL(&NSURL::fileURLWithPath(
+                    &NSString::from_str(&path.display().to_string()),
+                ));
             }
             Action::Window(action) => {
                 ui::hide();
@@ -450,7 +474,8 @@ impl State {
             }
             Action::OpenConfig => {
                 ui::hide();
-                let _ = std::process::Command::new("open").arg("-t").arg(config::config_path()).spawn();
+                let _ =
+                    std::process::Command::new("open").arg("-t").arg(config::config_path()).spawn();
             }
             Action::ReloadConfig => match config::load() {
                 Ok(config) => {

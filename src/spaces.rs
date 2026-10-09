@@ -1,6 +1,12 @@
 //! Desktop toggle. There is no public Spaces API, so this goes through apps: activate the most
 //! recently used app whose windows are all on another Space, and macOS switches to that Space.
 
+#![expect(
+    clippy::undocumented_unsafe_blocks,
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
+)]
+
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ptr::NonNull;
@@ -8,8 +14,13 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
-use objc2_foundation::{NSArray, NSDictionary, NSNotification, NSNumber, NSObjectProtocol, NSString};
+use objc2_app_kit::{
+    NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace,
+    NSWorkspaceDidActivateApplicationNotification,
+};
+use objc2_foundation::{
+    NSArray, NSDictionary, NSNotification, NSNumber, NSObjectProtocol, NSString,
+};
 
 const MAX_RECENT: usize = 32;
 
@@ -65,7 +76,10 @@ const CG_WINDOW_LIST_EXCLUDE_DESKTOP: u32 = 16;
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
-    fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *mut NSArray<NSDictionary<NSString>>;
+    fn CGWindowListCopyWindowInfo(
+        option: u32,
+        relative_to: u32,
+    ) -> *mut NSArray<NSDictionary<NSString>>;
 }
 
 /// Pids owning normal (layer 0) windows: on the current Space only, or anywhere.
@@ -77,7 +91,8 @@ pub fn window_pids(current_space_only: bool) -> HashSet<i32> {
     let Some(list) = (unsafe { Retained::from_raw(CGWindowListCopyWindowInfo(option, 0)) }) else {
         return HashSet::new();
     };
-    let (pid_key, layer_key) = (NSString::from_str("kCGWindowOwnerPID"), NSString::from_str("kCGWindowLayer"));
+    let (pid_key, layer_key) =
+        (NSString::from_str("kCGWindowOwnerPID"), NSString::from_str("kCGWindowLayer"));
     let number = |info: &NSDictionary<NSString>, key: &NSString| {
         info.objectForKey(key).and_then(|v| v.downcast::<NSNumber>().ok()).map(|n| n.intValue())
     };
@@ -126,7 +141,8 @@ pub fn toggle() -> Result<(), &'static str> {
         .collect();
     let pid = pick(&recent, &fallback, frontmost_pid(), &window_pids(true), &window_pids(false))
         .ok_or("No app on another desktop")?;
-    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid).ok_or("App quit")?;
+    let app =
+        NSRunningApplication::runningApplicationWithProcessIdentifier(pid).ok_or("App quit")?;
     if !open_app(&app) {
         return Err("App has no bundle");
     }

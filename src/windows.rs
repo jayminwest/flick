@@ -3,15 +3,21 @@
 //! Geometry uses the Accessibility coordinate space: origin at the top-left of the
 //! primary screen, y grows downward.
 
+#![expect(
+    clippy::undocumented_unsafe_blocks,
+    clippy::multiple_unsafe_ops_per_block,
+    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
+)]
+
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::path::PathBuf;
 
+use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSScreen, NSWorkspace};
 use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSPoint, NSRect, NSSize, NSString};
 
@@ -122,11 +128,10 @@ impl WindowAction {
             Self::BottomLeft => "rectangle.inset.bottomleft.filled",
             Self::BottomRight => "rectangle.inset.bottomright.filled",
             Self::FirstThird | Self::FirstTwoThirds => "rectangle.leadingthird.inset.filled",
-            Self::CenterThird => "rectangle.center.inset.filled",
+            Self::CenterThird | Self::Center => "rectangle.center.inset.filled",
             Self::LastThird | Self::LastTwoThirds => "rectangle.trailingthird.inset.filled",
             Self::Maximize => "rectangle.inset.filled",
             Self::AlmostMaximize => "rectangle.dashed",
-            Self::Center => "rectangle.center.inset.filled",
             Self::NextDisplay | Self::PreviousDisplay => "display.2",
             Self::Minimize => "minus.square",
             Self::Hide => "eye.slash",
@@ -172,6 +177,11 @@ impl WindowAction {
     }
 
     /// Like `target`, but repeating a half cycles its size through 1/2, 2/3, 1/3 (as Rectangle does).
+    #[expect(
+        clippy::items_after_statements,
+        clippy::unwrap_used,
+        reason = "SIZES[0] is checked to frame above, so every size frames"
+    )]
     pub fn cycled(self, a: Rect, current: Rect) -> Rect {
         let frame = |f: f64| {
             let r = match self {
@@ -218,7 +228,11 @@ const KEY_V: u16 = 9;
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
-    fn AXUIElementCopyAttributeValue(el: AXUIElementRef, attr: CFTypeRef, value: *mut CFTypeRef) -> i32;
+    fn AXUIElementCopyAttributeValue(
+        el: AXUIElementRef,
+        attr: CFTypeRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
     fn AXUIElementSetAttributeValue(el: AXUIElementRef, attr: CFTypeRef, value: CFTypeRef) -> i32;
     fn AXValueCreate(kind: u32, value: *const c_void) -> CFTypeRef;
     fn AXValueGetValue(v: CFTypeRef, kind: u32, out: *mut c_void) -> bool;
@@ -306,7 +320,9 @@ fn focused_window() -> Option<Cf> {
 fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
     let attr = NSString::from_str(attr);
     let mut value: CFTypeRef = ptr::null();
-    if unsafe { AXUIElementCopyAttributeValue(win.0, cfstr(&attr), &mut value) } != 0 || value.is_null() {
+    if unsafe { AXUIElementCopyAttributeValue(win.0, cfstr(&attr), &mut value) } != 0
+        || value.is_null()
+    {
         return None;
     }
     let value = Cf(value);
@@ -353,7 +369,8 @@ fn screen_areas(mtm: MainThreadMarker) -> Vec<Rect> {
 pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static str> {
     // Hide acts on the app, like cmd+H: instant, and needs no Accessibility permission.
     if action == WindowAction::Hide {
-        let app = NSWorkspace::sharedWorkspace().frontmostApplication().ok_or("No frontmost app")?;
+        let app =
+            NSWorkspace::sharedWorkspace().frontmostApplication().ok_or("No frontmost app")?;
         app.hide();
         return Ok(());
     }
@@ -420,7 +437,9 @@ fn bool_attr(el: CFTypeRef, attr: &str) -> bool {
 fn set_bool_attr(el: CFTypeRef, attr: &str, value: bool) {
     let attr = NSString::from_str(attr);
     let value = NSNumber::new_bool(value);
-    unsafe { AXUIElementSetAttributeValue(el, cfstr(&attr), Retained::as_ptr(&value) as CFTypeRef) };
+    unsafe {
+        AXUIElementSetAttributeValue(el, cfstr(&attr), Retained::as_ptr(&value) as CFTypeRef)
+    };
 }
 
 /// Standard windows of every regular app, apps in `recent` order (most recent first).
@@ -432,7 +451,7 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
     let me = std::process::id() as i32;
     let elsewhere = crate::spaces::window_pids(false);
     let mut out = Vec::new();
-    for app in NSWorkspace::sharedWorkspace().runningApplications().iter() {
+    for app in &NSWorkspace::sharedWorkspace().runningApplications() {
         let pid = app.processIdentifier();
         if pid == me || app.activationPolicy() != NSApplicationActivationPolicy::Regular {
             continue;
@@ -450,7 +469,9 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
             if string_attr(el, "AXSubrole").as_deref() != Some("AXStandardWindow") {
                 continue;
             }
-            let title = string_attr(el, "AXTitle").filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
+            let title = string_attr(el, "AXTitle")
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| name.clone());
             out.push(AppWindow {
                 pid,
                 title,
@@ -461,7 +482,14 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
             });
         }
         if out.len() == before && elsewhere.contains(&pid) && !app.isHidden() {
-            out.push(AppWindow { pid, title: name.clone(), app: name, bundle, minimized: false, element: None });
+            out.push(AppWindow {
+                pid,
+                title: name.clone(),
+                app: name,
+                bundle,
+                minimized: false,
+                element: None,
+            });
         }
     }
 
@@ -476,7 +504,9 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
 
 /// Raise `w` and activate its app (switching desktops if needed).
 pub fn focus(w: &AppWindow) {
-    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid) else { return };
+    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid) else {
+        return;
+    };
     if app.isHidden() {
         app.unhide();
     }
@@ -505,9 +535,18 @@ mod tests {
 
     #[test]
     fn halves_and_quarters() {
-        assert_eq!(WindowAction::LeftHalf.target(AREA, WIN), Rect { x: 0.0, y: 25.0, w: 600.0, h: 800.0 });
-        assert_eq!(WindowAction::BottomRight.target(AREA, WIN), Rect { x: 600.0, y: 425.0, w: 600.0, h: 400.0 });
-        assert_eq!(WindowAction::LastTwoThirds.target(AREA, WIN), Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 });
+        assert_eq!(
+            WindowAction::LeftHalf.target(AREA, WIN),
+            Rect { x: 0.0, y: 25.0, w: 600.0, h: 800.0 }
+        );
+        assert_eq!(
+            WindowAction::BottomRight.target(AREA, WIN),
+            Rect { x: 600.0, y: 425.0, w: 600.0, h: 400.0 }
+        );
+        assert_eq!(
+            WindowAction::LastTwoThirds.target(AREA, WIN),
+            Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 }
+        );
     }
 
     #[test]
@@ -532,7 +571,10 @@ mod tests {
 
     #[test]
     fn center_keeps_size() {
-        assert_eq!(WindowAction::Center.target(AREA, WIN), Rect { x: 400.0, y: 275.0, w: 400.0, h: 300.0 });
+        assert_eq!(
+            WindowAction::Center.target(AREA, WIN),
+            Rect { x: 400.0, y: 275.0, w: 400.0, h: 300.0 }
+        );
     }
 
     #[test]
