@@ -136,8 +136,19 @@ impl Module for Quicklinks {
             return Outcome::Stay(None);
         }
         let url = link.expand(query.trim());
+        // Resolve the app first: an unknown one is a status line while the launcher stays up.
+        let app = match link.app.as_deref() {
+            Some(app) => match workspace::find_app(app) {
+                Some(path) => Some(path),
+                None => return Outcome::Stay(Some(format!("No app \"{app}\" to open {}", link.name))),
+            },
+            None => None,
+        };
         cx.hide();
-        workspace::open_url(&url);
+        match app {
+            Some(app) => workspace::open_url_with(&url, &app),
+            None => workspace::open_url(&url),
+        }
         Outcome::Hide
     }
 }
@@ -171,5 +182,19 @@ mod tests {
         let items = crate::core::test_cx("", |cx| m.items(cx));
         let ids: Vec<_> = items.iter().map(|i| i.id.to_string()).collect();
         assert_eq!(ids, ["quicklink:Docs", "quicklink:docs"]);
+    }
+
+    #[test]
+    fn open_with_app_is_optional_and_an_unknown_app_is_a_status() {
+        let text = "[[quicklink.links]]\nname = \"Docs\"\nurl = \"https://docs.rs\"\n\
+                    app = \"No Such App 7f3e\"\n\
+                    [[quicklink.links]]\nname = \"Plain\"\nurl = \"/\"\n";
+        let mut m = configured(text).unwrap();
+        assert_eq!(m.links[0].app.as_deref(), Some("No Such App 7f3e"));
+        assert_eq!(m.links[1].app, None);
+        let id = ItemId::new("quicklink", "Docs").with_arg(String::new());
+        let out = crate::core::test_cx("", |cx| m.activate(&id, cx));
+        let msg = "No app \"No Such App 7f3e\" to open Docs";
+        assert!(matches!(out, Outcome::Stay(Some(s)) if s == msg));
     }
 }
