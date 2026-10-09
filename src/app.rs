@@ -53,21 +53,28 @@ fn registry(config: &Config) -> Result<Registry, String> {
     modules::registry(config).map_err(|e| format!("{}: {e}", config::config_path().display()))
 }
 
-/// The modules `config` sets up. A bad module table means defaults, like a bad file.
-fn modules_for(config: Config) -> (Config, Registry) {
-    match registry(&config) {
+/// The modules `build` sets up from `config`. A bad module table means defaults, like a
+/// bad file.
+fn modules_for(
+    config: Config,
+    build: impl Fn(&Config) -> Result<Registry, String>,
+) -> (Config, Registry) {
+    match build(&config) {
         Ok(registry) => (config, registry),
         Err(e) => {
             eprintln!("flick: {e}; using defaults");
             let config = Config::default();
-            let registry = modules::registry(&config).unwrap_or_else(|_| Registry::new(vec![]));
+            let registry = build(&config).unwrap_or_else(|_| Registry::new(vec![]));
             (config, registry)
         }
     }
 }
 
-pub fn init(config: Config, store: Store) {
-    let (config, registry) = modules_for(config);
+/// Set up the controller. Returns the launcher hotkey in effect, which is the default one
+/// when `config` falls back to defaults.
+pub fn init(config: Config, store: Store) -> String {
+    let (config, registry) = modules_for(config, registry);
+    let launcher = config.hotkey.clone();
     let mut state = State {
         view: None,
         registry,
@@ -82,6 +89,7 @@ pub fn init(config: Config, store: Store) {
     }
     state.registry.dispatch(Event::Started, &mut state.env.cx(""));
     STATE.with(|s| *s.borrow_mut() = Some(state));
+    launcher
 }
 
 /// Bind the launcher hotkey and every module's hotkeys from the current config.
@@ -317,5 +325,21 @@ impl State {
                 self.set_status(status);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_bad_module_table_falls_back_to_the_default_hotkey() {
+        let build = |c: &Config| modules::with_apps(c, vec![]);
+        let (config, _) = modules_for(config::parse("hotkey = \"cmd+K\"").unwrap(), build);
+        assert_eq!(config.hotkey, "cmd+K");
+        let bad = config::parse("hotkey = \"cmd+K\"\n[window]\nenabled = 1").unwrap();
+        let (config, registry) = modules_for(bad, build);
+        assert_eq!(config.hotkey, Config::default().hotkey);
+        assert!(!registry.into_modules().is_empty());
     }
 }

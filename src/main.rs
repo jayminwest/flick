@@ -44,10 +44,10 @@ fn launch() {
     let store = store::Store::open(&db)
         .unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
 
-    let launcher = config.hotkey.clone();
     let hotkeys = hotkey::init();
     ui::init();
-    app::init(config, store);
+    // After init: a bad module table swaps in the default config, hotkey included.
+    let launcher = app::init(config, store);
     if let Err(e) = hotkeys.and_then(|()| app::bind_hotkeys()) {
         eprintln!("flick: {e}");
     }
