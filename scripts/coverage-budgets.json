@@ -10,6 +10,8 @@
     "src/modules/activity/rules.rs": 100.0,
     "src/modules/activity/store.rs": 100.0,
     "src/modules/apps/leftovers.rs": 100.0,
+    "src/modules/bridge/agent.rs": 100.0,
+    "src/modules/bridge/brief.rs": 100.0,
     "src/modules/capture/name.rs": 100.0,
     "src/modules/capture/store.rs": 100.0,
     "src/modules/capture/view.rs": 98.3,
