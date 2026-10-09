@@ -1,9 +1,10 @@
 //! Control socket replies: scripts parse them. Text answers stay `{"ok":"<text>"}` with or
 //! without `--json`; a module that reads `Cx::json` and answers a JSON object or array gets
-//! `{"ok":<value>}`; errors are `{"error":"<message>"}`.
+//! `{"ok":<value>}`; errors are `{"error":"<message>"}`. A `--remote` word before `--json`
+//! sets `Cx::remote` and changes nothing for modules that ignore it.
 
 use crate::config::Config;
-use crate::core::control::{Reply, split_json};
+use crate::core::control::{Reply, split_flags};
 use crate::core::{Cx, Module, Registry, test_cx};
 use crate::modules::{Clips, with_apps};
 
@@ -20,12 +21,29 @@ impl Module for Report {
     }
 }
 
+/// A module that refuses remote callers.
+struct Private;
+
+impl Module for Private {
+    fn id(&self) -> &'static str {
+        "private"
+    }
+
+    fn command(&mut self, _args: &[String], cx: &mut Cx) -> Result<String, String> {
+        if cx.remote {
+            return Err("private: remote use not permitted".into());
+        }
+        Ok(if cx.json { r#"{"n":1}"#.into() } else { "n 1".into() })
+    }
+}
+
 /// The reply line for request `words`, as the control socket builds it.
 fn reply(registry: &mut Registry, words: &[&str], cx: &mut Cx) -> String {
-    let (words, json) = split_json(words.iter().map(|w| (*w).to_string()).collect());
-    cx.json = json;
+    let (words, flags) = split_flags(words.iter().map(|w| (*w).to_string()).collect());
+    cx.json = flags.json;
+    cx.remote = flags.remote;
     let result = registry.command(&words, cx);
-    Reply::answer(result, json).to_line()
+    Reply::answer(result, flags.json).to_line()
 }
 
 #[test]
@@ -81,5 +99,42 @@ fn capture_ls_json_is_an_array() {
             reply(&mut registry, &["capture", "last", "--json"], cx),
             r#"{"error":"capture: no captures yet"}"#
         );
+    });
+}
+
+#[test]
+fn remote_requests_answer_like_local_ones_unless_a_module_checks() {
+    let mut registry = with_apps(&Config::default(), vec![]).unwrap();
+    test_cx("", |cx| {
+        registry.migrate(cx.store).unwrap();
+        cx.store.add_clip("x");
+        // Modules that ignore Cx::remote: identical replies with and without --remote.
+        for request in [&["clip", "list"][..], &["capture", "ls"], &["clip", "nope"]] {
+            let local = reply(&mut registry, request, cx);
+            let remote = reply(&mut registry, &[request, &["--remote"]].concat(), cx);
+            assert_eq!(remote, local, "{request:?}");
+            let local = reply(&mut registry, &[request, &["--json"]].concat(), cx);
+            let remote = reply(&mut registry, &[request, &["--remote", "--json"]].concat(), cx);
+            assert_eq!(remote, local, "{request:?} --json");
+        }
+        assert_eq!(
+            reply(&mut registry, &["capture", "ls", "--remote", "--json"], cx),
+            r#"{"ok":[]}"#
+        );
+    });
+}
+
+#[test]
+fn a_module_that_checks_remote_sees_only_the_trailing_word() {
+    let mut registry = Registry::new(vec![Box::new(Private)]);
+    test_cx("", |cx| {
+        assert_eq!(reply(&mut registry, &["private", "n"], cx), r#"{"ok":"n 1"}"#);
+        assert_eq!(reply(&mut registry, &["private", "n", "--json"], cx), r#"{"ok":{"n":1}}"#);
+        let refused = r#"{"error":"private: remote use not permitted"}"#;
+        assert_eq!(reply(&mut registry, &["private", "n", "--remote"], cx), refused);
+        assert_eq!(reply(&mut registry, &["private", "n", "--remote", "--json"], cx), refused);
+        // Elsewhere --remote is an argument, and --json before it is too.
+        assert_eq!(reply(&mut registry, &["private", "--remote", "n"], cx), r#"{"ok":"n 1"}"#);
+        assert_eq!(reply(&mut registry, &["private", "n", "--json", "--remote"], cx), refused);
     });
 }

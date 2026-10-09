@@ -324,6 +324,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   array as its `Ok` text; the reply is then `{"ok":<value>}`, re-serialized on one line.
   Any other text, and every reply to a request without `--json`, stays `{"ok":"<text>"}`, so
   modules that ignore `Cx::json` answer exactly as before. Only a trailing `--json` counts.
+- Remote callers: a `--remote` word that is last, or just before a trailing `--json`, marks
+  a request from a session that may send its output to a remote model (an agent).
+  `core::control::split_flags` takes `--json` off first, then `--remote`; `control::on_main`
+  passes both as `Flags` to `app::control`, which sets `Cx::remote` (false for events,
+  hotkeys, the launcher and `test_cx`). A module may refuse or trim a remote request; a
+  module that ignores `Cx::remote` answers exactly as without it. The word is a guard against
+  accidents, not a security boundary: any local process can send or omit it.
 - `["reload"]` is handled by the controller. Every other request goes to
   `Registry::command`, which matches the first word against module ids.
 - `["events"]` turns the connection into an event stream, one JSON object per line. A
@@ -335,7 +342,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   through `events::on_main`; the socket thread waits for the reply.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) sends `--json` as the last request word and
-  prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. Exit 0 for `ok`, 1 for
+  prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With
+  `$FLICK_REMOTE` set and not empty, the client sends `--remote` before `--json` (`flick
+  events` ignores it). Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
 

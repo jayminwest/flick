@@ -9,7 +9,7 @@ use std::sync::mpsc;
 
 use crate::config;
 use crate::core::Event;
-use crate::core::control::{Reply, split_json};
+use crate::core::control::{Reply, split_flags};
 use crate::platform::events;
 use server::Hub;
 
@@ -34,16 +34,16 @@ pub fn publish(event: Event) {
     HUB.publish(|| serde_json::to_string(&event).unwrap_or_default());
 }
 
-/// Run a request on the main thread and wait for its reply. A trailing `--json` is taken
-/// off the words and asks for a structured reply.
+/// Run a request on the main thread and wait for its reply. Trailing `--json` and
+/// `--remote` words are taken off and set `Cx::json` and `Cx::remote`.
 fn on_main(words: Vec<String>) -> Reply {
-    let (words, json) = split_json(words);
+    let (words, flags) = split_flags(words);
     let (tx, rx) = mpsc::channel();
     events::on_main(move || {
-        let _ = tx.send(crate::app::control(&words, json));
+        let _ = tx.send(crate::app::control(&words, flags));
     });
     rx.recv().map_or_else(
         |_| Reply::Error("the request failed inside Flick".into()),
-        |result| Reply::answer(result, json),
+        |result| Reply::answer(result, flags.json),
     )
 }
