@@ -68,6 +68,10 @@ pub trait TaskStore {
     /// Every task (`all`) or the ones not done: doing first, then most recently updated.
     fn task_list(&self, all: bool) -> Vec<Task>;
     fn task_set_status(&self, id: i64, status: Status, now: i64);
+    /// Give task `id` a new title and project. `Err` when another task has both.
+    fn task_rename(&self, id: i64, title: &str, project: Option<&str>, now: i64) -> Result<(), String>;
+    /// Delete task `id` and its time rows.
+    fn task_delete(&self, id: i64);
     /// Insert a time row `at..at` for task `task`; its row id.
     fn time_open(&self, task: i64, at: i64) -> Option<i64>;
     /// Move row `id`'s end to `at`, never before its start.
@@ -142,6 +146,33 @@ impl TaskStore for Store {
             "UPDATE task_list SET status = ?2, updated = ?3 WHERE id = ?1",
             params![id, status.as_str(), now],
         );
+    }
+
+    fn task_rename(&self, id: i64, title: &str, project: Option<&str>, now: i64) -> Result<(), String> {
+        let conn = self.conn();
+        let err = |e: rusqlite::Error| format!("task: {e}");
+        let taken: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM task_list WHERE title = ?1 AND project IS ?2 AND id != ?3",
+                params![title, project, id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(err)?;
+        if let Some(other) = taken {
+            return Err(format!("task: task {other} is already called \"{title}\""));
+        }
+        let updated = conn.execute(
+            "UPDATE task_list SET title = ?2, project = ?3, updated = ?4 WHERE id = ?1",
+            params![id, title, project, now],
+        );
+        updated.map(drop).map_err(err)
+    }
+
+    fn task_delete(&self, id: i64) {
+        let conn = self.conn();
+        let _ = conn.execute("DELETE FROM task_time WHERE task = ?1", [id]);
+        let _ = conn.execute("DELETE FROM task_list WHERE id = ?1", [id]);
     }
 
     fn time_open(&self, task: i64, at: i64) -> Option<i64> {
@@ -247,6 +278,23 @@ mod tests {
         assert_eq!(s.task_get(mail).unwrap().status, Status::Done);
         assert_eq!(s.task_get(99), None);
         assert_eq!(serde_json::to_string(&Status::Todo).unwrap(), r#""todo""#);
+    }
+
+    #[test]
+    fn tasks_rename_and_delete_with_their_time() {
+        let s = store();
+        let a = s.task_add("A", None, 0).unwrap();
+        let b = s.task_add("B", Some("p"), 0).unwrap();
+        s.task_rename(a, "A2", Some("p"), 5).unwrap();
+        s.task_rename(a, "A2", Some("p"), 6).unwrap(); // its own title is no clash
+        assert_eq!(s.task_get(a).map(|t| (t.title, t.project)), Some(("A2".into(), Some("p".into()))));
+        assert!(s.task_rename(b, "A2", Some("p"), 7).unwrap_err().contains(&format!("task {a} is already")));
+        s.time_open(a, 10).unwrap();
+        s.time_open(b, 20).unwrap();
+        s.task_delete(a);
+        assert_eq!((s.task_get(a), s.times(0, 99).len()), (None, 1));
+        let bare = Store::in_memory();
+        assert!(bare.task_rename(1, "x", None, 0).is_err());
     }
 
     #[test]

@@ -1,7 +1,7 @@
-//! The task module's launcher side, pure: root items, views `task/pick` and `task/today`,
-//! the `#project` query syntax and a task row's action menu. Callers pass the tasks, the
-//! seconds per task and the running task. Root item ids are fixed (`task:start`,
-//! `task:stop`, `task:switch`, `task:today`); view rows are `task:run/<id>`, `task:new`
+//! The task module's launcher side, pure: root items, views `task/pick`, `task/list` and
+//! `task/today`, the `#project` query syntax and a task row's action menu. Callers pass the
+//! tasks, the seconds per task and the running task. Root item ids are fixed (`task:start`,
+//! `task:stop`, `task:switch`, `task:list`, `task:today`); view rows are `task:run/<id>`, `task:new`
 //! (the typed query rides as its arg) and `task:project/<name>`, and the views do not
 //! record use, so the usage table never grows per task.
 
@@ -13,6 +13,8 @@ use crate::core::{Action, Icon, Item, ItemId, ListView, Ranker};
 
 /// The view that starts or switches to a task.
 pub const PICK: &str = "pick";
+/// Every task, open ones first.
+pub const LIST: &str = "list";
 /// Today's totals.
 pub const TODAY: &str = "today";
 /// Key prefix of a task row: `task:run/<id>`.
@@ -33,7 +35,7 @@ fn item(key: impl std::fmt::Display, title: impl Into<String>, verb: &'static st
 }
 
 /// 'Start Task' while none runs; 'Stop Task: <title> · 0:42' (`secs` today) and 'Switch
-/// Task' while one does; always 'Tasks Today'.
+/// Task' while one does; always 'Tasks' and 'Tasks Today'.
 pub fn root_items(running: Option<(&Task, i64)>) -> Vec<Item> {
     let mut items = match running {
         None => vec![Item {
@@ -53,6 +55,10 @@ pub fn root_items(running: Option<(&Task, i64)>) -> Vec<Item> {
         ],
     };
     items.push(Item {
+        keywords: vec!["list all todo done rename delete".into()],
+        ..item(LIST, "Tasks", "Open", "checklist")
+    });
+    items.push(Item {
         keywords: vec!["time report totals".into()],
         ..item(TODAY, "Tasks Today", "Open", "chart.bar")
     });
@@ -65,6 +71,15 @@ pub fn pick() -> ListView {
         footer: "Start Task  ·  ⌘K for more  ·  esc to go back".into(),
         empty: "No tasks; type a title to start one".into(),
         ..ListView::new("task", PICK)
+    }
+}
+
+pub fn list() -> ListView {
+    ListView {
+        placeholder: "Search tasks… (#project filters)".into(),
+        footer: "Tasks  ·  ⌘K for more  ·  esc to go back".into(),
+        empty: "No tasks; run Start Task to add one".into(),
+        ..ListView::new("task", LIST)
     }
 }
 
@@ -100,6 +115,7 @@ fn task_row(task: &Task, secs: i64, running: Option<i64>) -> Item {
         Some(_) => ("Switch to Task", clock(secs)),
         None => ("Start Task", clock(secs)),
     };
+    let accessory = if task.status == Status::Done { format!("Done · {accessory}") } else { accessory };
     Item {
         subtitle: task.project.as_ref().map(|p| format!("#{p}")).unwrap_or_default(),
         accessory,
@@ -154,6 +170,44 @@ pub fn pick_items(
     items
 }
 
+/// `task/list` for `query`: every task, open ones then done ones (store order otherwise,
+/// the running one first), each with its time today. Ranked by the title part and only in
+/// the typed project when there is one; open tasks stay above done ones.
+pub fn list_items(
+    query: &str,
+    tasks: &[Task],
+    secs: &HashMap<i64, i64>,
+    running: Option<i64>,
+    ranker: &mut Ranker,
+) -> Vec<Item> {
+    let (title, project) = split_project(query);
+    let in_project = |t: &&Task| {
+        project.as_ref().is_none_or(|p| t.project.as_ref().is_some_and(|tp| tp.to_lowercase().starts_with(&p.to_lowercase())))
+    };
+    let mut tasks: Vec<&Task> = tasks.iter().filter(in_project).collect();
+    tasks.sort_by_key(|t| (t.status == Status::Done, Some(t.id) != running));
+    let done: HashMap<String, bool> = tasks
+        .iter()
+        .map(|t| (ItemId::new("task", format!("{RUN}{}", t.id)).to_string(), t.status == Status::Done))
+        .collect();
+    let rows: Vec<Item> = tasks
+        .iter()
+        .map(|t| {
+            let symbol = match t.status {
+                Status::Done => "checkmark.circle",
+                _ if Some(t.id) == running => "play.circle",
+                _ => "circle",
+            };
+            Item { icon: Icon::Symbol(symbol), ..task_row(t, secs.get(&t.id).copied().unwrap_or(0), running) }
+        })
+        .collect();
+    let order: HashMap<String, f64> =
+        rows.iter().enumerate().map(|(i, item)| (item.id.to_string(), -(i as f64) * 1e-3)).collect();
+    let mut items = ranker.rank(&title, rows, |i| order[i.id.as_str()]);
+    items.sort_by_key(|i| done[i.id.as_str()]);
+    items
+}
+
 /// `task/today`: the running task first (counted to now), then each task by its time;
 /// below them the total per project. Filtered and ranked by `query`, in that order.
 pub fn today_items(query: &str, report: &Report, running: Option<&Task>, ranker: &mut Ranker) -> Vec<Item> {
@@ -182,15 +236,23 @@ pub fn today_items(query: &str, report: &Report, running: Option<&Task>, ranker:
     ranker.rank(query, rows, |i| order[i.id.as_str()] * 1e-3)
 }
 
-/// The action menu of a task row; Stop only on the running one.
-pub fn actions(running: bool) -> Vec<Action> {
-    let mut actions = vec![Action::new("done", "Mark Done", Icon::Symbol("checkmark.circle"))];
-    if running {
-        actions.push(Action::new("stop", "Stop Task", Icon::Symbol("stop.circle")));
-    } else {
-        actions.insert(0, Action::new("start", "Start Task", Icon::Symbol("play.circle")));
-    }
-    actions
+/// The action menu of a task row: Start Task (Stop Task on the running one), Mark Done
+/// (Reopen Task on a done one), Rename Task and Delete Task.
+pub fn actions(running: bool, done: bool) -> Vec<Action> {
+    vec![
+        if running {
+            Action::new("stop", "Stop Task", Icon::Symbol("stop.circle"))
+        } else {
+            Action::new("start", "Start Task", Icon::Symbol("play.circle"))
+        },
+        if done {
+            Action::new("reopen", "Reopen Task", Icon::Symbol("arrow.uturn.backward.circle"))
+        } else {
+            Action::new("done", "Mark Done", Icon::Symbol("checkmark.circle"))
+        },
+        Action::new("rename", "Rename Task", Icon::Symbol("pencil")),
+        Action::new("delete", "Delete Task", Icon::Symbol("trash")),
+    ]
 }
 
 #[cfg(test)]
@@ -224,10 +286,10 @@ mod tests {
 
     #[test]
     fn root_items_follow_the_running_task() {
-        assert_eq!(ids(&root_items(None)), ["task:start", "task:today"]);
+        assert_eq!(ids(&root_items(None)), ["task:start", "task:list", "task:today"]);
         let t = task(3, "Review PR", Some("kota"));
         let items = root_items(Some((&t, 180)));
-        assert_eq!(ids(&items), ["task:stop", "task:switch", "task:today"]);
+        assert_eq!(ids(&items), ["task:stop", "task:switch", "task:list", "task:today"]);
         assert_eq!((items[0].title.as_str(), items[0].subtitle.as_str()), ("Stop Task: Review PR · 0:03", "Review PR #kota"));
     }
 
@@ -280,9 +342,30 @@ mod tests {
     }
 
     #[test]
-    fn stop_is_only_on_the_running_task() {
-        let keys = |running| actions(running).into_iter().map(|a| a.key).collect::<Vec<_>>();
-        assert_eq!(keys(false), ["start", "done"]);
-        assert_eq!(keys(true), ["done", "stop"]);
+    fn list_shows_open_tasks_then_done_ones() {
+        let mut done = task(4, "Mail", None, );
+        done.status = Status::Done;
+        let tasks = [task(1, "Write plan", Some("flick")), done, task(3, "Review", Some("kota"))];
+        let secs = HashMap::from([(4, 60)]);
+        let mut ranker = Ranker::new();
+        let mut list = |q: &str, running| list_items(q, &tasks, &secs, running, &mut ranker);
+        assert_eq!(ids(&list("", None)), ["task:run/1", "task:run/3", "task:run/4"]);
+        let items = list("", Some(3));
+        assert_eq!(ids(&items), ["task:run/3", "task:run/1", "task:run/4"]);
+        assert_eq!(items.iter().map(|i| &i.icon).collect::<Vec<_>>(), [&Icon::Symbol("play.circle"), &Icon::Symbol("circle"), &Icon::Symbol("checkmark.circle")]);
+        assert_eq!((items[0].accessory.as_str(), items[2].accessory.as_str()), ("Running · 0:00", "Done · 0:01"));
+        // A done task that matches better still comes after the open ones.
+        assert_eq!(ids(&list("ma", None)), ["task:run/4"]);
+        assert_eq!(ids(&list("#kota", None)), ["task:run/3"]);
+        assert!(list("zzz", None).is_empty());
+        assert!(list_items("", &[], &secs, None, &mut ranker).is_empty());
+    }
+
+    #[test]
+    fn actions_follow_running_and_done() {
+        let keys = |running, done| actions(running, done).into_iter().map(|a| a.key).collect::<Vec<_>>();
+        assert_eq!(keys(false, false), ["start", "done", "rename", "delete"]);
+        assert_eq!(keys(true, false), ["stop", "done", "rename", "delete"]);
+        assert_eq!(keys(false, true), ["start", "reopen", "rename", "delete"]);
     }
 }
