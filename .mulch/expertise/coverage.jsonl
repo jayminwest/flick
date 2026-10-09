@@ -1,0 +1,1 @@
+{"type":"convention","classification":"tactical","recorded_at":"2026-10-09T19:15:44.964Z","evidence":{"commit":"084e2eee5935c18556870ea0e12e2e62f24246a3"},"content":"Moving a file under src/core/ puts it under the 100% prefix floor; its old per-file key in coverage-budgets.json must be deleted because a key matching no file fails the gate.","id":"mx-226a7b"}
