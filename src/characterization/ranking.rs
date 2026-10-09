@@ -1,8 +1,9 @@
 //! Launcher ranking: fuzzy score plus frecency over the real root items.
 
 use super::legacy_view::Config;
-use crate::core::{Ranker, Usage};
+use crate::core::{Item, Ranker, Usage};
 use crate::modules::apps::App;
+use crate::modules::quicklinks::Quicklink;
 use crate::root::{rank_root, root_items};
 
 const NOW: i64 = 1_700_000_000;
@@ -37,9 +38,15 @@ fn usage() -> Usage {
     .collect()
 }
 
+/// Root items of the modules pinned here; a new module's items are its own to pin.
+fn known_root_items(links: &[Quicklink]) -> Vec<Item> {
+    let known = ["app", "window", "quicklink", "builtin"];
+    root_items(&apps(), links).into_iter().filter(|i| known.contains(&i.id.module())).collect()
+}
+
 fn ranked(query: &str, take: usize) -> Vec<String> {
     let links = Config::default().quicklinks;
-    let items = root_items(&apps(), &links);
+    let items = known_root_items(&links);
     rank_root(&mut Ranker::new(), query, items, &links, &usage(), NOW)
         .into_iter()
         .take(take)
@@ -124,7 +131,7 @@ fn keywords_match_quicklinks() {
 #[test]
 fn keyword_and_text_runs_the_quicklink_first() {
     let links = Config::default().quicklinks;
-    let items = root_items(&apps(), &links);
+    let items = known_root_items(&links);
     let out = rank_root(&mut Ranker::new(), "gh  flick ", items, &links, &usage(), NOW);
     assert_eq!(out[0].id, "quicklink:GitHub Search");
     assert_eq!(out[0].subtitle, "\u{201c}flick\u{201d}");

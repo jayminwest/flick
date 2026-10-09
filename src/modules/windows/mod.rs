@@ -109,6 +109,10 @@ impl Module for Windows {
         None
     }
 
+    fn verbs(&self) -> &'static str {
+        "window list | window <action>, e.g. window left-half"
+    }
+
     /// `list`: every action slug. `<slug>`: apply it to the focused window.
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {
