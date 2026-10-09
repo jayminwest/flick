@@ -1,7 +1,26 @@
-# Remote access: setup and manual tests
+# Remote access
 
-The [README](../README.md#remote-access) describes the `remote` module, its settings and
-what peers may do. This file sets it up between two Macs and lists the manual tests for the
+The `remote` module lets other Macs in your [Tailscale](https://tailscale.com) tailnet send Flick commands: `flick --host <this Mac> task ls` on another machine answers as `flick task ls` would here. It is off by default. It needs `peers` in `[remote]` and the switch on: run `flick remote on` or **Turn On Network Access** in the launcher. **Turn Off Network Access** or `flick remote off` closes the listener and every open connection. Only a local caller can turn it on or off.
+
+```toml
+[remote]
+peers = ["mbp-server"]   # Tailscale machine names allowed to connect; [] means no listener
+port = 7419              # default 7419
+events = false           # true lets peers stream `flick --host <mac> events`
+```
+
+```bash
+flick remote status            # on/off, listening addresses, peers, last connection and error
+flick --json remote status | jq .ok.last
+```
+
+- **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything or `feedback add` or `resolve`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, windows, app list and open, clipboard) answers.
+- **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
+
+## Setup and manual tests
+
+This section sets network access up between two Macs and lists the manual tests for the
 parts that unit tests cannot reach: the real `tailscale` CLI, real peers and real sockets.
 Nothing here runs by itself: do each step by hand, on the installed Flick.app, after a change
 to `src/control/net.rs`, `src/control/tailscale.rs`, `src/modules/remote/` or `net_policy`.
@@ -11,7 +30,7 @@ Names below: **host** is the Mac that runs Flick with network access on (its Mag
 binary. Both must be in the same tailnet, and the Tailscale ACLs must let the peer reach the
 host on the port (default 7419).
 
-## Setup
+### Setup
 
 On the host, in `~/.config/flick/config.toml`:
 
@@ -36,7 +55,7 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
 `flick remote on`, `remote status` can still say `not listening` for a moment (up to about
 2 s, longer when Tailscale is slow). Run it again before you call a step failed.
 
-## Checklist
+### Checklist
 
 1. **Off by default.** On a fresh `flick.db` (or after `flick remote off`), with `peers` set:
    `flick remote status` says `network access: off` and `listening: not listening`, and

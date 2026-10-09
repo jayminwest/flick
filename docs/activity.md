@@ -1,7 +1,48 @@
-# Activity: manual tests
+# Activity
 
-The [README](../README.md#activity) describes the `activity` module and its settings. This
-file is a manual test checklist for the parts that unit tests cannot reach: the menu bar
+The `activity` module records which app is in front, as time spans, and reports where your day went. It replaces trackers such as Rize, and it keeps the data on this Mac.
+
+Recording is off until you turn it on: run **Start Activity Recording** from the launcher, `flick activity on`, or the optional hotkey. While it records, a `●` shows in the menu bar; its menu has **Stop Recording**. The on/off state survives reloads and restarts. **Activity Today** in the launcher shows today's totals.
+
+```toml
+[activity]
+titles = false                     # the default; true also stores window titles
+urls = false                       # the default; true also stores the browser's front tab URL
+remote_urls = false                # agent sessions see URLs and domains only when true
+exclude = ["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess"]
+hotkey = "cmd+ctrl+alt+shift+KeyR" # toggles recording; unbound by default
+merge_secs = 2                     # a span shorter than this is dropped when focus moves on (alt-tab)
+
+[[activity.rules]]                 # report-time grouping; the first match wins
+app = "wezterm|zed"                # regex on the bundle id or app name, any case
+title = "flick"                    # optional regex on the window title
+project = "flick"
+category = "code"
+```
+
+```bash
+flick activity status              # recording, titles, urls, the open span
+flick activity today               # totals by category, project, app, title and domain; `week` for 7 days
+flick activity today --by task     # totals per running task id (see `flick task ls`)
+flick activity spans --since 2026-10-01   # <start>\t<duration>\t<app>\t<bundle id>\t<title>[\t<url>]
+flick --json activity today | jq .ok.by_app
+flick activity forget today --yes  # also: forget all --yes, forget app <bundle id> --yes
+```
+
+Privacy:
+
+- **What.** Each span is a start, an end, the app's bundle id and name and, only with `titles = true`, the focused window's title (spinner glyphs stripped, at most 256 characters). With `titles = false` Flick never reads a title and installs no Accessibility observer. Titles need Accessibility; without it `flick activity status` says `titles: no Accessibility permission` and spans stay per app.
+- **URLs.** Only with `urls = true`, a span in Brave, Chrome, Edge or Chromium also stores the front tab's URL (at most 2048 characters), and reports list the top domains. Flick asks the browser through AppleScript when it comes to the front or its window or title changes (the window is followed as for titles, so tab switches need Accessibility too). A private (incognito) window gives no URL. Safari and Arc are not supported: Flick cannot tell their private windows. Each browser asks once for Automation permission; if you deny it, `flick activity status` says `urls: no Automation permission for Brave Browser` and its spans have no URL (allow it again in System Settings > Privacy & Security > Automation). URLs keep their query strings, which can hold tokens; `exclude` the browser or leave `urls` off if that matters.
+- **Not recorded.** Apps in `exclude` (matched by bundle id or name) leave a gap, not a row. Setting `exclude` replaces the default list, so keep the password managers in it. Idle time (60 s without input; the span ends at the last input), a locked screen and sleep are not recorded either.
+- **Where.** Tables `activity_spans` and `activity_state` in `~/Library/Application Support/Flick/flick.db`. The module has no network code. The only way in from outside is the mode-0600 control socket.
+- **Delete.** `flick activity forget today|all|app <bundle id> --yes`. `forget all` empties both tables, turns recording off and runs `VACUUM`, so the rows leave the file. Data stays until you delete it.
+- **Rules** apply when a report runs and are never stored, so a rule edit regroups past spans too.
+
+Limits: idle detection runs every 5 s, so it can lag by that much, and a long video with no input counts as idle. A crash loses the time since the last event. Quit (**Quit Flick**, SIGTERM from launchd or `kill`) closes the open span. [docs/activity.md](activity.md) has a manual test checklist.
+
+## Manual tests
+
+This checklist covers the parts that unit tests cannot reach: the menu bar
 indicator, Accessibility title changes, browser tab URLs and their Automation prompt, sleep
 and lock, and quit. Nothing here runs by
 itself: do each step by hand, on the installed app, after a change to `src/modules/activity/`,
@@ -16,7 +57,7 @@ sqlite3 "$db" 'select id, start, end, end - start, app, title, url from activity
 sqlite3 "$db" 'select * from activity_state'
 ```
 
-## Checklist
+### Checklist
 
 1. **Off by default.** On a database with no `activity_state` rows, switch apps for a
    minute. `select count(*) from activity_spans` prints 0, `flick activity status` prints

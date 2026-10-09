@@ -1,7 +1,31 @@
-# Herdr: manual tests
+# Herdr
 
-The [README](../README.md#herdr) describes the `herdr` module and its settings. This file is
-a manual test checklist for the parts that unit tests cannot reach: the real herdr server,
+The `herdr` module lists the coding agents (claude, pi, codex, ...) that run in herdr, on this Mac and on the machines in `herdr machine list`. **Herdr Agents** in the launcher shows one row per agent: blocked first (an approval or a question waits on you), then done, idle and working. ↵ focuses the agent's herdr pane and brings the terminal to the front. ⌘K **Show Output** shows the agent's last lines. Flick only reads and focuses; it never sends input to an agent.
+
+```toml
+[herdr]
+machines = ["local", "mbp-server"] # default []: local plus every enabled `herdr machine list` profile
+remote_refresh_secs = 60           # default 0: remote machines refresh only while the launcher is open
+terminal = "WezTerm"               # the app brought to the front on a jump
+hotkey = "cmd+ctrl+alt+shift+KeyA" # opens the agents view; unbound by default
+preview_lines = 6                  # lines in Show Output (1 to 40)
+notify = ["blocked", "done"]       # default ["blocked"]; [] for no notifications
+```
+
+```bash
+flick herdr ls                     # <machine>/<pane id>  <status>  <name>  <cwd · title>, waiting first
+flick herdr jump mbp-server/w1:p2  # or <machine>/<agent name>
+flick herdr status                 # per machine: live or polled, last read, error; notifications
+flick --json herdr ls | jq '.ok.machines | keys'
+```
+
+- **What is read.** The local herdr server streams agent status over its socket (`~/.config/herdr/herdr.sock`), so local changes show within a second. Remote machines go through `herdr --machine <label>`, which uses herdr's own SSH profiles; Flick has no SSH code. herdr has no remote event stream, so remote machines are polled: every 15 s while the launcher is open, and every `remote_refresh_secs` when set. A machine that does not answer shows as a row with its error and the time of the last good read.
+- **Nothing stored.** Agent lists and output stay in memory. Nothing goes to `flick.db` or the log. Only the root item `herdr:agents` has a usage row.
+- **Notifications.** When an agent enters a status in `notify`, Flick posts one macOS notification: the agent's name, machine, cwd and terminal title, never its output. A click jumps to the agent. There is none for the first read of a machine, for a status that repeats, or for an agent whose pane is focused while the terminal is in front. Notifications need Flick.app (macOS asks for permission on the first launch); `cargo run` posts nothing, and `flick herdr status` says why.
+
+## Manual tests
+
+This checklist covers the parts that unit tests cannot reach: the real herdr server,
 remote machines over SSH, the terminal and macOS notifications. Nothing here runs by itself:
 do each step by hand, on the installed Flick.app, after a change to `src/modules/herdr/` or
 `platform::notify`.
@@ -15,7 +39,7 @@ flick herdr ls                     # every agent, waiting first
 flick --json herdr ls | jq '.ok.machines | keys'
 ```
 
-## Checklist
+### Checklist
 
 1. **Lists every machine.** With herdr running here and on the saved machines, open
    **Herdr Agents**. Each agent from `herdr agent list` and from

@@ -1,4 +1,45 @@
-# Key triggers: cutover and manual tests
+# Key triggers
+
+The `keys` module replaces Hyperkey and small Hammerspoon configs. It turns one key into Hyper, and runs an action when a set of keys goes down and again when it comes up (push-to-talk). It is off until you add a `[keys]` table: with no table, Flick creates no key tap and does not remap Caps Lock.
+
+```toml
+[keys]
+hyper = "caps_lock"                # Caps Lock adds hyper_mods to keys held with it
+hyper_mods = "cmd+ctrl+alt+shift"  # the default
+hyper_tap = "Escape"               # a tap shorter than hyper_tap_ms sends this; "" for nothing
+hyper_tap_ms = 300
+
+[[keys.chord]]
+name = "ptt"
+keys = ["right_cmd", "right_alt"]  # modifiers plus at most one other key
+on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
+on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+```
+
+- **Hyper.** While the hyper key is held, Flick adds `hyper_mods` to each key event, so `[window.keys]` bindings such as `cmd+ctrl+alt+shift+KeyH` fire. `hyper = "caps_lock"` remaps Caps Lock to F18 with `hidutil`, so Caps Lock never toggles uppercase; any other key name (for example `hyper = "F18"`) uses that key and skips the remap.
+- **Chords.** Key names: `cmd`, `alt`, `ctrl`, `shift` (either side), `left_cmd`, `right_cmd`, `left_alt`, `right_alt`, `left_ctrl`, `right_ctrl`, `left_shift`, `right_shift`, `fn`, and one hotkey key name such as `KeyA` or `F13`. A sided name does not match the other side. Modifiers pass through to apps; a chord's other key does not type. Key repeat never fires a chord again.
+- **Actions.** `{ http = "[METHOD ]http://host[:port]/path" }` sends one request with an empty body (method defaults to `POST`; `http://` only, 2 s timeout). `{ shell = "..." }` runs `/bin/sh -c` with `FLICK_CHORD=<name>` and `FLICK_CHORD_STATE=down|up`. Actions run in order on one worker thread, so an `up` never overtakes its `down`.
+- **Events.** Each edge is also an event: `flick events` prints `{"event":"chord","index":0,"down":true}`.
+
+```bash
+flick keys list                # <index>\t<name>\t<keys>\tdown: <action>\tup: <action>, then hyper
+flick keys status              # key tap, secure input, Caps Lock remap, conflicts
+flick keys fire ptt down       # run a chord's action without the keyboard
+```
+
+`flick keys status` reports conflicts: Hyperkey running with `hyper = "caps_lock"` (two remaps of one key), Hammerspoon running with a chord configured (its taps may run the same chord), a global hotkey on the hyper key (the tap swallows it), and a chord key that is also a global hotkey. The startup log lists the same conflicts, but it misses hotkey conflicts, because hotkeys bind after the key tap starts.
+
+Limits:
+
+- The key tap needs Accessibility. Without it, `flick keys status` says `Accessibility needed`, and with `hyper = "caps_lock"` Caps Lock does nothing (it sends F18) until you grant it. Flick retries every 5 s, so a grant needs no restart.
+- Secure input (password fields, Terminal's Secure Keyboard Entry) hides key presses from the tap: Hyper and chords with a non-modifier key pause there. Modifier-only chords still work.
+- Flick clears the Caps Lock remap when it quits through **Quit Flick** or SIGTERM (launchd stop, `kill`). It handles SIGTERM itself only after it has set the remap; before that, SIGTERM ends Flick at once, with nothing to clear. After a crash, Caps Lock stays F18 until Flick starts again. At start, Flick clears its own entry if `hyper` is no longer `caps_lock` (or `[keys]` is gone), and leaves other `hidutil` mappings alone. To reset every mapping by hand:
+
+  ```bash
+  hidutil property --set '{"UserKeyMapping":[]}'   # clears every hidutil key mapping
+  ```
+
+## Cutover and manual tests
 
 The `keys` module replaces two background apps:
 
@@ -7,11 +48,10 @@ The `keys` module replaces two background apps:
   `src/trigger/hammerspoon.ts`). It starts kota-voice listening while right-Command and
   right-Option are both held, and stops it when one is released.
 
-The [README](../README.md#key-triggers) describes the settings. This file has the dotfiles
-config, the steps to move over, and a manual test checklist. Nothing here runs by itself: do
-each step by hand.
+This section has the dotfiles config, the steps to move over, and a manual test checklist.
+Nothing here runs by itself: do each step by hand.
 
-## Dotfiles config
+### Dotfiles config
 
 Add this to `~/.dotfiles/home/.config/flick/config.toml`. The existing `[window_keys]`
 bindings (`cmd+ctrl+alt+shift+KeyH` and so on) do not change: Flick's Hyper key fires them.
@@ -34,7 +74,7 @@ on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
 
 Also change the `[window_keys]` comment `Caps Lock via Hyperkey` to `Caps Lock via [keys] hyper`.
 
-## Cutover
+### Cutover
 
 Do the steps in this order. Hyperkey and Flick must never both remap Caps Lock.
 
@@ -75,7 +115,7 @@ hidutil property --set '{"UserKeyMapping":[]}'
 hidutil property --get UserKeyMapping   # expect (null) or ()
 ```
 
-## Manual test checklist
+### Manual test checklist
 
 Run with Hyperkey and Hammerspoon quit, and the config above loaded.
 

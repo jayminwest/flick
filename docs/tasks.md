@@ -1,7 +1,35 @@
-# Tasks: manual tests
+# Tasks
 
-The [README](../README.md#tasks) describes the `task` module and its settings. This file is a
-manual test checklist for the parts that unit tests cannot reach: the launcher, sleep and
+The `task` module keeps a short task list (title, optional project, status `todo`, `doing` or `done`) and times the one task that runs. It has no subtasks, estimates, due dates or sync. Tasks and their time stay in `flick.db` on this Mac.
+
+In the launcher, **Start Task** opens a picker of the tasks not done. Type to filter; ↵ starts the selected task. If no task has the typed title, the first row is **Start new task "<title>"**. A trailing `#word` sets the project of the new task and filters the list to that project: `Review PR #kota`. While a task runs, root search shows **Stop Task: Review PR · 0:42** (time today) and **Switch Task**. **Tasks Today** shows today's totals per task and per project. On a task row, ⌘K has **Start Task**, **Mark Done** and **Stop Task**.
+
+```toml
+[task]
+hotkey = "cmd+ctrl+alt+shift+KeyT" # opens the task picker; unbound by default
+```
+
+```bash
+flick task start "Write plan" --project flick  # a title that matches no task creates it
+flick task switch 3                # same as start: the running task stops, task 3 runs
+flick task stop
+flick task ls                      # todo and doing tasks, ▶ marks the running one; --all adds done
+flick task add "Review PR" --project kota
+flick task done 3                  # stops it if it runs; done tasks leave ls but stay in reports
+flick task report week             # also today (the default), 2026-10-01, 2026-10-01..2026-10-07; --project P
+flick --json task ls | jq .ok.running.id
+flick --json task report today | jq .ok.total_secs
+```
+
+`<id|title>` is a task id, an exact title, or a case-insensitive prefix that matches only one task. A prefix that matches several tasks is an error that lists them. Report days are local days; a week is Monday to Sunday.
+
+- **Timer.** At most one task runs. It keeps running through `flick reload` and a restart; the time Flick was not running does not count. Idle (60 s without input) ends the task's time at the last input, and the next input starts it again. Sleep and screen lock pause it at once; wake and unlock resume it. A crash loses the time since the last event. Quit (**Quit Flick**, SIGTERM) ends the open time row. There is no ticking timer: durations are computed when a list or command reads them.
+- **Activity.** Task timing works with activity recording off. While recording is on, each activity span carries the id of the task that ran: `flick activity today --by task` gives totals per task id. For the apps used per task, filter the spans: `flick --json activity spans --since today | jq '.ok[] | select(.task == 3)'`.
+- **Events.** Each start, switch and stop, and the task restored at startup, is an event: `flick events` prints `{"event":"task_changed","task":3}` (`"task":null` after a stop).
+
+## Manual tests
+
+This checklist covers the parts that unit tests cannot reach: the launcher, sleep and
 lock, quit, the hotkey and the link to activity recording. Nothing here runs by itself: do
 each step by hand, on the installed app, after a change to `src/modules/tasks/`,
 `src/core/track.rs`, `Event::TaskChanged` or the task attribution in `src/modules/activity/`.
@@ -17,7 +45,7 @@ sqlite3 "$db" 'select * from task_state'
 
 Keep `flick events | grep task_changed` running in a second terminal for the whole list.
 
-## Checklist
+### Checklist
 
 1. **Start from the CLI.** `flick task start "Write plan" --project flick` prints
    `Started Write plan #flick`. `flick events` shows one `{"event":"task_changed","task":<id>}`.

@@ -1,7 +1,67 @@
-# Capture: manual tests
+# Capture
 
-The [README](../README.md#capture) describes the `capture` module and its settings. This
-file is a manual test checklist for the parts that unit tests cannot reach: the Screen
+The `capture` module takes screenshots, opens them in a small annotation editor, and draws on the screen. It replaces Shottr and Presentify. Shots go through macOS's own `screencapture`, so the selection is the native one: a crosshair, Space for a window, Esc to cancel, every display, Retina pixels.
+
+| Launcher item | What it does |
+|---|---|
+| **Capture Area** | Drag to select; Space picks a window instead; Esc cancels and saves nothing. |
+| **Capture Window** | Click a window. With `shadow = true` the PNG keeps the window shadow. |
+| **Capture Screen** | The whole display under the mouse. |
+| **Capture Area and Annotate** | Capture Area, then the editor opens on the shot. |
+| **Draw on Screen** / **Stop Drawing on Screen** | Draw over every app and every display. |
+| **Highlight Cursor** / **Stop Highlighting Cursor** | A ring follows the pointer and pulses on a click. |
+| **Clear Drawing** | Remove the shapes from the screen. Shows only while shapes are there. |
+| **Recent Captures** | Your shots, newest first. ↵ opens one. ⌘K: **Copy Image**, **Annotate**, **Show in Finder**, **Copy Path**, **Move to Trash**. |
+
+Editor and draw keys: `a` arrow, `r` rectangle, `p` pen, `h` highlighter, `t` text, `x` redact (a solid black box), `1` to `5` the colors, ⌘Z undo, ⇧⌘Z redo, Delete clears.
+
+- **Editor.** ↵ writes the annotated PNG at full pixel size, and copies it when `copy = true`. ⌘C writes and copies; ⌘S writes and does not copy. Esc or the close button writes nothing. The app you came from is in front again after the editor closes. **Capture Area and Annotate** writes over the shot; **Annotate** in Recent Captures and `flick capture annotate` write `<name> annotated.png` beside the file, and that copy shows in Recent Captures.
+- **Draw on Screen.** Drawing starts with the pen. ↵ stops drawing and keeps the shapes on the screen; clicks then pass through to the apps under them. Esc stops drawing and clears the shapes. With `fade_secs` above 0, each shape fades after that many seconds.
+
+```toml
+[capture]
+dir = "~/Pictures/Flick"           # created on the first save
+name = "Flick {date} at {time}.png"  # also {kind}: area, window, screen, display, rect
+copy = true                        # put each shot on the clipboard
+save = true                        # false: clipboard only (save and copy cannot both be off)
+sound = true                       # the shutter sound
+cursor = false                     # include the mouse pointer
+shadow = true                      # window shadows in Capture Window
+history = 200                      # rows in Recent Captures; trimming never deletes files
+colors = ["#ff3b30", "#ffcc00", "#34c759", "#0a84ff", "#ffffff"]  # keys 1-5; #rrggbb or #rrggbbaa
+width = 4.0                        # pen width in points
+fade_secs = 0.0                    # draw on screen: 0 keeps shapes until Esc or Clear Drawing
+halo_color = "#ffcc00"
+halo_radius = 28.0
+area_hotkey = "cmd+ctrl+alt+shift+Digit4"  # area, window, screen, annotate, draw and cursor
+draw_hotkey = "cmd+ctrl+alt+shift+KeyD"    # hotkeys are all unbound by default
+```
+
+```bash
+flick capture area                 # starts the selection and answers "Select an area" at once
+flick capture area --annotate      # also: window, window --annotate
+flick capture screen               # the display under the mouse; prints the file path
+flick capture display 2            # display 2, main display first
+flick capture rect 0,0,400,300 --no-copy   # x,y,w,h in points from the top left
+flick capture screen --out /tmp/shot.png   # --out needs an absolute path
+flick --json capture screen | jq .ok.path  # {"path","width","height","copied"}
+flick capture ls --limit 5         # <id>\t<path>\t<w>x<h>, newest first; --json: rows
+flick capture last                 # the newest file
+flick capture draw on              # on|off|toggle|clear
+flick capture cursor toggle        # on|off|toggle
+flick capture annotate ~/Desktop/shot.png  # opens the editor; prints the copy's path
+```
+
+`screen`, `display` and `rect` answer when the file is written. `area` and `window` answer at once; the shot lands in Recent Captures when you finish the selection.
+
+- **Screen Recording.** Flick needs the Screen Recording permission (System Settings → Privacy & Security → Screen & System Audio Recording). Without it, macOS gives back only the wallpaper and Flick's own windows, so Flick does not capture: the first try shows `Allow Screen Recording for Flick in System Settings` and opens the system prompt. Quit and restart Flick after you allow it. macOS 15 and later also asks again from time to time whether Flick may keep recording the screen; that prompt is from macOS, and Flick keeps working when you allow it. An ad hoc signed rebuild can lose the grant, as with Accessibility.
+- **Where files go.** `dir`, named from `name`; a taken name gets ` (2)`, ` (3)` and so on. `--out <path>` writes there instead. With `save = false` the shot is a file in `$TMPDIR/flick-capture`, is on the clipboard, and does not show in Recent Captures; Flick does not delete those files, macOS clears the temp folder.
+- **What is stored.** Table `capture_shots` in `flick.db` holds each shot's path, kind, size and time, never the image. A row whose file is gone drops out of Recent Captures.
+- **Trash.** **Move to Trash** asks first (⌘↵ confirms), moves the file to the macOS Trash (Finder's Put Back restores it) and removes the row. Nothing else in Flick deletes a screenshot.
+
+## Manual tests
+
+This checklist covers the parts that unit tests cannot reach: the Screen
 Recording permission, `screencapture` itself, the clipboard, the annotation editor window,
 the draw overlay and the cursor halo. Nothing here runs by itself: do each step by hand, on
 the installed Flick.app (`scripts/bundle.sh --install`), after a change to
@@ -19,7 +79,7 @@ flick --json capture last | jq .ok # {"id","path","kind","width","height","taken
 osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
 ```
 
-## Setup
+### Setup
 
 - Use the default `[capture]` table (no table), unless a step says otherwise. Run
   **Reload Flick Config** after each config change.
@@ -28,9 +88,9 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
 - Note your displays: one Retina display at least; one non-Retina display for steps 11 and
   19; three or more for step 26.
 
-## Checklist
+### Checklist
 
-### Permission
+#### Permission
 
 1. **Denied.** Reset the grant: `tccutil reset ScreenCapture <bundle id of Flick.app>`.
    Run **Capture Area**. The footer shows `Allow Screen Recording for Flick in System
@@ -41,9 +101,9 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
    Recording, then quit and restart Flick. **Capture Area** now shows the crosshair.
 3. **Reconfirmation (macOS 15+).** Over the following weeks macOS asks again whether Flick
    may keep recording the screen. Allow: captures keep working without a restart. Record
-   the prompt's wording and how often it came in the seed, so the README stays right.
+   the prompt's wording and how often it came in the seed, so [Capture](#capture) stays right.
 
-### Shots
+#### Shots
 
 4. **Capture Area.** From the launcher: the panel hides first, then the native crosshair
    shows (a crosshair cursor, not the arrow). Drag a region. The PNG is in
@@ -76,7 +136,7 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
     `$TMPDIR/flick-capture`, and Recent Captures does not list it. `save = false` with
     `copy = false` is refused on reload with `[capture]: save and copy are both off ...`.
 
-### Recent Captures
+#### Recent Captures
 
 14. **List.** **Recent Captures** lists newest first with size, folder and age. ↵ opens a
     shot in Preview. Delete a file in Finder and reopen the view: its row is gone.
@@ -85,7 +145,7 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
     only shows `Press ⌘↵ to Move to Trash`; ⌘↵ moves the file to the Trash (Put Back
     restores it) and removes the row.
 
-### Annotation editor
+#### Annotation editor
 
 16. **Opens and takes keys.** Run **Capture Area and Annotate**. The editor window opens at
     the image's point size (fitted to the screen if larger), centered, in front, and keys
@@ -108,7 +168,7 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
     `flick capture annotate ~/Desktop/<file>.png` prints the copy's path and opens the
     editor. A second Annotate while the editor is open brings that editor to the front.
 
-### Draw on screen and cursor halo
+#### Draw on screen and cursor halo
 
 21. **Draw.** Run **Draw on Screen**. The pen draws over every app, the menu bar and the Dock,
     on every display, and in a full-screen space (make a window full screen and switch to
@@ -131,7 +191,7 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
     (screencapture's `-D` numbering is assumed to follow `NSScreen` order, main display
     first). If one is wrong, note which order screencapture uses in the seed.
 
-### Cost and neighbours
+#### Cost and neighbours
 
 27. **Idle CPU.** With capture enabled and nothing on the screen, Flick stays at about 0% CPU
     over 60 s in Activity Monitor. The same with the halo on and the mouse still.
