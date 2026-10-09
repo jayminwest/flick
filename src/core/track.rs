@@ -134,7 +134,6 @@ impl<S> Clock<S> {
 impl<S: Clone + PartialEq> Clock<S> {
     /// Adopt a span that is already stored as open (for example after a restart), without
     /// emitting ops. The clock runs afterwards.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by task timers, flick-feab"))]
     pub fn restore(&mut self, subject: S, start: i64) {
         self.current = Some(subject.clone());
         self.open = Some((subject, start));
