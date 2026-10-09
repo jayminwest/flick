@@ -73,16 +73,16 @@ The script builds `~/Applications/Flick.app` and starts it. Press `⌥⇧Space` 
 - [Install and update](docs/install.md)
 - [Configuration](docs/configuration.md): config file, hotkeys, quicklinks, launcher keys
 - [Command line](docs/cli.md)
-- Modules: [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Remote access](docs/remote.md)
+- Modules: [Script commands](docs/scripts.md) · [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Remote access](docs/remote.md)
 - [How it works](docs/how-it-works.md) and [ARCHITECTURE.md](ARCHITECTURE.md)
 
-Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except HTTP requests you configure as key triggers. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
+Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except what you configure: HTTP requests as key triggers, and shell commands as key triggers or script commands. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
 
 ## Roadmap
 
 - **Mouse support.** Hover and click on results.
 - **Clipboard images.**
-- **Script commands.** Shell scripts with Raycast-style metadata as launcher commands.
+- **Script commands.** Shell scripts with Raycast-style metadata as launcher commands. Today `[[script.commands]]` in config.toml runs a shell command with a `{query}` argument ([Script commands](docs/scripts.md)).
 
 ## Status
 
