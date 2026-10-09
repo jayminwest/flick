@@ -2,7 +2,7 @@
 //! refactor (plan pl-c956) can move code and prove nothing changed.
 //!
 //! - item ids, which key the `usage` table in an existing flick.db
-//! - legacy config.toml parsing, and config.example.toml against every module
+//! - legacy config.toml parsing
 //! - the store schema, the 500-clip cap and clip dedupe
 //! - window rect math
 //! - launcher ranking order (fuzzy score plus frecency)
@@ -13,7 +13,6 @@
 //! code moves, fix those paths and nothing else; a changed assertion is a behavior change.
 //! Run only these tests with `cargo test characterization`.
 
-mod config_example;
 mod control_replies;
 mod item_ids;
 mod legacy_config;

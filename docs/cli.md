@@ -14,7 +14,6 @@ flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
 flick feedback add "Tab should complete paths"  # append to feedback.jsonl
 flick reload                   # reload config.toml
-flick config example           # every config option, commented (no running Flick needed)
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
 ```

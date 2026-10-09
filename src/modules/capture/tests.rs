@@ -349,8 +349,3 @@ fn ls_lists_rows_as_text_or_json() {
         assert_eq!(last, rows[0]);
     });
 }
-
-#[test]
-fn the_example_config_lists_every_key() {
-    crate::config::example::assert_documents::<Settings>("capture");
-}

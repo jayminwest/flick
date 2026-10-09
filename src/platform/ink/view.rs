@@ -6,7 +6,8 @@
 //! event rather than borrow app state, mx-fcbc43). The Text tool opens an `NSTextField` at
 //! the click: Return places the text, Esc drops it, a click elsewhere places it.
 //!
-//! `draw_shapes` paints both the view on screen and the flattened export in `flatten`.
+//! `draw_shapes` paints both the view on screen and the flattened export in `flatten`; the
+//! key legend (`hud`, after `set_legend`) is on screen only. `?` toggles it.
 
 use std::cell::{Cell, RefCell};
 
@@ -26,6 +27,8 @@ use objc2_foundation::{
     NSDictionary, NSObject, NSObjectProtocol, NSPoint, NSProcessInfo, NSRect, NSSize, NSString,
 };
 
+use super::hud::{self, ns_color, ns_point, ns_rect};
+use super::legend::Mode;
 use super::model::{
     Canvas, Color, Command, Point, Shape, Style, Tool, arrow_head, key_command, normalized, scaled,
 };
@@ -49,6 +52,7 @@ pub struct Ink {
     scale: Cell<f64>,
     background: RefCell<Option<Retained<NSImage>>>,
     on_command: Cell<Option<fn(Command)>>,
+    legend: Cell<Option<Mode>>,
     /// Runs after a shape is finished (mouse up or placed text).
     on_stroke: Cell<Option<fn()>>,
     /// The open text field and the point its text goes to.
@@ -98,6 +102,9 @@ define_class!(
                 image.drawInRect(self.bounds());
             }
             draw_shapes(ink.canvas.borrow().visible(), &ink.style.borrow(), ink.scale.get());
+            if let Some(mode) = ink.legend.get() {
+                hud::draw(self.bounds(), mode, ink.tool.get(), ink.color.get(), &ink.style.borrow());
+            }
         }
 
         #[unsafe(method(mouseDown:))]
@@ -172,6 +179,7 @@ impl FlickInkView {
             scale: Cell::new(1.0),
             background: RefCell::new(None),
             on_command: Cell::new(on_command),
+            legend: Cell::new(None),
             on_stroke: Cell::new(None),
             text: RefCell::new(None),
         });
@@ -196,6 +204,12 @@ impl FlickInkView {
     /// New shapes use `tool` (the keys can still change it).
     pub fn set_tool(&self, tool: Tool) {
         self.ivars().tool.set(tool);
+    }
+
+    /// Show the key legend for `mode` at the bottom, or none.
+    pub fn set_legend(&self, mode: Option<Mode>) {
+        self.ivars().legend.set(mode);
+        self.setNeedsDisplay(true);
     }
 
     /// Call `f` after each finished shape. It runs while `AppKit` is mid-event.
@@ -275,6 +289,8 @@ impl FlickInkView {
             Command::Undo => _ = canvas.undo(),
             Command::Redo => _ = canvas.redo(),
             Command::Clear => _ = canvas.clear(),
+            // The callback redraws the other views (the overlay's other displays).
+            Command::Help => hud::toggle(),
             Command::Done | Command::Copy | Command::Save | Command::Cancel => {
                 // The callback may flatten this view, which borrows the canvas.
                 drop(canvas);
@@ -284,7 +300,11 @@ impl FlickInkView {
                 return;
             }
         }
+        drop(canvas);
         self.setNeedsDisplay(true);
+        if let Some(on_command) = ink.on_command.get().filter(|_| command == Command::Help) {
+            on_command(command);
+        }
     }
 
     /// Open a text field with its text's top-left at `p`, in the current color and size.
@@ -431,18 +451,6 @@ fn bitmap(width: usize, height: usize) -> Option<Retained<NSBitmapImageRep>> {
             0,
         )
     }
-}
-
-pub(super) fn ns_color([r, g, b, a]: [f32; 4]) -> Retained<NSColor> {
-    NSColor::colorWithSRGBRed_green_blue_alpha(r.into(), g.into(), b.into(), a.into())
-}
-
-fn ns_point(p: Point) -> NSPoint {
-    NSPoint::new(p.x, p.y)
-}
-
-fn ns_rect(r: Rect) -> NSRect {
-    NSRect::new(NSPoint::new(r.x, r.y), NSSize::new(r.w, r.h))
 }
 
 /// The color and line width `shape` is stroked with: highlighter strokes are wide and

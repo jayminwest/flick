@@ -209,3 +209,12 @@ fn remote_ids_are_fixed_keys() {
         ids(&items).into_iter().filter(|id| id.starts_with("remote:")).collect();
     assert_eq!(remote, ["remote:network"]);
 }
+
+#[test]
+fn help_ids_are_fixed_keys() {
+    // Rows in `help/topics` are `help:topic/<slug>` and in `help/keys/<slug>`
+    // `help:key/<slug>/<n>`; those views do not record use.
+    let items = root_items(&[], &[]);
+    let help: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("help:")).collect();
+    assert_eq!(help, ["help:index"]);
+}
