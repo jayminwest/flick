@@ -15,7 +15,7 @@ this file in the same commit.
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/core/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
-| control | `src/control/` | The Unix socket server. Runs requests on the main thread. Streams events. |
+| control | `src/control/` | The Unix socket server and the network transport over Tailscale (`control::net`). Runs requests on the main thread. Streams events. |
 | cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
 
 There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code that uses
@@ -358,6 +358,20 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   every open network connection. `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
   (Homebrew or the app binary) under a 2 s budget, whois cached per address (60 s, errors
   5 s). Tests use fakes and never run the CLI.
+- Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
+  caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
+  `quicklink add|remove`, `capture` (any verb) or `feedback add`, and of `remote` only
+  `remote status`. `["events"]` needs `[remote] events = true`. Everything else reaches the
+  module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
+  **Adding a verb that changes config, runs code, reads the screen or writes files means
+  reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
+  refusals are pinned in `src/characterization/control_replies.rs`.
+- Wiring: the `remote` module (`src/modules/remote/`) owns `[remote]` (`peers`, `port`,
+  `events`), the on/off switch (`remote_state`, off by default), root item `remote:network`
+  and `remote status|on|off`. It never imports `crate::control`: its `modules!` line passes
+  `control::net::HOOKS` (`core::control::NetHooks`, plain fn pointers) to `Remote::new`.
+  The listener runs iff the switch is on and `peers` is not empty. User guide and manual
+  smoke test: `docs/remote.md`.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) sends `--json` as the last request word and
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With

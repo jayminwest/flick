@@ -1,10 +1,14 @@
 //! Control socket replies: scripts parse them. Text answers stay `{"ok":"<text>"}` with or
 //! without `--json`; a module that reads `Cx::json` and answers a JSON object or array gets
 //! `{"ok":<value>}`; errors are `{"error":"<message>"}`. A `--remote` word before `--json`
-//! sets `Cx::remote` and changes nothing for modules that ignore it.
+//! sets `Cx::remote` and changes nothing for modules that ignore it. Over the network
+//! (`flick --host`) every request is a remote caller's, and side-effecting requests are
+//! refused before any module sees them.
 
 use crate::config::Config;
-use crate::core::control::{Reply, split_flags};
+use crate::control::net::gate;
+use crate::control::server::EVENTS_REFUSED;
+use crate::core::control::{Flags, Reply, split_flags};
 use crate::core::{Cx, Module, Registry, test_cx};
 use crate::modules::{Clips, with_apps};
 
@@ -147,4 +151,75 @@ fn a_module_that_checks_remote_sees_only_the_trailing_word() {
         assert_eq!(reply(&mut registry, &["private", "--remote", "n"], cx), r#"{"ok":"n 1"}"#);
         assert_eq!(reply(&mut registry, &["private", "n", "--json", "--remote"], cx), refused);
     });
+}
+
+/// The reply line for `words` from the real registry, run as `run` would on the main thread.
+#[expect(clippy::needless_pass_by_value, reason = "matches the transport's handler type")]
+fn run(words: Vec<String>, flags: Flags) -> Reply {
+    let mut registry = with_apps(&Config::default(), vec![]).unwrap();
+    test_cx("", |cx| {
+        registry.migrate(cx.store).unwrap();
+        cx.json = flags.json;
+        cx.remote = flags.remote;
+        Reply::answer(registry.command(&words, cx), flags.json)
+    })
+}
+
+/// The reply line for request `words` sent over the network transport.
+fn net_reply(words: &[&str]) -> String {
+    gate(words.iter().map(|w| (*w).to_string()).collect(), run).to_line()
+}
+
+#[test]
+fn network_callers_are_refused_side_effecting_requests() {
+    let refused = [
+        (&["reload"][..], "reload"),
+        (&["flick", "rebuild"], "flick rebuild"),
+        (&["flick", "cancel"], "flick cancel"),
+        (&["remote", "on"], "remote on"),
+        (&["remote", "off"], "remote off"),
+        (&["remote"], "remote"),
+        (&["keys", "fire", "x"], "keys fire"),
+        (&["app", "uninstall", "/Applications/Zed.app"], "app uninstall"),
+        (&["quicklink", "add", "x", "https://x"], "quicklink add"),
+        (&["quicklink", "remove", "x"], "quicklink remove"),
+        (&["capture", "ls"], "capture ls"),
+        (&["capture", "screen"], "capture screen"),
+        (&["capture"], "capture"),
+        (&["feedback", "add", "x"], "feedback add"),
+    ];
+    for (words, what) in refused {
+        let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
+        assert_eq!(net_reply(words), want, "{words:?}");
+        assert_eq!(net_reply(&[words, &["--json"]].concat()), want, "{words:?} --json");
+    }
+    // `["events"]` is refused by the transport unless `[remote] events = true`.
+    assert_eq!(
+        Reply::Error(EVENTS_REFUSED.into()).to_line(),
+        r#"{"error":"events: not allowed over the network"}"#
+    );
+}
+
+#[test]
+fn network_requests_are_remote_even_without_the_flag() {
+    // Activity checks Cx::remote: a network caller is refused without --remote.
+    let refused = r#"{"error":"activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick"}"#;
+    assert_eq!(net_reply(&["activity", "today", "--json"]), refused);
+    assert_eq!(net_reply(&["activity", "today"]), refused);
+    assert!(
+        run(vec!["activity".into(), "today".into()], Flags::default())
+            .to_line()
+            .starts_with(r#"{"ok":"#)
+    );
+    // Requests outside the deny table answer as for a local remote caller.
+    assert_eq!(
+        net_reply(&["capture", "ls"]),
+        r#"{"error":"capture ls: not allowed over the network"}"#
+    );
+    assert!(net_reply(&["task", "ls"]).starts_with(r#"{"ok":"#));
+    // Network callers may read the toggle; it stays off by default.
+    assert_eq!(
+        net_reply(&["remote", "status", "--json"]),
+        r#"{"ok":{"error":null,"events":false,"last":null,"listening":[],"on":false,"peers":[],"port":7419}}"#
+    );
 }

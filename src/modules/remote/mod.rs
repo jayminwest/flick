@@ -9,11 +9,6 @@
 //! reload that changes them, on each toggle, and on `Wake` and `LauncherOpened` while on but
 //! not listening (Tailscale may come up after Flick). Remote callers may only read status.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "registered with control::net hooks in flick-3537")
-)]
-
 mod store;
 #[cfg(test)]
 mod tests;
