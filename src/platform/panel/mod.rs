@@ -148,9 +148,10 @@ define_class!(
         }
 
         #[unsafe(method(control:textView:doCommandBySelector:))]
-        fn do_command(&self, _control: &NSControl, _view: &NSTextView, sel: Sel) -> bool {
+        fn do_command(&self, control: &NSControl, view: &NSTextView, sel: Sel) -> bool {
             // Unknown selectors fall through to the text view's default handling.
-            key_for(sel).is_some_and(send_key)
+            form::newline(std::ptr::from_ref(control).cast(), view, sel)
+                || key_for(sel).is_some_and(send_key)
         }
 
         #[unsafe(method(windowDidResignKey:))]
