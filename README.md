@@ -364,6 +364,25 @@ flick capture annotate ~/Desktop/shot.png  # opens the editor; prints the copy's
 
 [docs/capture.md](docs/capture.md) has a manual test checklist.
 
+### Feedback
+
+The `feedback` module keeps notes about Flick while you use it. **Add Feedback…** in the launcher opens a one-field form; ↵ saves. `fb <text>` in root search shows **Save feedback: <text>**; ↵ saves and closes the launcher. **Recent Feedback** lists the last 50 notes, newest first; ↵ copies one. From a terminal: `flick feedback add <text>`, `flick feedback ls [--limit n]` (`--json` for the entries), `flick feedback path`.
+
+Notes go to `feedback.jsonl` in the checkout this Flick was built from. The repo's `.gitignore` lists it, so git never commits it. The file is JSON Lines: one object per line, appended, never rewritten:
+
+```json
+{"ts":"2026-10-09T11:31:01-07:00","text":"the switcher is slow","build":"<sha>","app":"Safari","bundle_id":"com.apple.Safari","query":"add fee"}
+```
+
+`ts` is local time with its UTC offset, `build` the commit Flick was built from (`-dirty` for uncommitted changes, `dev` for `cargo build`), `app` and `bundle_id` the app in front when the launcher opened (not from the CLI), and `query` the root search text when **Add Feedback…** ran. Fields without a value are left out. Read it with `jq -r .text feedback.jsonl`.
+
+```toml
+[feedback]
+file = "~/notes/flick.jsonl"   # default: feedback.jsonl in the checkout; required for a prebuilt app
+keyword = "fb"                 # "<keyword> <text>" saves in one step
+hotkey = "cmd+ctrl+alt+shift+KeyF"  # opens a feedback field; unbound by default
+```
+
 ### Rebuild settings
 
 ```toml
@@ -401,6 +420,7 @@ flick app uninstall Foo --yes  # move exactly those to the Trash
 flick clip list                # <id>\t<first line>, newest first
 flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
+flick feedback add "Tab should complete paths"  # append to feedback.jsonl
 flick reload                   # reload config.toml
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines

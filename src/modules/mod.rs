@@ -48,6 +48,7 @@ modules! {
         mod keys => "keys", keys::Keys::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
+        mod feedback => "feedback", feedback::Feedback::default;
     }
 }
 

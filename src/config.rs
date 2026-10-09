@@ -121,6 +121,15 @@ hotkey = "alt+shift+Space"
 # draw_hotkey = "cmd+ctrl+alt+shift+KeyD"
 # cursor_hotkey = "cmd+ctrl+alt+shift+KeyC"
 
+# Feedback: "Add Feedback…" or "fb <text>" in the launcher, or "flick feedback add <text>",
+# appends one JSON line (ts, text, build, front app, query) to file. Default file:
+# feedback.jsonl in the checkout this Flick was built from (git ignores it). keyword: the
+# word before the text in root search. hotkey opens a feedback field; unbound by default.
+# [feedback]
+# file = "~/Projects/flick/feedback.jsonl"
+# keyword = "fb"
+# hotkey = "cmd+ctrl+alt+shift+KeyF"
+
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
 # it for newer commits when the launcher opens. gates: run scripts/check-all.sh first.
@@ -388,6 +397,19 @@ mod tests {
         let task: Table = parse(&example).unwrap().section("task").unwrap().unwrap().get().unwrap();
         assert_eq!(task.get("hotkey").and_then(Value::as_str), Some("cmd+ctrl+alt+shift+KeyT"));
         assert!(!DEFAULT_CONFIG.contains("\n[task]"), "the default leaves [task] commented");
+    }
+
+    #[test]
+    fn default_config_feedback_example_parses_uncommented() {
+        let example = uncommented("# [feedback]");
+        let fb: Table =
+            parse(&example).unwrap().section("feedback").unwrap().unwrap().get().unwrap();
+        assert_eq!(fb.get("keyword").and_then(Value::as_str), Some("fb"));
+        assert_eq!(fb.len(), 3);
+        assert!(
+            !DEFAULT_CONFIG.contains("\n[feedback]"),
+            "the default leaves [feedback] commented"
+        );
     }
 
     #[test]
