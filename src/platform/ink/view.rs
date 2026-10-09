@@ -49,6 +49,8 @@ pub struct Ink {
     scale: Cell<f64>,
     background: RefCell<Option<Retained<NSImage>>>,
     on_command: Cell<Option<fn(Command)>>,
+    /// Runs after a shape is finished (mouse up or placed text).
+    on_stroke: Cell<Option<fn()>>,
     /// The open text field and the point its text goes to.
     text: RefCell<Option<(Retained<NSTextField>, Point)>>,
 }
@@ -120,8 +122,9 @@ define_class!(
 
         #[unsafe(method(mouseUp:))]
         fn mouse_up(&self, _event: &NSEvent) {
-            self.ivars().canvas.borrow_mut().end();
+            let added = self.ivars().canvas.borrow_mut().end();
             self.setNeedsDisplay(true);
+            self.stroked(added);
         }
 
         #[unsafe(method(keyDown:))]
@@ -169,6 +172,7 @@ impl FlickInkView {
             scale: Cell::new(1.0),
             background: RefCell::new(None),
             on_command: Cell::new(on_command),
+            on_stroke: Cell::new(None),
             text: RefCell::new(None),
         });
         // SAFETY: NSView's designated initializer, with the argument type of its signature.
@@ -179,6 +183,41 @@ impl FlickInkView {
     pub fn set_background(&self, image: Option<&NSImage>) {
         *self.ivars().background.borrow_mut() = image.map(Retained::from);
         self.setNeedsDisplay(true);
+    }
+
+    /// New shapes take `style`'s width and colors; existing shapes are redrawn in its colors.
+    pub fn set_style(&self, style: Style) {
+        let ink = self.ivars();
+        ink.canvas.borrow_mut().width = style.width;
+        *ink.style.borrow_mut() = style;
+        self.setNeedsDisplay(true);
+    }
+
+    /// Call `f` after each finished shape. It runs while `AppKit` is mid-event.
+    pub fn set_on_stroke(&self, f: Option<fn()>) {
+        self.ivars().on_stroke.set(f);
+    }
+
+    /// No finished and no active shape.
+    pub fn is_empty(&self) -> bool {
+        self.ivars().canvas.borrow().is_empty()
+    }
+
+    /// Drop every shape. Returns whether anything was visible.
+    pub fn clear(&self) -> bool {
+        self.end_text(false);
+        let cleared = self.ivars().canvas.borrow_mut().clear();
+        self.setNeedsDisplay(true);
+        cleared
+    }
+
+    /// Drop shapes started `fade_secs` or more before `now` (see `Canvas::expire`).
+    pub fn expire(&self, now: f64, fade_secs: f32) -> bool {
+        let gone = self.ivars().canvas.borrow_mut().expire(now, fade_secs);
+        if gone {
+            self.setNeedsDisplay(true);
+        }
+        gone
     }
 
     /// The background and shapes at `width` x `height` pixels as PNG bytes, the shapes scaled
@@ -270,15 +309,20 @@ impl FlickInkView {
     fn end_text(&self, keep: bool) {
         let ink = self.ivars();
         let Some((field, p)) = ink.text.borrow_mut().take() else { return };
-        if keep {
-            let text = field.stringValue().to_string();
-            ink.canvas.borrow_mut().add_text(ink.color.get(), p, &text, now());
-        }
+        let text = field.stringValue().to_string();
+        let added = keep && ink.canvas.borrow_mut().add_text(ink.color.get(), p, &text, now());
         if let Some(window) = self.window() {
             window.makeFirstResponder(Some(self));
         }
         field.removeFromSuperview();
         self.setNeedsDisplay(true);
+        self.stroked(added);
+    }
+
+    fn stroked(&self, added: bool) {
+        if let Some(on_stroke) = self.ivars().on_stroke.get().filter(|_| added) {
+            on_stroke();
+        }
     }
 }
 
@@ -384,7 +428,7 @@ fn bitmap(width: usize, height: usize) -> Option<Retained<NSBitmapImageRep>> {
     }
 }
 
-fn ns_color([r, g, b, a]: [f32; 4]) -> Retained<NSColor> {
+pub(super) fn ns_color([r, g, b, a]: [f32; 4]) -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(r.into(), g.into(), b.into(), a.into())
 }
 
