@@ -1,0 +1,1 @@
+{"type":"convention","classification":"tactical","recorded_at":"2026-10-09T16:41:08.865Z","evidence":{"commit":"c1f537d952d81d16da14b060751afdce09fd56da"},"dir_anchors":["src/characterization"],"content":"flick is bin-only: put characterization/integration tests in cfg(test) src/characterization/ using only crate:: paths, because tests/ cannot see bin internals","id":"mx-d308e2"}
