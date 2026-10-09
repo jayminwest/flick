@@ -11,6 +11,8 @@ pub mod switcher;
 pub mod windows;
 
 use crate::core::Registry;
+#[cfg(test)]
+pub use clipboard::store::Clips;
 
 /// Every module, with the app index scanned now.
 pub fn registry() -> Registry {
@@ -31,4 +33,23 @@ pub fn with_apps(apps: Vec<apps::App>) -> Registry {
         Box::new(flick::Flick),
         Box::new(clipboard::Clipboard::default()),
     ])
+}
+
+/// Opens flick.db as the app does: core's tables, then every module's.
+#[cfg(test)]
+pub struct AppStore;
+
+#[cfg(test)]
+impl AppStore {
+    pub fn open(path: &std::path::Path) -> Result<crate::store::Store, String> {
+        let store = crate::store::Store::open(path).map_err(|e| e.to_string())?;
+        with_apps(vec![]).migrate(&store)?;
+        Ok(store)
+    }
+
+    pub fn in_memory() -> crate::store::Store {
+        let store = crate::store::Store::in_memory();
+        with_apps(vec![]).migrate(&store).expect("module migrations run on an empty database");
+        store
+    }
 }

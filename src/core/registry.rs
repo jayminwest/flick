@@ -2,6 +2,7 @@
 
 use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
 use crate::config::Config;
+use crate::store::Store;
 
 pub struct Registry {
     modules: Vec<Box<dyn Module>>,
@@ -15,6 +16,13 @@ impl Registry {
             "duplicate module id"
         );
         Registry { modules }
+    }
+
+    /// Run every module's store migrations. Stops at the first failure, naming the module.
+    pub fn migrate(&self, store: &Store) -> Result<(), String> {
+        self.modules.iter().try_for_each(|m| {
+            store.migrate(m.id(), m.migrations()).map_err(|e| format!("{}: {e}", m.id()))
+        })
     }
 
     fn get(&mut self, id: &str) -> Option<&mut Box<dyn Module>> {
@@ -93,6 +101,10 @@ mod tests {
             self.id
         }
 
+        fn migrations(&self) -> &'static [&'static str] {
+            &["CREATE TABLE IF NOT EXISTS toy (a INTEGER);"]
+        }
+
         fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
             vec![Item::new(ItemId::new(self.id, "one"), "One", "Run", Icon::Symbol("app"))]
         }
@@ -142,6 +154,31 @@ mod tests {
         fn id(&self) -> &'static str {
             "bare"
         }
+    }
+
+    /// Its one migration is not SQL.
+    struct Broken;
+
+    impl Module for Broken {
+        fn id(&self) -> &'static str {
+            "broken"
+        }
+
+        fn migrations(&self) -> &'static [&'static str] {
+            &["NOT SQL;"]
+        }
+    }
+
+    #[test]
+    fn migrate_runs_each_modules_migrations_and_names_a_failure() {
+        let store = Store::in_memory();
+        registry().migrate(&store).unwrap();
+        registry().migrate(&store).unwrap();
+        let versions: Vec<usize> =
+            ["a", "bare", "b"].iter().map(|m| store.version(m).unwrap()).collect();
+        assert_eq!(versions, [1, 0, 1]);
+        let err = Registry::new(vec![Box::new(Broken)]).migrate(&store).unwrap_err();
+        assert!(err.starts_with("broken: "), "{err}");
     }
 
     fn with_cx<R>(query: &str, f: impl FnOnce(&mut Cx) -> R) -> R {
