@@ -28,15 +28,20 @@ impl Quicklink {
     }
 }
 
-#[expect(clippy::format_push_string, reason = "pre-gate code; behavior frozen until flick-ea94")]
+/// Percent-encode every byte outside RFC 3986's unreserved set, uppercase hex.
 fn percent_encode(s: &str) -> String {
-    let mut out = String::new();
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(b as char);
             }
-            _ => out.push_str(&format!("%{b:02X}")),
+            _ => {
+                out.push('%');
+                out.push(char::from(HEX[usize::from(b >> 4)]));
+                out.push(char::from(HEX[usize::from(b & 0xF)]));
+            }
         }
     }
     out
@@ -54,5 +59,13 @@ mod tests {
         assert_eq!(q.expand("rust lang&co"), "https://x.com/?q=rust%20lang%26co");
         let p = Quicklink { name: "P".into(), url: "/tmp".into(), keyword: None };
         assert_eq!(p.expand(""), "file:///tmp");
+    }
+
+    #[test]
+    fn percent_encodes_all_but_unreserved_bytes() {
+        assert_eq!(percent_encode("Az09-_.~"), "Az09-_.~");
+        assert_eq!(percent_encode(" /?#%+\n"), "%20%2F%3F%23%25%2B%0A");
+        assert_eq!(percent_encode("é→"), "%C3%A9%E2%86%92");
+        assert_eq!(percent_encode(""), "");
     }
 }
