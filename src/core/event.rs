@@ -39,6 +39,9 @@ pub enum Event {
     Locked,
     /// The screen unlocked, or this session became active again.
     Unlocked,
+    /// The running task changed: `task` is its id, `None` when no task runs. Posted by the
+    /// `task` module with `events::post` on start, stop, switch and `Started`.
+    TaskChanged { task: Option<i64> },
 }
 
 /// Pids of activated apps, most recent first, at most `RECENT_MAX`.
@@ -96,6 +99,8 @@ mod tests {
             (Event::Sleep, r#"{"event":"sleep"}"#),
             (Event::Locked, r#"{"event":"locked"}"#),
             (Event::Unlocked, r#"{"event":"unlocked"}"#),
+            (Event::TaskChanged { task: Some(3) }, r#"{"event":"task_changed","task":3}"#),
+            (Event::TaskChanged { task: None }, r#"{"event":"task_changed","task":null}"#),
         ];
         for (event, json) in cases {
             assert_eq!(serde_json::to_string(&event).unwrap(), json);

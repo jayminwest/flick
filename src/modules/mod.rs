@@ -44,6 +44,7 @@ modules! {
         mod clipboard => "clip", || clipboard::Clipboard;
         mod activity => "activity", activity::Activity::default;
         mod herdr => "herdr", herdr::Herdr::default;
+        mod tasks => "task", tasks::Tasks::default;
         mod keys => "keys", keys::Keys::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
