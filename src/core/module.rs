@@ -56,6 +56,12 @@ pub trait Module {
     /// The `module` part of every `ItemId` this module creates.
     fn id(&self) -> &'static str;
 
+    /// This module's store migrations, keyed by `id()` in `schema_versions`. Append only.
+    /// The module's SQL touches only the tables these create.
+    fn migrations(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Items this module contributes to root search.
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
         vec![]

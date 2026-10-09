@@ -1,18 +1,19 @@
-//! SQLite persistence: item usage (frecency) and clipboard history.
+//! flick.db: one shared SQLite connection. Each owner (core, or a module by its id)
+//! declares an ordered list of migrations; `schema_versions` records how many of them ran.
+//! An owner touches only its own tables. Core owns `usage` (frecency); a module's SQL
+//! lives in that module.
 
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::Usage;
 
-const MAX_CLIPS: i64 = 500;
-
-pub struct Clip {
-    pub id: i64,
-    pub text: String,
-    pub ts: i64,
-}
+/// Core's migrations. Step 1 adopts the `usage` table of a pre-versioning flick.db: the same
+/// SQL with `IF NOT EXISTS`, so an existing table and its rows stay as they are.
+const CORE_MIGRATIONS: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS usage (id TEXT PRIMARY KEY, count INTEGER NOT NULL, last INTEGER NOT NULL);",
+];
 
 pub struct Store {
     conn: Connection,
@@ -25,6 +26,8 @@ pub fn now() -> i64 {
 }
 
 impl Store {
+    /// Open `path` and run core's migrations. Modules migrate their own tables with
+    /// `migrate`.
     pub fn open(path: &Path) -> rusqlite::Result<Store> {
         Self::init(Connection::open(path)?)
     }
@@ -39,10 +42,47 @@ impl Store {
 
     fn init(conn: Connection) -> rusqlite::Result<Store> {
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS usage (id TEXT PRIMARY KEY, count INTEGER NOT NULL, last INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS clips (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL UNIQUE, ts INTEGER NOT NULL);",
+            "CREATE TABLE IF NOT EXISTS schema_versions (owner TEXT PRIMARY KEY, version INTEGER NOT NULL);",
         )?;
-        Ok(Store { conn })
+        let store = Store { conn };
+        store.migrate("core", CORE_MIGRATIONS)?;
+        Ok(store)
+    }
+
+    /// How many of `owner`'s migrations have run.
+    pub fn version(&self, owner: &str) -> rusqlite::Result<usize> {
+        let v: Option<i64> = self
+            .conn
+            .query_row("SELECT version FROM schema_versions WHERE owner = ?1", [owner], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(usize::try_from(v.unwrap_or(0)).unwrap_or(0))
+    }
+
+    /// Run `owner`'s migrations that have not run yet, in order, in one transaction.
+    /// Migrations only append: never edit or reorder a released one. Running it again does
+    /// nothing.
+    pub fn migrate(&self, owner: &str, migrations: &[&str]) -> rusqlite::Result<()> {
+        let done = self.version(owner)?;
+        if done >= migrations.len() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        for sql in &migrations[done..] {
+            tx.execute_batch(sql)?;
+        }
+        tx.execute(
+            "INSERT INTO schema_versions (owner, version) VALUES (?1, ?2)
+             ON CONFLICT(owner) DO UPDATE SET version = ?2",
+            params![owner, migrations.len() as i64],
+        )?;
+        tx.commit()
+    }
+
+    /// The shared connection, for an owner's SQL against its own tables.
+    pub fn conn(&self) -> &Connection {
+        &self.conn
     }
 
     pub fn record_use(&self, id: &str) {
@@ -63,36 +103,6 @@ impl Store {
         }
         out
     }
-
-    /// Add a clip, or move an existing identical clip to the top.
-    pub fn add_clip(&self, text: &str) {
-        if text.trim().is_empty() {
-            return;
-        }
-        // Re-insert so the clip gets the newest id; ids give the order.
-        let _ = self.conn.execute("DELETE FROM clips WHERE text = ?1", [text]);
-        let _ =
-            self.conn.execute("INSERT INTO clips (text, ts) VALUES (?1, ?2)", params![text, now()]);
-        let _ = self.conn.execute(
-            "DELETE FROM clips WHERE id NOT IN (SELECT id FROM clips ORDER BY id DESC LIMIT ?1)",
-            params![MAX_CLIPS],
-        );
-    }
-
-    /// Clips, newest first.
-    pub fn clips(&self) -> Vec<Clip> {
-        let Ok(mut stmt) = self.conn.prepare("SELECT id, text, ts FROM clips ORDER BY id DESC")
-        else {
-            return vec![];
-        };
-        stmt.query_map([], |r| Ok(Clip { id: r.get(0)?, text: r.get(1)?, ts: r.get(2)? }))
-            .map(|rows| rows.flatten().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn clip_text(&self, id: i64) -> Option<String> {
-        self.conn.query_row("SELECT text FROM clips WHERE id = ?1", [id], |r| r.get(0)).ok()
-    }
 }
 
 #[cfg(test)]
@@ -108,15 +118,26 @@ mod tests {
     }
 
     #[test]
-    fn clips_dedupe_and_skip_blank() {
+    fn migrations_run_once_in_order_per_owner() {
         let s = Store::in_memory();
-        s.add_clip("one");
-        s.add_clip("two");
-        s.add_clip("one");
-        s.add_clip("   ");
-        let clips = s.clips();
-        assert_eq!(clips.len(), 2);
-        assert_eq!(clips[0].text, "one");
-        assert_eq!(s.clip_text(clips[1].id).as_deref(), Some("two"));
+        assert_eq!(s.version("core").unwrap(), 1);
+        assert_eq!(s.version("toy").unwrap(), 0);
+        let v1 = ["CREATE TABLE toy (a INTEGER);"];
+        s.migrate("toy", &v1).unwrap();
+        s.migrate("toy", &v1).unwrap();
+        let v2 = [v1[0], "ALTER TABLE toy ADD COLUMN b TEXT;"];
+        s.migrate("toy", &v2).unwrap();
+        s.migrate("toy", &v2).unwrap();
+        assert_eq!(s.version("toy").unwrap(), 2);
+        s.conn().execute("INSERT INTO toy (a, b) VALUES (1, 'x')", []).unwrap();
+    }
+
+    #[test]
+    fn a_failed_migration_leaves_no_trace() {
+        let s = Store::in_memory();
+        let bad = ["CREATE TABLE half (a INTEGER);", "NOT SQL;"];
+        assert!(s.migrate("bad", &bad).is_err());
+        assert_eq!(s.version("bad").unwrap(), 0);
+        assert!(s.conn().prepare("SELECT a FROM half").is_err());
     }
 }

@@ -62,6 +62,9 @@ pub fn init(config: Config, store: Store) {
         scroll: 0,
         status: None,
     };
+    if let Err(e) = state.registry.migrate(&state.env.store) {
+        eprintln!("flick: store migration failed: {e}");
+    }
     state.registry.dispatch(Event::Started, &mut state.env.cx(""));
     STATE.with(|s| *s.borrow_mut() = Some(state));
 }

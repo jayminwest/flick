@@ -1,11 +1,14 @@
 //! Module `clip`: records copied text, shows the clipboard history view and pastes a clip.
 //! Ids are `clip:<row id>`.
 
+pub(super) mod store;
+
 use std::collections::HashMap;
 
 use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::{ax, pasteboard, timer};
-use crate::store;
+use crate::store::now;
+use store::{Clips, MIGRATIONS};
 
 /// `count`: the pasteboard's change count when last checked; set on `Event::Started`.
 #[derive(Default)]
@@ -14,7 +17,7 @@ pub struct Clipboard {
 }
 
 fn relative_time(ts: i64) -> String {
-    let secs = (store::now() - ts).max(0);
+    let secs = (now() - ts).max(0);
     match secs {
         0..60 => "Just now".into(),
         60..3600 => format!("{}m ago", secs / 60),
@@ -26,6 +29,10 @@ fn relative_time(ts: i64) -> String {
 impl Module for Clipboard {
     fn id(&self) -> &'static str {
         "clip"
+    }
+
+    fn migrations(&self) -> &'static [&'static str] {
+        MIGRATIONS
     }
 
     /// View `history`.
