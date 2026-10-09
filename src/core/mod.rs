@@ -1,5 +1,6 @@
 //! Core types every feature shares: items and their ids, outcomes, list views, forms,
-//! item actions and confirmations, the `Module` contract and its registry, and ranking.
+//! item actions and confirmations, the `Module` contract and its registry, ranking, and the
+//! key engine.
 //! Plain Rust: no `crate::platform`, so everything here unit-tests without `AppKit`.
 
 mod action;
@@ -8,10 +9,14 @@ pub mod control;
 mod event;
 mod form;
 mod item;
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-df71"))]
+pub mod keys;
 mod module;
 mod rank;
 mod registry;
 mod routing;
+#[cfg_attr(not(test), expect(dead_code, reason = "used from flick-e2d5 and flick-feab on"))]
+pub mod track;
 mod view;
 
 pub use action::Action;
