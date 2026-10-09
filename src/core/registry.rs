@@ -65,7 +65,7 @@ impl Registry {
     }
 
     /// Send `event` to every module in order. Returns the ids of modules whose views went
-    /// stale. A module that panics is logged and skipped, so the others still get the event.
+    /// stale, which always include the module a `ModuleChanged` names. A module that panics is logged and skipped, so the others still get the event.
     pub fn dispatch(&mut self, event: Event, cx: &mut Cx) -> Vec<&'static str> {
         self.send(event, cx, |_| true)
     }
@@ -82,6 +82,11 @@ impl Registry {
                 Ok(true) => stale.push(m.id()),
                 Ok(false) => {}
                 Err(_) => eprintln!("flick: module {} panicked handling {event:?}", m.id()),
+            }
+            if matches!(event, Event::ModuleChanged { module } if module == m.id())
+                && !stale.contains(&m.id())
+            {
+                stale.push(m.id());
             }
         }
         stale
@@ -289,6 +294,23 @@ mod tests {
             assert!(r.dispatch_to(&[], Event::PasteboardChanged, cx).is_empty());
         });
         assert_eq!(toy.events, 1);
+    }
+
+    #[test]
+    fn module_changed_makes_only_the_named_module_stale() {
+        let mut r = Registry::new(vec![
+            Box::new(Toy { id: "a", events: 0 }),
+            Box::new(Bare),
+            Box::new(Faulty),
+        ]);
+        let changed = |module| Event::ModuleChanged { module };
+        with_cx("", |cx| {
+            assert_eq!(r.dispatch(changed("a"), cx), ["a"]);
+            assert_eq!(r.dispatch(changed("bare"), cx), ["bare"]);
+            assert_eq!(r.dispatch(changed("faulty"), cx), ["faulty"]);
+            assert!(r.dispatch(changed("nobody"), cx).is_empty());
+            assert!(r.dispatch_to(&["a"], changed("bare"), cx).is_empty());
+        });
     }
 
     /// Panics on every event.

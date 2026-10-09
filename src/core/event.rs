@@ -24,6 +24,10 @@ pub enum Event {
     Idle { secs: u64 },
     /// Input resumed after `Idle`.
     Active,
+    /// Background work of module `module` progressed: its visible view refreshes, whatever
+    /// its `on_event` returns. Posted from the module's own thread with `events::post`.
+    #[cfg_attr(not(test), expect(dead_code, reason = "posted by the rebuild runner, flick-31c8"))]
+    ModuleChanged { module: &'static str },
 }
 
 /// Pids of activated apps, most recent first, at most `RECENT_MAX`.
@@ -72,6 +76,10 @@ mod tests {
             (Event::DisplaysChanged, r#"{"event":"displays_changed"}"#),
             (Event::Idle { secs: 60 }, r#"{"event":"idle","secs":60}"#),
             (Event::Active, r#"{"event":"active"}"#),
+            (
+                Event::ModuleChanged { module: "flick" },
+                r#"{"event":"module_changed","module":"flick"}"#,
+            ),
         ];
         for (event, json) in cases {
             assert_eq!(serde_json::to_string(&event).unwrap(), json);
