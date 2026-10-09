@@ -10,7 +10,7 @@ use crate::config::{Config, Section};
 use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::workspace;
 
-/// Table `[quicklink]`: `[[quicklink.links]]` (legacy: top-level `[[quicklinks]]`).
+/// Table `[quicklink]`: `[[quicklink.links]]` (legacy: top-level `[[quicklinks]]`), unique names.
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct Settings {
@@ -31,7 +31,20 @@ impl Quicklinks {
 /// The links `config` sets up; none when the module is disabled.
 pub fn links(config: &Config) -> Result<Vec<Quicklink>, String> {
     let Some(section) = config.section("quicklink")? else { return Ok(vec![]) };
-    Ok(section.get::<Settings>()?.links)
+    read(&section)
+}
+
+/// The table's links. Names must be unique: the name is the item id key, so a second link
+/// with the same name could never be opened.
+fn read(table: &Section) -> Result<Vec<Quicklink>, String> {
+    let links = table.get::<Settings>()?.links;
+    for (i, q) in links.iter().enumerate() {
+        if links[..i].iter().any(|p| p.name == q.name) {
+            let name = &q.name;
+            return Err(format!("[quicklink] links: duplicate name \"{name}\"; keep one"));
+        }
+    }
+    Ok(links)
 }
 
 fn item(q: &Quicklink, arg: Option<String>) -> Item {
@@ -63,7 +76,7 @@ impl Module for Quicklinks {
     }
 
     fn configure(&mut self, table: &Section) -> Result<(), String> {
-        self.links = table.get::<Settings>()?.links;
+        self.links = read(table)?;
         Ok(())
     }
 
@@ -126,5 +139,37 @@ impl Module for Quicklinks {
         cx.hide();
         workspace::open_url(&url);
         Outcome::Hide
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::parse;
+
+    fn configured(text: &str) -> Result<Quicklinks, String> {
+        let mut m = Quicklinks::default();
+        m.configure(&parse(text)?.section("quicklink")?.ok_or("disabled")?)?;
+        Ok(m)
+    }
+
+    #[test]
+    fn duplicate_names_are_rejected() {
+        let link = |name: &str, url: &str| {
+            format!("[[quicklink.links]]\nname = \"{name}\"\nurl = \"{url}\"\n")
+        };
+        let text = link("Docs", "https://a.com") + &link("Docs", "https://b.com");
+        let err = configured(&text).err().unwrap();
+        assert_eq!(err, "[quicklink] links: duplicate name \"Docs\"; keep one");
+        assert_eq!(links(&parse(&text).unwrap()).unwrap_err(), err);
+        // A legacy [[quicklinks]] entry counts too.
+        let legacy = "[[quicklinks]]\nname = \"Docs\"\nurl = \"/\"\n".to_string();
+        let legacy = legacy + &link("Docs", "/x");
+        assert_eq!(configured(&legacy).err().unwrap(), err);
+        // Names compare exactly, as item ids do.
+        let mut m = configured(&(link("Docs", "/a") + &link("docs", "/b"))).unwrap();
+        let items = crate::core::test_cx("", |cx| m.items(cx));
+        let ids: Vec<_> = items.iter().map(|i| i.id.to_string()).collect();
+        assert_eq!(ids, ["quicklink:Docs", "quicklink:docs"]);
     }
 }
