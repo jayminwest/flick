@@ -199,6 +199,53 @@ impl Report {
     }
 }
 
+/// Recorded time on one task id; `task: None` is time with no task running.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct TaskTotal {
+    pub task: Option<i64>,
+    pub secs: i64,
+    pub share: f64,
+}
+
+/// `flick activity today|week --by task`: totals keyed by task id. Activity cannot read
+/// task titles; `flick task ls` maps ids to titles.
+#[derive(Debug, Serialize)]
+pub struct TaskReport {
+    pub range: &'static str,
+    pub from: i64,
+    pub to: i64,
+    pub recording: bool,
+    pub recorded_secs: i64,
+    pub by_task: Vec<TaskTotal>,
+}
+
+impl TaskReport {
+    /// Totals for `range` over `spans` already clipped to `from..to`, largest first.
+    pub fn new(range: &'static str, (from, to): (i64, i64), spans: &[Span<Subject>], recording: bool) -> Self {
+        let recorded: i64 = spans.iter().map(Span::secs).sum();
+        let by_task = sum_by(spans, |s| s.subject.task)
+            .into_iter()
+            .map(|(task, secs)| TaskTotal { task, secs, share: secs as f64 / recorded as f64 })
+            .collect();
+        TaskReport { range, from, to, recording, recorded_secs: recorded, by_task }
+    }
+
+    pub fn text(&self) -> String {
+        let state = if self.recording { "on" } else { "off" };
+        let mut out = format!(
+            "Activity {} by task (recording {state})\nRecorded {}",
+            self.range,
+            duration(self.recorded_secs)
+        );
+        for t in &self.by_task {
+            let share = (t.share * 100.0).round();
+            let name = t.task.map_or_else(|| "no task".to_owned(), |id| format!("task {id}"));
+            let _ = write!(out, "\n  {:>8}  {share:>3}%  {name}", duration(t.secs));
+        }
+        out
+    }
+}
+
 /// One span for `flick activity spans`.
 #[derive(Debug, Serialize)]
 pub struct SpanOut<'a> {
@@ -335,6 +382,27 @@ mod tests {
         let empty = Report::new("week", (0, 1, 0), &[], &Config::default(), false);
         assert_eq!((empty.recorded_secs, empty.gap_secs), (0, 0));
         assert_eq!(empty.text(), "Activity week (recording off)\nRecorded 0s, gaps 0s");
+    }
+
+    #[test]
+    fn totals_by_task_id() {
+        let mut spans = vec![span(0, 300, "zed", None), span(300, 400, "mail", None), span(400, 500, "zed", None)];
+        spans[0].subject.task = Some(3);
+        spans[2].subject.task = Some(3);
+        let r = TaskReport::new("today", (0, 1000), &spans, true);
+        assert_eq!(r.recorded_secs, 500);
+        assert_eq!(
+            r.by_task.iter().map(|t| (t.task, t.secs)).collect::<Vec<_>>(),
+            [(Some(3), 400), (None, 100)]
+        );
+        assert_eq!(
+            r.text(),
+            "Activity today by task (recording on)\nRecorded 8m\n        6m   80%  task 3\n        1m   20%  no task"
+        );
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!((json["by_task"][0]["task"].clone(), json["by_task"][1]["task"].clone()), (3.into(), serde_json::Value::Null));
+        let empty = TaskReport::new("week", (0, 1), &[], false);
+        assert_eq!(empty.text(), "Activity week by task (recording off)\nRecorded 0s");
     }
 
     #[test]
