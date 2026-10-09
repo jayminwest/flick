@@ -347,6 +347,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   events` ignores it). Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
+- `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
+  when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
+  (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
+  to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
+  5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
+  runs in this process (launcher, help, snapshot, import-raycast) is a usage error;
+  `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 
 ## Build stamp, install and rebuild
 
