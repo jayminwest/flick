@@ -2,15 +2,17 @@
 
 The [README](../README.md#activity) describes the `activity` module and its settings. This
 file is a manual test checklist for the parts that unit tests cannot reach: the menu bar
-indicator, Accessibility title changes, sleep and lock, and quit. Nothing here runs by
+indicator, Accessibility title changes, browser tab URLs and their Automation prompt, sleep
+and lock, and quit. Nothing here runs by
 itself: do each step by hand, on the installed app, after a change to `src/modules/activity/`,
-`src/core/track.rs`, `platform::axwatch`, `platform::status_item` or `events::on_session`.
+`src/core/track.rs`, `platform::axwatch`, `platform::browser`, `platform::status_item` or
+`events::on_session`.
 
 To see what is stored, read the database with a second connection:
 
 ```bash
 db=~/Library/Application\ Support/Flick/flick.db
-sqlite3 "$db" 'select id, start, end, end - start, app, title from activity_spans order by id desc limit 10'
+sqlite3 "$db" 'select id, start, end, end - start, app, title, url from activity_spans order by id desc limit 10'
 sqlite3 "$db" 'select * from activity_state'
 ```
 
@@ -37,6 +39,30 @@ sqlite3 "$db" 'select * from activity_state'
    System Settings > Privacy & Security > Accessibility: status prints
    `titles: no Accessibility permission`, and new spans are per app with no title. Grant it
    again afterwards.
+6a. **URLs off.** With `urls = false` (the default), switch Brave tabs for a minute: every
+   new row has `url` NULL, `flick activity status` prints `urls: off`, and System Settings >
+   Privacy & Security > Automation lists no browser under Flick.
+6b. **URLs on, Automation prompt.** Set `urls = true` and run **Reload Flick Config**, with
+   recording on. Bring Brave to the front: macOS asks once whether Flick may control
+   "Brave Browser". The launcher and other apps stay responsive while the prompt is up.
+   Allow it. Within about a second the open row's `url` is the front tab's URL. Switch tabs
+   (each for 5+ s): each tab gets its own row with its URL; a quick tab flip (under
+   `merge_secs`) leaves no row. `flick activity today` ends with a `Domains` section
+   (hosts only, `www.` dropped), and `flick --json activity spans | jq '.ok[].url'` lists the
+   URLs.
+6c. **Private window.** Open a private window in Brave (shift+cmd+N) and load a page. The
+   rows for that window have `url` NULL; back in a normal window, URLs return.
+6d. **Denied.** In System Settings > Privacy & Security > Automation, turn off Brave
+   Browser under Flick, then bring Brave to the front. `flick activity status` prints
+   `urls: no Automation permission for Brave Browser`, and new Brave rows have no URL.
+   Turn it on again: after the next tab switch, status prints `urls: on`. To see the
+   prompt again from scratch: `tccutil reset AppleEvents com.jayminwest.flick`.
+6e. **Other browsers and exclude.** Chrome gets URLs the same way (its own prompt).
+   Safari and Arc rows never have a URL and cause no prompt. With Brave in `exclude`, no
+   Brave row is stored and no prompt appears.
+6f. **Agents.** `flick activity remote allow`, then `flick activity spans --remote --json`:
+   every `url` is null and `flick activity today --remote --json` has empty `top_domains`.
+   With `remote_urls = true` (and a config reload) both show.
 7. **CPU with a spinner title.** With recording on and `titles = true`, put a terminal in
    front whose title changes several times a second (a working coding agent's spinner).
    Over 60 s, Activity Monitor shows Flick near 0% CPU, and `activity_spans` gets no row

@@ -3,7 +3,7 @@
 //! `flick activity remote allow [<minutes>|always]` or the root item `activity:remote`. The
 //! grant ends at `remote_until` in `activity_state`, checked on each call (no timer). Remote
 //! callers never grant, deny, record or forget, and see window titles only with
-//! `[activity] remote_titles = true`. A guard against accidents, not against a hostile agent:
+//! `[activity] remote_titles = true`, URLs and domains only with `remote_urls = true`. A guard against accidents, not against a hostile agent:
 //! the gate is a request word.
 
 use serde::Serialize;
@@ -12,7 +12,7 @@ use crate::core::store::Store;
 use crate::core::{Cx, Icon, Item, ItemId};
 
 use super::Activity;
-use super::report::local_time;
+use super::report::{Report, SpanOut, local_time};
 use super::store::Spans;
 
 pub const REFUSED: &str = "activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick";
@@ -90,9 +90,28 @@ impl Activity {
         Ok(format!("{}\nlast read: {last}", grant_text(if granted { until } else { 0 }, now)))
     }
 
-    /// Remote replies leave window titles out.
-    pub(super) fn hide_titles(&self, cx: &Cx) -> bool {
-        cx.remote && !self.config.remote_titles
+    /// A remote reply leaves out window titles without `remote_titles`, and domains without
+    /// `remote_urls`.
+    pub(super) fn redact_report(&self, cx: &Cx, r: &mut Report) {
+        if cx.remote && !self.config.remote_titles {
+            r.top_titles.clear();
+        }
+        if cx.remote && !self.config.remote_urls {
+            r.top_domains.clear();
+        }
+    }
+
+    /// A remote reply leaves out window titles without `remote_titles`, and URLs without
+    /// `remote_urls`.
+    pub(super) fn redact_spans(&self, cx: &Cx, list: &mut [SpanOut]) {
+        for s in list {
+            if cx.remote && !self.config.remote_titles {
+                s.title = None;
+            }
+            if cx.remote && !self.config.remote_urls {
+                s.url = None;
+            }
+        }
     }
 
     /// The root item `activity:remote`: allow for an hour, or revoke a live grant.
