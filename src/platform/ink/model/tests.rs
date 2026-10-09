@@ -264,6 +264,8 @@ fn keys_without_cmd() {
         ("\r", Some(Command::Done)),
         ("\u{3}", Some(Command::Done)),
         ("\u{1b}", Some(Command::Cancel)),
+        ("?", Some(Command::Help)),
+        ("/", Some(Command::Help)),
         ("z", None),
         ("", None),
     ];

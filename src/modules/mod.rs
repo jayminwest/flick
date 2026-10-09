@@ -50,6 +50,7 @@ modules! {
         mod capture => "capture", capture::Capture::default;
         mod feedback => "feedback", feedback::Feedback::default;
         mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
+        mod help => "help", help::Help::default;
     }
 }
 

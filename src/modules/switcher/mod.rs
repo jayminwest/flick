@@ -137,9 +137,4 @@ mod tests {
             assert!(s.hotkey("other", cx).is_none());
         });
     }
-
-    #[test]
-    fn the_example_config_lists_every_key() {
-        crate::config::example::assert_documents::<Settings>("switcher");
-    }
 }

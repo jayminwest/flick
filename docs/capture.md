@@ -13,7 +13,7 @@ The `capture` module takes screenshots, opens them in a small annotation editor,
 | **Clear Drawing** | Remove the shapes from the screen. Shows only while shapes are there. |
 | **Recent Captures** | Your shots, newest first. ↵ opens one. ⌘K: **Copy Image**, **Annotate**, **Show in Finder**, **Copy Path**, **Move to Trash**. |
 
-Editor and draw keys: `a` arrow, `r` rectangle, `p` pen, `h` highlighter, `t` text, `x` redact (a solid black box), `1` to `5` the colors, ⌘Z undo, ⇧⌘Z redo, Delete clears.
+Editor and draw keys: `a` arrow, `r` rectangle, `p` pen, `h` highlighter, `t` text, `x` redact (a solid black box), `1` to `5` the colors, ⌘Z undo, ⇧⌘Z redo, Delete clears. There is no eraser: ⌘Z takes back the last shape. A strip at the bottom of the editor and of the drawing shows the current tool and color and these keys; `?` hides and shows it. **Flick Help** in the launcher lists them too.
 
 - **Editor.** ↵ writes the annotated PNG at full pixel size, and copies it when `copy = true`. ⌘C writes and copies; ⌘S writes and does not copy. Esc or the close button writes nothing. The app you came from is in front again after the editor closes. **Capture Area and Annotate** writes over the shot; **Annotate** in Recent Captures and `flick capture annotate` write `<name> annotated.png` beside the file, and that copy shows in Recent Captures.
 - **Draw on Screen.** Drawing starts with the pen. ↵ stops drawing and keeps the shapes on the screen; clicks then pass through to the apps under them. Esc stops drawing and clears the shapes. With `fade_secs` above 0, each shape fades after that many seconds.
@@ -154,7 +154,9 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
     previous app instead, note it in the seed.
 17. **Tools and colors.** Draw with each tool (`a`, `r`, `p`, `h`, `t`, `x`) in each color
     (`1` to `5`). The Text tool opens a field at the click; ↵ places the text, Esc drops it.
-    ⌘Z undoes, ⇧⌘Z redoes, Delete clears.
+    ⌘Z undoes, ⇧⌘Z redoes, Delete clears. The key strip at the bottom names the current tool
+    and color (e.g. `Rectangle  ·  Yellow (2)`) and rings the current swatch; `?` hides it, `?`
+    again shows it. The saved PNG never has the strip.
 18. **Save, copy, cancel.** ↵ writes over the shot and copies it: the file and the pasted
     image both show the shapes, at full pixel size (same width and height as before). Annotate
     a shot again and press ⌘S: written, not copied. Again and press Esc (and again with the
@@ -173,6 +175,8 @@ osascript -e 'clipboard info'      # «class PNGf» and TIFF after a copy
 21. **Draw.** Run **Draw on Screen**. The pen draws over every app, the menu bar and the Dock,
     on every display, and in a full-screen space (make a window full screen and switch to
     it). Keys reach the overlay although it does not activate Flick: `r`, `2`, ⌘Z, Delete.
+    The key strip shows at the bottom of every display while drawing and follows `r` and `2`;
+    `?` hides it on every display; after ↵ (drawing off) no strip shows.
     The app that was in front keeps its title bar active.
 22. **Stop and Esc.** ↵ stops drawing and keeps the shapes; clicks now pass through to the
     apps under them, and the app that was in front still has key focus (type into it).
