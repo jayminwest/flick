@@ -1,12 +1,10 @@
-//! Global hotkeys via Carbon (through `global-hotkey`): the launcher toggle and window actions.
+//! Global hotkey bindings: the launcher toggle, desktop toggle, window switcher and window actions.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use global_hotkey::hotkey::HotKey;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-
 use crate::config::Config;
+use crate::platform::hotkeys::{self, Hotkey};
 use crate::windows::WindowAction;
 
 #[derive(Clone, Copy)]
@@ -17,30 +15,17 @@ enum Binding {
     Window(WindowAction),
 }
 
-struct Hotkeys {
-    manager: GlobalHotKeyManager,
-    bound: HashMap<u32, (HotKey, Binding)>,
-}
-
 thread_local! {
-    static HOTKEYS: RefCell<Option<Hotkeys>> = const { RefCell::new(None) };
+    /// Registered hotkeys by id.
+    static BOUND: RefCell<HashMap<u32, (Hotkey, Binding)>> = RefCell::new(HashMap::new());
 }
 
 pub fn init() -> Result<(), String> {
-    let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
-    // Carbon delivers hotkey events on the main thread.
-    GlobalHotKeyEvent::set_event_handler(Some(|e: GlobalHotKeyEvent| {
-        if e.state == HotKeyState::Pressed {
-            dispatch(e.id);
-        }
-    }));
-    HOTKEYS.with(|h| *h.borrow_mut() = Some(Hotkeys { manager, bound: HashMap::new() }));
-    Ok(())
+    hotkeys::init(dispatch)
 }
 
 fn dispatch(id: u32) {
-    let binding =
-        HOTKEYS.with(|h| h.borrow().as_ref().and_then(|h| h.bound.get(&id).map(|(_, b)| *b)));
+    let binding = BOUND.with(|b| b.borrow().get(&id).map(|(_, b)| *b));
     match binding {
         Some(Binding::Toggle) => crate::app::toggle(),
         Some(Binding::Window(action)) => crate::app::window_action(action),
@@ -70,24 +55,24 @@ pub fn register(config: &Config) -> Result<(), String> {
         wanted.push((spec.as_str(), binding));
     }
 
-    HOTKEYS.with(|h| {
-        let mut h = h.borrow_mut();
-        let h = h.as_mut().ok_or("Hotkey manager not initialized")?;
-        for (_, (hotkey, _)) in h.bound.drain() {
-            let _ = h.manager.unregister(hotkey);
+    if !hotkeys::is_initialized() {
+        return Err("Hotkey manager not initialized".into());
+    }
+    BOUND.with(|bound| {
+        let mut bound = bound.borrow_mut();
+        for (_, (hotkey, _)) in bound.drain() {
+            hotkeys::unregister(hotkey);
         }
         let mut errors = vec![];
         for (spec, binding) in wanted {
             let result = binding.and_then(|binding| {
-                let hotkey: HotKey =
+                let hotkey: Hotkey =
                     spec.parse().map_err(|e| format!("Bad hotkey \"{spec}\": {e}"))?;
-                if h.bound.contains_key(&hotkey.id()) {
+                if bound.contains_key(&hotkey.id()) {
                     return Err(format!("\"{spec}\" is bound twice"));
                 }
-                h.manager
-                    .register(hotkey)
-                    .map_err(|e| format!("Can't register \"{spec}\": {e}"))?;
-                h.bound.insert(hotkey.id(), (hotkey, binding));
+                hotkeys::register(hotkey).map_err(|e| format!("Can't register \"{spec}\": {e}"))?;
+                bound.insert(hotkey.id(), (hotkey, binding));
                 Ok(())
             });
             if let Err(e) = result {
@@ -96,27 +81,4 @@ pub fn register(config: &Config) -> Result<(), String> {
         }
         if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_hotkey_specs() {
-        for spec in [
-            "alt+Space",
-            "cmd+KeyH",
-            "cmd+shift+KeyK",
-            "ctrl+alt+ArrowLeft",
-            "cmd+ctrl+alt+shift+KeyL",
-            "cmd+Backquote",
-        ] {
-            assert!(spec.parse::<HotKey>().is_ok(), "{spec}");
-        }
-        assert_ne!(
-            "cmd+KeyK".parse::<HotKey>().unwrap().id(),
-            "cmd+shift+KeyK".parse::<HotKey>().unwrap().id()
-        );
-    }
 }
