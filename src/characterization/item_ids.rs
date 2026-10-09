@@ -160,3 +160,13 @@ fn capture_ids_are_fixed_keys() {
     std::fs::remove_file(file).unwrap();
     assert_eq!(shots, ["capture:shot/7"]);
 }
+
+#[test]
+fn task_ids_are_fixed_keys() {
+    // While no task runs; a running task swaps `task:start` for `task:stop` and `task:switch`.
+    // Rows in `task/pick` and `task/today` are `task:run/<id>`, `task:new` and
+    // `task:project/<name>`; those views do not record use.
+    let items = root_items(&[], &[]);
+    let task: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("task:")).collect();
+    assert_eq!(task, ["task:start", "task:today"]);
+}
