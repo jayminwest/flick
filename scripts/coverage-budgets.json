@@ -7,6 +7,8 @@
     "src/core/": 100.0,
     "src/modules/apps/leftovers.rs": 100.0,
     "src/modules/herdr/model.rs": 100.0,
+    "src/modules/quicklinks/editor.rs": 99.6,
+    "src/modules/quicklinks/validate.rs": 100.0,
     "src/modules/windows/action.rs": 100.0,
     "src/root.rs": 100.0,
     "src/store.rs": 96.1
