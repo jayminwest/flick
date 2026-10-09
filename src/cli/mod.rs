@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "app list | app open|quit|force-quit|reveal <name>",
+                "app list | app open|quit|force-quit|reveal <name> | app running | app uninstall <name> --dry-run|--yes",
                 "window list | window <action>, e.g. window left-half",
                 "clip list | clip get <id>",
             ]

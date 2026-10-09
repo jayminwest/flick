@@ -7,11 +7,13 @@
 pub mod app;
 pub mod ax;
 pub mod axwatch;
+pub mod capture;
 pub mod clock;
 pub mod events;
 pub mod files;
 pub mod hid;
 pub mod hotkeys;
+pub mod ink;
 pub mod keytap;
 pub mod notify;
 pub mod panel;

@@ -8,7 +8,6 @@ use objc2_foundation::{NSFileManager, NSString, NSURL};
 /// Move the file, folder or bundle at `path` to the Trash, like Finder's Move to Trash.
 /// `Ok` holds its new location in the Trash; `Err` holds the system's description of why it
 /// could not move (missing, no permission, protected container).
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app uninstall (flick-4077)"))]
 pub fn trash(path: &Path) -> Result<PathBuf, String> {
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
     let mut moved = None;
