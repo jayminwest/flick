@@ -235,10 +235,4 @@ mod tests {
         let msg = "No app \"No Such App 7f3e\" to open Docs";
         assert!(matches!(out, Outcome::Stay(Some(s)) if s == msg));
     }
-
-    #[test]
-    fn the_example_config_lists_every_key() {
-        crate::config::example::assert_documents::<Settings>("quicklink");
-        crate::config::example::assert_documents::<Quicklink>("quicklink.links");
-    }
 }

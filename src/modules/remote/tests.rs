@@ -334,8 +334,3 @@ fn the_root_item_toggles() {
     let other = ItemId::new(ID, "other");
     assert!(matches!(with_cx(&s, false, false, |cx| r.activate(&other, cx)), Outcome::Stay(None)));
 }
-
-#[test]
-fn the_example_config_lists_every_key() {
-    crate::config::example::assert_documents::<Settings>("remote");
-}

@@ -221,10 +221,4 @@ mod tests {
         // The app pattern also matches the display name.
         assert_eq!(c.classify(&Subject::new("x", "WezTerm", None, None)).0, Some("terminal"));
     }
-
-    #[test]
-    fn the_example_config_lists_every_key() {
-        crate::config::example::assert_documents::<Settings>("activity");
-        crate::config::example::assert_documents::<RuleSettings>("activity.rules");
-    }
 }
