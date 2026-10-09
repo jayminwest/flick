@@ -11,6 +11,7 @@ pub mod files;
 pub mod hid;
 pub mod hotkeys;
 pub mod keytap;
+pub mod notify;
 pub mod panel;
 pub mod pasteboard;
 pub mod screens;
