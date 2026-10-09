@@ -4,12 +4,16 @@
 
 mod client;
 
+use std::ffi::OsStr;
+
+use crate::core::control::Flags;
 use crate::core::store;
 use crate::platform::app as macos;
 use crate::{app, config, control, raycast, ui};
 
 const USAGE: &str = "usage: flick                              run the launcher
-       flick [--json] <module> <verb> [args]  ask the running Flick (--json: raw reply)
+       flick [--json] <module> <verb> [args]  ask the running Flick (--json: raw reply;
+                                          FLICK_REMOTE set: marks the request --remote)
        flick reload                       reload config.toml
        flick events                       stream events as JSON lines
        flick snapshot <out.png> [query]
@@ -33,15 +37,17 @@ pub enum Command {
     /// No command after `--json`.
     Usage,
     Events,
-    /// A control request, printed raw with `json`.
+    /// A control request, printed raw with `flags.json`; `flags.remote` sends `--remote`.
     Request {
         words: Vec<String>,
-        json: bool,
+        flags: Flags,
     },
 }
 
 /// Parse the arguments after the program name. `--json` may come first or last.
-pub fn parse(args: &[String]) -> Command {
+/// `flick_remote` is the value of `$FLICK_REMOTE`: when set and not empty, a request is
+/// marked `--remote` (an agent session that may send the output to a remote model).
+pub fn parse(args: &[String], flick_remote: Option<&OsStr>) -> Command {
     let Some(first) = args.first() else { return Command::Launch };
     match first.as_str() {
         // Older macOS passes a process serial number to apps opened from Finder.
@@ -60,7 +66,10 @@ pub fn parse(args: &[String]) -> Command {
             match words.as_slice() {
                 [] => Command::Usage,
                 [w] if w == "events" => Command::Events,
-                _ => Command::Request { words, json },
+                _ => {
+                    let remote = flick_remote.is_some_and(|v| !v.is_empty());
+                    Command::Request { words, flags: Flags { json, remote } }
+                }
             }
         }
     }
@@ -81,7 +90,9 @@ pub fn run(command: Command) -> i32 {
             2
         }
         Command::Events => client::events(&control::socket_path()),
-        Command::Request { words, json } => client::request(&control::socket_path(), &words, json),
+        Command::Request { words, flags } => {
+            client::request(&control::socket_path(), &words, flags)
+        }
     }
 }
 
@@ -125,12 +136,22 @@ fn import_raycast(path: Option<&str>) -> i32 {
 mod tests {
     use super::*;
 
+    fn parsed_with(args: &[&str], flick_remote: Option<&str>) -> Command {
+        let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+        parse(&args, flick_remote.map(OsStr::new))
+    }
+
     fn parsed(args: &[&str]) -> Command {
-        parse(&args.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
+        parsed_with(args, None)
+    }
+
+    fn request_with(words: &[&str], json: bool, remote: bool) -> Command {
+        let words = words.iter().map(|s| (*s).to_string()).collect();
+        Command::Request { words, flags: Flags { json, remote } }
     }
 
     fn request(words: &[&str], json: bool) -> Command {
-        Command::Request { words: words.iter().map(|s| (*s).to_string()).collect(), json }
+        request_with(words, json, false)
     }
 
     #[test]
@@ -161,6 +182,22 @@ mod tests {
         assert_eq!(parsed(&["events"]), Command::Events);
         assert_eq!(parsed(&["--json", "events"]), Command::Events);
         assert_eq!(parsed(&["--json"]), Command::Usage);
+    }
+
+    #[test]
+    fn a_non_empty_flick_remote_marks_requests_remote() {
+        let remote = |args: &[&str], env| parsed_with(args, env);
+        assert_eq!(remote(&["task", "ls"], Some("1")), request_with(&["task", "ls"], false, true));
+        assert_eq!(
+            remote(&["task", "ls", "--json"], Some("yes")),
+            request_with(&["task", "ls"], true, true)
+        );
+        assert_eq!(remote(&["task", "ls"], Some("")), request(&["task", "ls"], false));
+        assert_eq!(remote(&["task", "ls"], None), request(&["task", "ls"], false));
+        // Only requests carry it: events, help and the launcher are unchanged.
+        assert_eq!(remote(&["events"], Some("1")), Command::Events);
+        assert_eq!(remote(&["--help"], Some("1")), Command::Help);
+        assert_eq!(remote(&[], Some("1")), Command::Launch);
     }
 
     #[test]
