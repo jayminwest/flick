@@ -10,6 +10,8 @@ domains:
   cli: {}
   modules: {}
   scripts: {}
+  herdr: {}
+  apps: {}
 governance:
   max_entries: 100
   warn_entries: 150

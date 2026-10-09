@@ -2,11 +2,12 @@
 //!
 //! Root item `app:quit` opens view `app/running` (safe: app keys are absolute paths). Its items
 //! are `app:<bundle path>` with arg `quit`, so cmd+K offers the same actions as the app's root
-//! item. Flick itself is never listed and never asked to quit.
+//! item, and Enter runs the module's Quit (`Apps::quit`, which never quits Flick). Flick itself
+//! is never listed.
 
 use std::path::Path;
 
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Outcome};
+use crate::core::{Cx, Icon, Item, ItemId, ListView};
 use crate::platform::workspace::{self, RunningApp};
 
 /// Key of the root item that opens the view.
@@ -39,14 +40,11 @@ pub fn view() -> ListView {
     }
 }
 
-/// Running regular apps other than Flick, in the system's order.
-pub fn running() -> Vec<RunningApp> {
-    let own = crate::platform::app::own_bundle();
-    without_flick(workspace::regular_apps(own_pid()), own.as_deref())
-}
-
-fn own_pid() -> i32 {
-    i32::try_from(std::process::id()).unwrap_or(-1)
+/// Running regular apps other than Flick (this process, or another one from bundle `own`), in
+/// the system's order.
+pub fn running(own: Option<&Path>) -> Vec<RunningApp> {
+    let me = i32::try_from(std::process::id()).unwrap_or(-1);
+    without_flick(workspace::regular_apps(me), own)
 }
 
 /// `apps` without Flick's own bundle (another Flick process from the same bundle included).
@@ -79,32 +77,6 @@ pub fn refresh(view: &mut ListView, apps: &[RunningApp], cx: &mut Cx) {
     });
 }
 
-/// Ask every running copy of the app at `path` to quit, never Flick itself. `terminate` sends
-/// the request (`workspace::terminate`; tests pass a fake). The status names the app.
-pub fn quit(path: &Path, pids: &[i32], terminate: impl Fn(i32) -> bool) -> Outcome {
-    let name = path.file_stem().map_or_else(|| path.display().to_string(), |s| s.to_string_lossy().into());
-    let own = crate::platform::app::own_bundle();
-    if own.as_deref() == Some(path) {
-        return Outcome::Stay(Some("Flick cannot quit itself here".into()));
-    }
-    let me = own_pid();
-    let pids: Vec<i32> = pids.iter().copied().filter(|&p| p != me).collect();
-    if pids.is_empty() {
-        return Outcome::Stay(Some(format!("{name} is not running")));
-    }
-    let sent = pids.iter().filter(|&&p| terminate(p)).count();
-    Outcome::Stay(Some(if sent == 0 {
-        format!("{name} did not accept the quit request")
-    } else {
-        format!("Asked {name} to quit")
-    }))
-}
-
-/// `quit` for the running copies of `path`, with the real terminate.
-pub fn quit_running(path: &Path) -> Outcome {
-    quit(path, &workspace::running_for_bundle(path), workspace::terminate)
-}
-
 /// `app running`: `<pid>\t<name>\t<path>` per app; the path is empty for an app without a
 /// bundle.
 pub fn lines(apps: &[RunningApp]) -> String {
@@ -119,7 +91,6 @@ pub fn lines(apps: &[RunningApp]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
     use std::path::PathBuf;
 
     use super::*;
@@ -135,13 +106,6 @@ mod tests {
             app(11, "Helper", None, false),
             app(12, "Slack", Some("/Applications/Slack.app"), true),
         ]
-    }
-
-    fn status(outcome: Outcome) -> String {
-        match outcome {
-            Outcome::Stay(Some(s)) => s,
-            other => panic!("expected a status, got {other:?}"),
-        }
     }
 
     #[test]
@@ -182,48 +146,6 @@ mod tests {
         let names = |v: Vec<RunningApp>| v.into_iter().map(|a| a.name).collect::<Vec<_>>();
         assert_eq!(names(without_flick(all, Some(own))), ["Safari", "Helper", "Slack"]);
         assert_eq!(names(without_flick(apps(), None)).len(), 3);
-    }
-
-    #[test]
-    fn quit_asks_each_pid_and_reports_the_result() {
-        let asked = RefCell::new(vec![]);
-        let accept = |pid| {
-            asked.borrow_mut().push(pid);
-            true
-        };
-        let path = Path::new("/Applications/Safari.app");
-        assert_eq!(status(quit(path, &[10, 20], accept)), "Asked Safari to quit");
-        assert_eq!(*asked.borrow(), [10, 20]);
-        assert_eq!(status(quit(path, &[], |_| true)), "Safari is not running");
-        assert_eq!(
-            status(quit(path, &[10], |_| false)),
-            "Safari did not accept the quit request"
-        );
-    }
-
-    #[test]
-    fn quit_never_asks_flick_itself() {
-        let asked = RefCell::new(vec![]);
-        let me = own_pid();
-        let path = Path::new("/Applications/Safari.app");
-        let out = quit(path, &[me], |pid| {
-            asked.borrow_mut().push(pid);
-            true
-        });
-        assert_eq!(status(out), "Safari is not running");
-        assert!(asked.borrow().is_empty());
-    }
-
-    #[test]
-    fn quit_running_leaves_a_spawned_child_alone() {
-        // A plain child process is not an app bundle's process: nothing is asked to quit and it
-        // keeps running. No real app is ever terminated.
-        let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
-        let out = quit_running(Path::new("/nonexistent/flick/Nope.app"));
-        assert_eq!(status(out), "Nope is not running");
-        assert!(child.try_wait().unwrap().is_none(), "child must still run");
-        child.kill().unwrap();
-        child.wait().unwrap();
     }
 
     #[test]

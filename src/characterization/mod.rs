@@ -7,11 +7,13 @@
 //! - window rect math
 //! - launcher ranking order (fuzzy score plus frecency)
 //! - window switcher order
+//! - control socket reply shapes (text, `--json` values, errors)
 //!
 //! Each test reaches the code only through the `use` lines at the top of its file. When
 //! code moves, fix those paths and nothing else; a changed assertion is a behavior change.
 //! Run only these tests with `cargo test characterization`.
 
+mod control_replies;
 mod item_ids;
 mod legacy_config;
 mod legacy_view;

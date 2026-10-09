@@ -12,7 +12,7 @@
 
 ## A keyboard-first launcher and window manager for macOS.
 
-Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
+Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls of its own. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
 
 <p align="center">
   <img src="docs/screenshots/launcher.png" alt="The Flick launcher over a blurred desktop: an empty search field and suggestions ranked by recent use: commands, quicklinks, and applications" width="750">
@@ -90,7 +90,35 @@ launchd.agents.flick = {
 };
 ```
 
-`bundle.sh --install` restarts Flick through this agent when it exists.
+`bundle.sh --install` and the in-app rebuild install through `scripts/relaunch.sh`. It copies the new bundle next to the old one, checks its signature, and swaps the two with renames, so a failed install leaves the old app in place. Then it stops Flick, waits until the old process exits, and starts Flick through this agent when it exists (`launchctl kickstart -k`), else with `open`.
+
+### Rebuild from the checkout
+
+Flick can rebuild itself from the local clone it was built from. It does not fetch, pull or push: it builds the commits that are already in the checkout.
+
+- **Flick Version** shows the installed commit and build time, and how many commits the checkout is ahead, with their subjects. Flick checks the checkout with local git commands when the launcher opens, at most once per 30 s.
+- **Rebuild Available** shows when the checkout's `HEAD` is not the installed commit.
+- **Rebuild Flick** exports `HEAD` with `git archive` and builds that, so uncommitted edits stay out. **Rebuild Flick (Dirty)** builds the tree as it is, and the version ends in `-dirty`.
+
+A rebuild runs in the background. The build view shows the elapsed time and the last log line, with **Cancel Build** and **Open Build Log**. When the build succeeds, Flick installs the new app and restarts. When it fails, Flick opens the log, and the installed app and the running process do not change. Flick never rebuilds by itself.
+
+```bash
+flick flick version                    # installed sha, build time, clean or dirty; the checkout's HEAD
+flick flick rebuild                    # build HEAD; prints the log path and returns at once
+flick flick rebuild --dirty            # build the tree as it is
+flick flick rebuild --ref my-branch    # build another local rev
+flick flick status                     # idle, building <n>s, installing, installed, failed or cancelled
+flick flick cancel                     # stop the build that runs
+```
+
+Details:
+
+- The build runs `scripts/bundle.sh` with `cargo build --release --locked --offline` through your login shell (`$SHELL -lc`), so `cargo` must be on your login-shell `PATH`. If it is not, the build fails with "cargo not found on login-shell PATH".
+- The build is offline. If the checkout needs a crate that cargo has not downloaded, the build fails with a hint: run `cargo fetch` in the checkout, then rebuild.
+- Compiled output goes to `<checkout>/target/flick-rebuild`, apart from `target/`, so a rebuild does not wait on other cargo commands. It takes about 1 GB; `cargo clean --target-dir target/flick-rebuild` removes it. The exported tree is in `~/Library/Caches/Flick/rebuild`.
+- The log is `~/Library/Logs/Flick/rebuild.log`. The log of the build before it is `rebuild.log.1`.
+- `--source <dir>` builds another checkout or worktree, for example an agent's worktree, to try it before you merge it. The installed app then records that directory as its checkout, so **Flick Version** and **Rebuild Available** compare against it until you rebuild from the main checkout (flick-be14).
+- Without an Apple Development identity the bundle is signed ad hoc, and macOS asks for Accessibility again after each rebuild.
 
 ## Configuration
 
@@ -106,7 +134,7 @@ hotkey = "cmd+Space"               # window switcher
 hotkey = "cmd+Backquote"           # most recent app on another desktop
 
 [window.keys]
-# Hyper (cmd+ctrl+alt+shift), e.g. Caps Lock via Hyperkey
+# Hyper (cmd+ctrl+alt+shift): Caps Lock with [keys] hyper, see Key triggers
 left-half = "cmd+ctrl+alt+shift+KeyH"
 right-half = "cmd+ctrl+alt+shift+KeyL"
 maximize = "cmd+ctrl+alt+shift+KeyK"
@@ -124,12 +152,68 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `activity`, `keys`, `flick`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
 > [!WARNING]
 > A global hotkey overrides that shortcut in every app. For example, `cmd+KeyL` would replace the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
+
+### Key triggers
+
+The `keys` module replaces Hyperkey and small Hammerspoon configs. It turns one key into Hyper, and runs an action when a set of keys goes down and again when it comes up (push-to-talk). It is off until you add a `[keys]` table: with no table, Flick creates no key tap and does not remap Caps Lock.
+
+```toml
+[keys]
+hyper = "caps_lock"                # Caps Lock adds hyper_mods to keys held with it
+hyper_mods = "cmd+ctrl+alt+shift"  # the default
+hyper_tap = "Escape"               # a tap shorter than hyper_tap_ms sends this; "" for nothing
+hyper_tap_ms = 300
+
+[[keys.chord]]
+name = "ptt"
+keys = ["right_cmd", "right_alt"]  # modifiers plus at most one other key
+on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
+on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+```
+
+- **Hyper.** While the hyper key is held, Flick adds `hyper_mods` to each key event, so `[window.keys]` bindings such as `cmd+ctrl+alt+shift+KeyH` fire. `hyper = "caps_lock"` remaps Caps Lock to F18 with `hidutil`, so Caps Lock never toggles uppercase; any other key name (for example `hyper = "F18"`) uses that key and skips the remap.
+- **Chords.** Key names: `cmd`, `alt`, `ctrl`, `shift` (either side), `left_cmd`, `right_cmd`, `left_alt`, `right_alt`, `left_ctrl`, `right_ctrl`, `left_shift`, `right_shift`, `fn`, and one hotkey key name such as `KeyA` or `F13`. A sided name does not match the other side. Modifiers pass through to apps; a chord's other key does not type. Key repeat never fires a chord again.
+- **Actions.** `{ http = "[METHOD ]http://host[:port]/path" }` sends one request with an empty body (method defaults to `POST`; `http://` only, 2 s timeout). `{ shell = "..." }` runs `/bin/sh -c` with `FLICK_CHORD=<name>` and `FLICK_CHORD_STATE=down|up`. Actions run in order on one worker thread, so an `up` never overtakes its `down`.
+- **Events.** Each edge is also an event: `flick events` prints `{"event":"chord","index":0,"down":true}`.
+
+```bash
+flick keys list                # <index>\t<name>\t<keys>\tdown: <action>\tup: <action>, then hyper
+flick keys status              # key tap, secure input, Caps Lock remap, conflicts
+flick keys fire ptt down       # run a chord's action without the keyboard
+```
+
+`flick keys status` reports conflicts: Hyperkey running with `hyper = "caps_lock"` (two remaps of one key), Hammerspoon running with a chord configured (its taps may run the same chord), a global hotkey on the hyper key (the tap swallows it), and a chord key that is also a global hotkey. The startup log lists the same conflicts, but it misses hotkey conflicts, because hotkeys bind after the key tap starts.
+
+Limits:
+
+- The key tap needs Accessibility. Without it, `flick keys status` says `Accessibility needed`, and with `hyper = "caps_lock"` Caps Lock does nothing (it sends F18) until you grant it. Flick retries every 5 s, so a grant needs no restart.
+- Secure input (password fields, Terminal's Secure Keyboard Entry) hides key presses from the tap: Hyper and chords with a non-modifier key pause there. Modifier-only chords still work.
+- Flick clears the Caps Lock remap when it quits through **Quit Flick** or SIGTERM (launchd stop, `kill`). It handles SIGTERM itself only after it has set the remap; before that, SIGTERM ends Flick at once, with nothing to clear. After a crash, Caps Lock stays F18 until Flick starts again. To reset it by hand:
+
+  ```bash
+  hidutil property --set '{"UserKeyMapping":[]}'   # clears every hidutil key mapping
+  ```
+
+[docs/keys.md](docs/keys.md) has the steps to move from Hyperkey and Hammerspoon, and a manual test checklist.
+
+### Rebuild settings
+
+```toml
+[flick]
+source = "~/Projects/flick"   # the checkout to compare and rebuild; default: the one this app was built from
+check_on_open = true          # check the checkout when the launcher opens (at most once per 30 s)
+gates = false                 # run scripts/check-all.sh --bail before each rebuild (takes minutes)
+```
+
+### Create and edit quicklinks
+
+Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to edit or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml and keeps all other text in the file, comments included. The change applies at once, without a reload. A renamed link loses its usage history.
 
 ### Import Raycast quicklinks
 
@@ -148,6 +232,10 @@ A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mod
 ```bash
 flick app list                 # <name>\t<path> per app
 flick app open Safari
+flick app quit Safari          # asks it to quit, like cmd+Q; force-quit forces it
+flick app reveal Safari        # show the bundle in Finder
+flick app uninstall Foo --dry-run  # <size>\t<path> for the bundle and its leftovers
+flick app uninstall Foo --yes  # move exactly those to the Trash
 flick clip list                # <id>\t<first line>, newest first
 flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
@@ -172,7 +260,7 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 
 | Path | Role |
 |---|---|
-| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
+| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
 | [`core/`](src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
@@ -192,11 +280,10 @@ macOS has no public API for Spaces. Flick switches desktops by activating an app
 
 `flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the screenshots hold no personal data.
 
-Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network.
+Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions.
 
 ## Roadmap
 
-- **Triggers.** Hotkeys that run shell commands or HTTP requests, and hold-a-modifier triggers, to replace small Hammerspoon configs.
 - **Mouse support.** Hover and click on results.
 - **Actions menu.** `⌘K` on a result: copy path, reveal in Finder, quit app.
 - **Clipboard images.**

@@ -17,6 +17,7 @@ pub enum KeyName {
 }
 
 impl KeyName {
+    #[cfg(test)]
     pub fn is_modifier(self) -> bool {
         matches!(self, KeyName::Mod(_))
     }

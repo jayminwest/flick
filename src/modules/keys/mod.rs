@@ -3,18 +3,21 @@
 //! Off unless configured: no chords and no hyper means no item and no worker thread.
 //! The only id is `keys:status`, the Key Triggers root item.
 //!
-//! Configure checks key names with `core::keys::names` and keeps the engine's `Rules`; the
-//! key tap that runs them is wired in flick-df71.
+//! Configure checks key names with `core::keys::names` and compiles the engine's `Rules`;
+//! from `Event::Started` on, `wire` installs them in the key tap (and the Caps Lock remap for
+//! `hyper = "caps_lock"`), and each `Event::Chord` the tap posts runs that chord's action.
 
 mod action;
+mod wire;
 
 use action::{Action, Job, Spec, Worker};
 use serde::Deserialize;
+use wire::Wire;
 
 use crate::config::Section;
 use crate::core::keys::names::{KeyName, keycode, parse_chord, parse_mods};
 use crate::core::keys::{self, CAPS_LOCK, F18, Rules};
-use crate::core::{Cx, Icon, Item, ItemId, Module, Outcome, unknown_verb};
+use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
 
 /// Table `[keys]`. `hyper` names the key that acts as Hyper (`caps_lock`, or any key name;
 /// empty: off); while it is held, keys get `hyper_mods`; a press shorter than
@@ -76,7 +79,10 @@ pub struct Keys {
     chords: Vec<Chord>,
     /// What the key tap matches: `hyper` and `chords` compiled, chords in the same order.
     rules: Rules,
+    /// `hyper = "caps_lock"`: Caps Lock must send F18 (the HID remap).
+    remap: bool,
     worker: Worker,
+    wire: Wire,
 }
 
 /// The chords in `specs`, checked: names unique and non-empty, keys known (modifiers plus at
@@ -169,8 +175,11 @@ impl Keys {
         if let Some(h) = &self.hyper {
             parts.push(format!("hyper on {}", h.key));
         }
-        // flick-df71 replaces this with the key tap's status.
-        parts.push("key tap not running".into());
+        if self.hyper.is_some() && self.wire.secure_input() {
+            parts.push("Secure input is on: hyper paused".into());
+        } else {
+            parts.push(self.wire.tap_state().into());
+        }
         parts.join(" · ")
     }
 
@@ -179,11 +188,50 @@ impl Keys {
         if self.off() {
             return "keys: off".into();
         }
-        let mut lines = vec!["tap: not running".to_string(), format!("chords: {}", self.chords.len())];
+        let on = |b: bool| if b { "on" } else { "off" };
+        let mut lines = vec![
+            format!("tap: {}", self.wire.tap_state()),
+            format!("secure input: {}", on(self.wire.secure_input())),
+            format!("chords: {}", self.chords.len()),
+        ];
         if let Some(h) = &self.hyper {
             lines.push(format!("hyper: {} ({})", h.key, h.mods));
         }
+        if self.remap {
+            lines.push(format!("caps lock remap: {}", self.wire.remap_state()));
+        }
+        let names: Vec<&str> = self.chords.iter().map(|c| c.name.as_str()).collect();
+        let conflicts = self.wire.conflicts(&self.rules, self.remap, &names);
+        lines.extend(conflicts.into_iter().map(|c| format!("conflict: {c}")));
         lines.join("\n")
+    }
+
+    /// Queue each `(index, down)` edge, logging what fails.
+    fn fire_all(&mut self, edges: &[(u16, bool)]) {
+        for &(index, down) in edges {
+            if let Err(e) = self.fire(usize::from(index), down) {
+                eprintln!("flick: {e}");
+            }
+        }
+    }
+
+    /// Install the rules (from `Event::Started` on) and report conflicts to the log.
+    fn start(&mut self) {
+        let ups = self.wire.start(&self.rules, self.remap);
+        self.fire_all(&ups);
+        let names: Vec<&str> = self.chords.iter().map(|c| c.name.as_str()).collect();
+        for c in self.wire.conflicts(&self.rules, self.remap, &names) {
+            eprintln!("flick: keys: conflict: {c}");
+        }
+    }
+}
+
+impl Drop for Keys {
+    /// Removed by a reload (`enabled = false`), or quit: stop the tap, clear the remap and
+    /// end held chords.
+    fn drop(&mut self) {
+        let ups = self.wire.apply(&Rules::default(), false);
+        self.fire_all(&ups);
     }
 }
 
@@ -196,9 +244,26 @@ impl Module for Keys {
         let mut s = table.get::<Settings>()?;
         let (hyper, rule) = hyper(&s)?.unzip();
         let chords = chords(std::mem::take(&mut s.chord))?;
-        self.rules = Rules { hyper: rule, chords: chords.iter().map(|c| c.rule).collect() };
-        (self.hyper, self.chords) = (hyper, chords);
+        let rules = Rules { hyper: rule, chords: chords.iter().map(|c| c.rule).collect() };
+        let remap = rule.is_some() && s.hyper.trim().parse() == Ok(KeyName::Key(CAPS_LOCK));
+        // Once started, a reload installs the new rules; chords held now end under their
+        // old index, before `chords` changes.
+        let ups = self.wire.apply(&rules, remap);
+        self.fire_all(&ups);
+        (self.hyper, self.chords, self.rules, self.remap) = (hyper, chords, rules, remap);
         Ok(())
+    }
+
+    /// `Started` installs the rules; `Chord` runs an action; `Wake` releases chords whose
+    /// key up was lost in sleep.
+    fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+        match event {
+            Event::Started => self.start(),
+            Event::Chord { index, down } => self.fire_all(&[(index, down)]),
+            Event::Wake => self.wire.wake(),
+            _ => {}
+        }
+        false
     }
 
     /// The Key Triggers item, only when something is configured.
@@ -242,160 +307,4 @@ impl Module for Keys {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::action::tests::{listener, read_when_written, serve, temp};
-    use super::*;
-    use crate::config::parse;
-    use crate::core::test_cx;
-    use crate::core::keys::{HYPER_FLAGS, flags};
-
-    fn configured(text: &str) -> Result<Keys, String> {
-        let mut keys = Keys::default();
-        keys.configure(&parse(text)?.section("keys")?.ok_or("disabled")?)?;
-        Ok(keys)
-    }
-
-    fn run(keys: &mut Keys, words: &[&str]) -> Result<String, String> {
-        let args: Vec<String> = words.iter().map(|s| (*s).to_string()).collect();
-        test_cx("", |cx| keys.command(&args, cx))
-    }
-
-    const PTT: &str = r#"
-        [[keys.chord]]
-        name = "ptt"
-        keys = ["right_cmd", "right_alt"]
-        on_down = { http = "POST http://127.0.0.1:PORT/pipeline/listen/start" }
-        on_up = { http = "POST http://127.0.0.1:PORT/pipeline/listen/stop" }
-    "#;
-
-    #[test]
-    fn off_without_config() {
-        let mut keys = configured("").unwrap();
-        assert!(keys.off() && keys.worker.idle());
-        assert_eq!(run(&mut keys, &["status"]).unwrap(), "keys: off");
-        assert_eq!(run(&mut keys, &["list"]).unwrap(), "");
-        assert!(test_cx("", |cx| keys.items(cx)).is_empty());
-        assert!(configured("[keys]\nhyper = \" \"").unwrap().off());
-    }
-
-    #[test]
-    fn reads_chords_and_hyper() {
-        let text = format!("[keys]\nhyper = \"caps_lock\"\n{PTT}").replace("PORT", "8600");
-        let mut keys = configured(&text).unwrap();
-        let hyper = Hyper {
-            key: "caps_lock".into(),
-            mods: "cmd+ctrl+alt+shift".into(),
-            tap: Some("Escape".into()),
-            tap_ms: 300,
-        };
-        assert_eq!(keys.hyper, Some(hyper));
-        assert_eq!(
-            run(&mut keys, &["list"]).unwrap(),
-            "0\tptt\tright_cmd+right_alt\t\
-             down: POST http://127.0.0.1:8600/pipeline/listen/start\t\
-             up: POST http://127.0.0.1:8600/pipeline/listen/stop\n\
-             hyper\tcaps_lock\tcmd+ctrl+alt+shift\ttap: Escape 300 ms"
-        );
-        assert_eq!(
-            run(&mut keys, &["status"]).unwrap(),
-            "tap: not running\nchords: 1\nhyper: caps_lock (cmd+ctrl+alt+shift)"
-        );
-        let items = test_cx("", |cx| keys.items(cx));
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].id, "keys:status");
-        assert_eq!(items[0].subtitle, "1 chord · hyper on caps_lock · key tap not running");
-        let out = test_cx("", |cx| keys.activate(&items[0].id, cx));
-        assert!(matches!(out, Outcome::Stay(Some(s)) if s == items[0].subtitle));
-        let other = test_cx("", |cx| keys.activate(&ItemId::new("keys", "x"), cx));
-        assert!(matches!(other, Outcome::Stay(None)));
-
-        let text = "[keys]\nhyper = \"F18\"\nhyper_tap = \"\"\nhyper_tap_ms = 200";
-        let keys = configured(text).unwrap();
-        let h = keys.hyper.as_ref().unwrap();
-        assert_eq!((h.tap.as_deref(), h.tap_ms), (None, 200));
-        assert_eq!(keys.list(), "hyper\tF18\tcmd+ctrl+alt+shift\ttap: - 200 ms");
-        assert_eq!(keys.summary(), "0 chords · hyper on F18 · key tap not running");
-    }
-
-    #[test]
-    fn compiles_rules_for_the_tap() {
-        let text = format!("[keys]\nhyper = \"caps_lock\"\n{PTT}").replace("PORT", "8600");
-        let keys = configured(&text).unwrap();
-        // caps_lock compiles to F18 (the HID remap's target); chords keep their order.
-        let rule = keys::Hyper { source: F18, flags: HYPER_FLAGS, tap: Some(53), tap_ms: 300 };
-        let mods = flags::CMD | flags::RIGHT_CMD | flags::ALT | flags::RIGHT_ALT;
-        let chord = keys::Chord { mods, key: None };
-        assert_eq!(keys.rules, Rules { hyper: Some(rule), chords: vec![chord] });
-        let keys = configured("[keys]\nhyper = \"F18\"\nhyper_tap = \"\"").unwrap();
-        assert_eq!(keys.rules.hyper.map(|h| (h.source, h.tap)), Some((F18, None)));
-        let keys = configured("[keys]\nhyper = \"KeyH\"\nhyper_mods = \"cmd\"").unwrap();
-        assert_eq!(keys.rules.hyper.map(|h| (h.source, h.flags)), Some((4, flags::CMD)));
-    }
-
-    #[test]
-    fn bad_tables_name_the_problem() {
-        let chord = |body: &str| format!("[[keys.chord]]\n{body}");
-        let cases = [
-            (chord("name = \"a\"\nkeys = [\"fn\"]\non_dwn = { shell = \"x\" }"), "unknown field"),
-            (chord("name = \"a\"\nkeys = [\"fn\"]\non_up = { exec = \"x\" }"), "unknown variant"),
-            (chord("name = \" \"\nkeys = [\"fn\"]"), "[keys] chord: empty name"),
-            (chord("name = \"a\"\nkeys = []"), "[keys] chord \"a\": keys: a chord needs at least"),
-            (chord("name = \"a\"\nkeys = [\"right_cmd\", \"KeyQ\", \"KeyW\"]"), "at most one"),
-            (chord("name = \"a\"\nkeys = [\"hyperspace\"]"), "unknown key name `hyperspace`"),
-            (
-                chord("name = \"a\"\nkeys = [\"fn\"]\non_down = { http = \"https://x/\" }"),
-                "[keys] chord \"a\": http \"https://x/\": only http://",
-            ),
-            (
-                chord("name = \"a\"\nkeys = [\"fn\"]\n") + &chord("name = \"a\"\nkeys = [\"fn\"]"),
-                "[keys] chord \"a\": duplicate name",
-            ),
-            ("[keys]\nhyper = \"F18\"\nhyper_mods = \"\"".into(), "[keys] hyper_mods: unknown"),
-            ("[keys]\nhyper = \"F18\"\nhyper_mods = \"cmd+KeyA\"".into(), "not a modifier"),
-            ("[keys]\nhyper = \"right_cmd\"".into(), "`right_cmd` is a modifier"),
-            ("[keys]\nhyper = \"Hyper\"".into(), "[keys] hyper: unknown key name"),
-            ("[keys]\nhyper = \"F18\"\nhyper_tap = \"cmd\"".into(), "hyper_tap: unknown key"),
-        ];
-        for (text, want) in cases {
-            let err = configured(&text).err().unwrap();
-            assert!(err.contains(want), "{text}\n=> {err}");
-        }
-        // Without hyper, hyper_mods is not checked.
-        assert!(configured("[keys]\nhyper_mods = \"\"").unwrap().off());
-    }
-
-    #[test]
-    fn fire_queues_the_edge_in_order() {
-        let (l, port) = listener();
-        let mut keys = configured(&PTT.replace("PORT", &port.to_string())).unwrap();
-        let start = format!("ptt down: queued POST http://127.0.0.1:{port}/pipeline/listen/start");
-        assert_eq!(run(&mut keys, &["fire", "ptt", "down"]).unwrap(), start);
-        assert!(run(&mut keys, &["fire", "ptt", "up"]).unwrap().starts_with("ptt up: queued"));
-        let heads = serve(&l, 2, "200 OK");
-        let lines: Vec<_> = heads.iter().map(|h| h.lines().next().unwrap()).collect();
-        assert_eq!(lines, ["POST /pipeline/listen/start HTTP/1.1", "POST /pipeline/listen/stop HTTP/1.1"]);
-
-        assert_eq!(run(&mut keys, &["fire", "nope", "up"]).unwrap_err(), "keys: no chord \"nope\"");
-        let err = run(&mut keys, &["fire", "ptt", "sideways"]).unwrap_err();
-        assert_eq!(err, "keys: fire ptt: expected down or up, got \"sideways\"");
-        assert_eq!(keys.fire(5, true).unwrap_err(), "keys: no chord 5");
-        assert_eq!(run(&mut keys, &["fire"]).unwrap_err(), "keys: unknown command \"fire\"");
-        assert_eq!(run(&mut keys, &[]).unwrap_err(), "keys: missing command");
-    }
-
-    #[test]
-    fn fire_runs_shell_and_skips_a_missing_edge() {
-        let out = temp("fire");
-        let text = format!(
-            "[[keys.chord]]\nname = \"note\"\nkeys = [\"right_shift\"]\n\
-             on_down = {{ shell = \"echo $FLICK_CHORD $FLICK_CHORD_STATE >> '{}'\" }}",
-            out.display()
-        );
-        let mut keys = configured(&text).unwrap();
-        assert_eq!(run(&mut keys, &["fire", "note", "up"]).unwrap(), "note up: no action");
-        assert!(keys.worker.idle());
-        assert!(run(&mut keys, &["fire", "note", "down"]).unwrap().starts_with("note down: queued shell echo"));
-        assert_eq!(read_when_written(&out), "note down\n");
-        let _ = std::fs::remove_file(&out);
-    }
-}
+mod tests;

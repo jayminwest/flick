@@ -21,6 +21,9 @@ pub struct Cx<'a> {
     /// Hides the launcher now. Call it before an action that needs the previous app
     /// frontmost (opening, focusing, pasting), then return `Outcome::Hide`.
     pub hide: fn(),
+    /// The control request asked for structured output (`--json`): `command` may answer
+    /// with a JSON object or array. False for events, hotkeys and the launcher.
+    pub json: bool,
 }
 
 impl Cx<'_> {
@@ -34,7 +37,7 @@ impl Cx<'_> {
 pub fn test_cx<R>(query: &str, f: impl FnOnce(&mut Cx) -> R) -> R {
     let store = Store::in_memory();
     let mut ranker = Ranker::new();
-    f(&mut Cx { query, store: &store, ranker: &mut ranker, hide: || {} })
+    f(&mut Cx { query, store: &store, ranker: &mut ranker, hide: || {}, json: false })
 }
 
 /// A feature. Every method has a do-nothing default, so a module implements only what it

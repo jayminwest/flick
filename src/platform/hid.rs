@@ -33,20 +33,17 @@ type Run<'a> = &'a mut dyn FnMut(&[&str]) -> Result<String, String>;
 
 /// Map Caps Lock to F18, keeping every other mapping. Replaces another tool's Caps Lock entry
 /// (two entries for one key are ambiguous). Writes nothing when the mapping is already set.
-#[expect(dead_code, reason = "wired in flick-d717 step 5; tests never write the live mapping")]
 pub fn set_caps_to_f18() -> Result<(), String> {
     set_with(&mut hidutil)
 }
 
 /// Remove Flick's Caps Lock to F18 entry, keeping every other mapping. Writes nothing when it
 /// is not set.
-#[expect(dead_code, reason = "wired in flick-d717 step 5; tests never write the live mapping")]
 pub fn clear_caps_to_f18() -> Result<(), String> {
     clear_with(&mut hidutil)
 }
 
 /// Caps Lock currently sends F18 (for `flick keys status`).
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-d717 step 5"))]
 pub fn caps_to_f18_is_set() -> Result<bool, String> {
     is_set_with(&mut hidutil)
 }

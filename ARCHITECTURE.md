@@ -9,11 +9,11 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread. |
-| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread, except `keytap`'s (any thread). |
+| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
-| ui | `src/ui.rs` | Turns `Item`s into the rows that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
-| controller | `src/app.rs`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the view stack and the selection, and applies `Outcome`s. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
+| ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
+| controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server. Runs requests on the main thread. Streams events. |
 | cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
@@ -49,6 +49,11 @@ the main thread.
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
 | `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab`) | Run an item this module created. |
+| `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
+| `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. |
+| `actions(&ItemId, &mut Cx) -> Vec<Action>` | each render of a list, ⌘K | The item's action menu, in display order. Asked again each time, so keep it cheap and current (e.g. "Quit" only while running). Empty: no menu, and no "Actions ⌘K" hint. |
+| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
+| `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
 | `on_event(Event, &mut Cx) -> bool` | each event | `true`: this module's views show stale data. A visible view of that module then refreshes. |
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
 | `hotkey(key, &mut Cx) -> Option<ListView>` | a bound hotkey press | `Some(view)` toggles the launcher on that view. `None` leaves the launcher alone. |
@@ -61,7 +66,7 @@ frontmost (open, focus, paste), then return `Outcome::Hide`.
 
 Panic isolation: `Registry::dispatch` (events) and `Registry::command` catch panics per module.
 A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open`, `refresh`,
-`activate` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
+`activate`, `form`, `submit`, `actions`, `act`, `confirmed` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
 `Err(text)`; do not panic.
 
 Registration order (the `modules!` list in `src/modules/mod.rs`) is significant. It sets root order for
@@ -87,19 +92,55 @@ with `record_use = true`.
 - `Push(ListView)`: a request for a view by `module` and `name`. The registry asks the owning
   module's `open`, so any module can push another module's view by name (`builtin` pushes
   `clip/history`). That is the only way modules refer to each other.
+- `Form { module, name }`: a request for form `name` of `module`, by name like `Push`. The
+  registry asks that module's `form`, so `builtin` can open the quicklink form without
+  importing it.
+- `Confirm(Confirm)`: ask before acting. On confirm the registry calls
+  `confirmed(token)` on `Confirm::module`; its `Outcome` is applied in turn.
 - `ReloadConfig`: reload config.toml, rebind hotkeys, go back to root search.
 
-There is no `Pop`. In a view, Escape and Backspace in an empty field go back to root search; a
-view with `escape_hides = true` hides the launcher on Escape instead. A pushed view replaces the
-current one: there is one level of views, not a stack.
+An `Outcome` from `act` or `confirmed` applies to the list the menu or question came from:
+`Stay` returns there (refreshed, same search text and selection) and shows its status;
+`Push`, `Form` and `Confirm` replace it; `Hide` hides the launcher.
+
+## Screens
+
+`app::State::screen` (`src/app/screen.rs`) is one of:
+
+- `Root`: root search.
+- `List(ListView)`: a module's view. There is no `Pop`: Escape and Backspace in an empty field
+  go back to root search; a view with `escape_hides = true` hides the launcher on Escape
+  instead. A pushed view replaces the current one: one level of views, not a stack.
+- `Actions { target, actions, back }`: ⌘K on a selected item of `Root` or `List` whose
+  module returns a non-empty `actions(id)`. The footer of those lists shows
+  `Actions  ⌘K` beside the Enter verb when the selected item has actions. In the menu, typing
+  filters the actions (fuzzy; module order while the field is empty), Enter runs `act`,
+  Escape, ⌘K or Backspace in an empty field go back to `back`: the same screen, search text
+  and selection. The action keybinding hints (`Action::shortcut_hint`) are display only.
+- `Confirm { confirm, back }`: from `Outcome::Confirm`. `Confirm::title` replaces the search
+  field (read-only); `Confirm::rows` are read-only rows (Up/Down scroll). Non-destructive:
+  Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
+  `Press ⌘↵ to <label>`. Escape cancels back to `back` and the module hears nothing.
+- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled fields (`FORM_FIELDS` in the panel),
+  focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵ submits,
+  Escape goes back to root search. A blank required field is an inline
+  `<Label> is required` error, and `submit` is not called.
+
+`Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it. Module
+contract for a confirmable action (e.g. Delete, Uninstall): return
+`Outcome::Confirm(Confirm { token: "<verb>/<key>", label: "<Verb>", destructive, rows, .. })`
+from `act`, then do the work in `confirmed(token)` and return `Stay(Some(status))` (back to
+the list, refreshed) or `Hide`.
 
 ## Events and the main thread
 
 `Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
-`ModuleChanged { module }`. Each serializes as `{"event":"<snake_case>",...}`.
+`ModuleChanged { module }`, `Chord { index, down }`. Each serializes as `{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
-named module's view is stale whatever its `on_event` returns.
+named module's view is stale whatever its `on_event` returns. Root search lists every
+module's items, so a visible root search refreshes on any `ModuleChanged` too. Both refreshes
+keep the selected item when it is still in the list (`refresh_keeping_selection`).
 
 Sources:
 
@@ -109,6 +150,7 @@ Sources:
 - `app::init` dispatches `Started` to modules, and a config reload to the modules it
   enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
+- The key tap thread posts `Chord` (see below).
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
 `control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
@@ -125,6 +167,50 @@ Main-thread rules:
   `events::on_main(job)`. Both go through `dispatch_async_f` on the main queue. A panic in an
   `on_main` job is logged and does not unwind into libdispatch.
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
+
+Background work (pattern of `src/modules/rebuild/`): slow work (git, cargo, any child
+process) never runs on the main thread, because a stalled main thread freezes the launcher
+and every hotkey.
+
+- The module starts a named `std::thread` from `on_event`, `activate` or `command`, and
+  moves only owned data and an `Arc<Mutex<..>>` into it, never the module.
+- The thread writes its result or progress into that shared value, then posts
+  `Event::ModuleChanged { module: "<id>" }`.
+- `items` and `refresh` read the shared value without waiting (`lock`, not a join). The
+  first refresh after the event shows the new state.
+- Post `ModuleChanged` only while work runs (the runner posts once a second during a
+  build), so an idle Flick has no timers. Rate-limit work started from events (the git
+  check runs at most once per 30 s).
+- Give every child process a time budget. A command that must answer at once may run a
+  short bounded call on the main thread (`flick flick version`: git with a 2 s budget).
+
+### Key tap
+
+`platform::keytap` owns the one active `CGEventTap` (session level, key down, key up,
+flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
+
+- The tap runs on its own thread with its own `CFRunLoop`, so a busy main thread never makes
+  macOS time it out and stall keyboard input. The handler runs on that thread: one
+  `core::keys::Engine::process` step under a short `Mutex`, then `events::post` of each chord
+  edge as `Event::Chord { index, down }`. `index` is the chord's position in
+  `[[keys.chord]]`. `Keys::on_event` (main thread) only sends the chord's action to the
+  module's FIFO worker thread. Actions never run on the tap or main thread.
+- The tap exists only while the rules are non-empty, from `Event::Started` on. A reload
+  installs new rules in place and posts `up` for chords held under the old ones.
+- Re-arm: the callback re-enables the tap on a disable notice, and a 5 s timer on the tap
+  thread re-enables it or creates it again (creation fails without Accessibility, so a later
+  grant needs no restart). After a re-arm, and on `Event::Wake`, `Engine::resync` posts `up`
+  for chords no longer held, so push-to-talk never stays on.
+- Events posted by `keytap::post_key` (the hyper tap key) carry a mark, and the tap passes
+  them untouched.
+- `platform::hid` maps Caps Lock to F18 with `hidutil property UserKeyMapping` for
+  `hyper = "caps_lock"`. The list is global: set and clear read, merge and write, and touch
+  only Flick's entry. The mapping outlives the process. The first time Flick sets it, it
+  installs `app::on_terminate` (clear on quit) and `app::quit_on_sigterm` (SIGTERM quits
+  through `terminate:`, so the hook runs). Before that, SIGTERM has its default action.
+- Conflict checks (Hyperkey with the remap, Hammerspoon with chords, a global hotkey on the
+  hyper key or a chord key) run in `flick keys status` and at `Started`. At `Started`,
+  hotkeys are not bound yet, so the log misses the hotkey conflicts.
 
 ## Store
 
@@ -182,6 +268,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   A socket that a live process answers on is an error, not stolen.
 - Request: one line, a JSON array of strings, `["<module>","<verb>",args...]`. Reply: one
   line, `{"ok":"<text>"}` or `{"error":"<message>"}`. A connection may send many requests.
+- Structured replies: a request whose last word is `--json` asks for JSON. The control glue
+  (`control::on_main`) takes that word off and sets `Cx::json` for `Module::command` (false
+  for events, hotkeys and the launcher). A module that reads it may return a JSON object or
+  array as its `Ok` text; the reply is then `{"ok":<value>}`, re-serialized on one line.
+  Any other text, and every reply to a request without `--json`, stays `{"ok":"<text>"}`, so
+  modules that ignore `Cx::json` answer exactly as before. Only a trailing `--json` counts.
 - `["reload"]` is handled by the controller. Every other request goes to
   `Registry::command`, which matches the first word against module ids.
 - `["events"]` turns the connection into an event stream, one JSON object per line. A
@@ -192,9 +284,59 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
-  sends a request; `--json` (first or last) prints the raw reply line. Exit 0 for `ok`, 1 for
+  sends a request; `--json` (first or last) sends `--json` as the last request word and
+  prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
+
+## Build stamp, install and rebuild
+
+- Stamp: `scripts/bundle.sh` exports `FLICK_BUILD_SHA`, `FLICK_BUILD_DIRTY` (`1`/`0`),
+  `FLICK_BUILD_TIME` (RFC 3339 UTC) and `FLICK_BUILD_SOURCE` (checkout path) to cargo. Each
+  defaults to the checkout's value; a caller may set it first (an exported tree has no
+  `.git`). `src/modules/rebuild/stamp.rs` reads them with `option_env!`; a plain
+  `cargo build` has no sha (`dev`). `FLICK_CARGO_ARGS` adds cargo flags.
+- Install: `scripts/relaunch.sh [--install <Flick.app>] [--wait-pid PID] [--no-restart]`
+  is the only installer. It copies to `.Flick.app.new`, runs `codesign --verify`, and swaps
+  with two renames; it restores `.Flick.app.old` when `Flick.app` is missing. Restart stops
+  every Flick, waits for each to exit (10 s, then `kill -9`) so the new copy does not exit as
+  already running, then uses the launchd agent or `open`. `FLICK_INSTALL_DIR` replaces
+  `~/Applications`.
+- Rebuild (module `flick`, `src/modules/rebuild/`): one build at a time on a thread.
+  A rev build exports the rev with `git archive` to `~/Library/Caches/Flick/rebuild/src`;
+  a dirty build runs in the checkout. Both run `bundle.sh` through `$SHELL -lc` with
+  `CARGO_TARGET_DIR=<source>/target/flick-rebuild` and `--locked --offline`, optionally after
+  `scripts/check-all.sh --bail` (`[flick] gates`). Output: `~/Library/Logs/Flick/rebuild.log`.
+  The build and relaunch.sh each run in their own process group: Cancel kills the build's
+  group, and the installer outlives Flick when it restarts it.
+- No network: `git::git` allows only `rev-parse`, `rev-list`, `log`, `status`, `archive`
+  and `merge-base`, and a unit test pins that list.
+- Tests never install or restart the real app: they set `restart = false` and a temp
+  `install_dir`, and never run `relaunch.sh` or `bundle.sh --install` without them.
+
+Manual smoke check after a change to bundle.sh, relaunch.sh or the rebuild module. It
+restarts the real Flick, so run it by hand, not from tests or agents:
+
+1. Install with `scripts/bundle.sh --install`. `flick flick version` prints the checkout's
+   full `HEAD` sha, the build time and `clean`. `defaults read
+   ~/Applications/Flick.app/Contents/Info.plist CFBundleVersion` prints `0.0.1+<short sha>`.
+2. Make a local commit and open the launcher. **Rebuild Available** shows, and the **Flick
+   Version** subtitle reads `1 commit newer in ~/Projects/flick: <subject>`.
+3. Leave an uncommitted edit and run **Rebuild Flick**. The build view counts seconds and
+   shows the last log line; `flick flick status` prints `building <n>s`. Flick restarts,
+   `pgrep -x Flick | wc -l` prints 1, and the version is the new sha, `clean`.
+4. Run **Rebuild Flick (Dirty)**. After the restart the version ends in `-dirty`.
+5. Add a compile error and run a dirty build. The log opens, the view shows **Build Failed
+   (see log)**, and `pgrep -x Flick` and `flick flick version` do not change.
+6. Start a build and run **Cancel Build**. `pgrep cargo` prints nothing.
+7. With the launcher closed, run `flick flick rebuild` in a terminal. It returns at once
+   and Flick restarts on the new build.
+8. Repeat step 3 under the launchd agent (`launchctl print
+   gui/$(id -u)/org.nix-community.home.flick`) and without it. Each time one Flick runs, and
+   with an Apple Development identity, window snap works without an Accessibility prompt.
+9. `flick flick rebuild --source <agent worktree>` installs that worktree's `HEAD`, and
+   `flick flick version` reports its sha.
+10. With no build running, Activity Monitor shows Flick near 0% CPU over 60 s.
 
 ## How to add a module
 

@@ -1,13 +1,18 @@
 //! Module `quicklink`: configured links in root search, and the view that takes a link's
-//! argument. Ids are `quicklink:<name>`; the typed query rides in the id's `arg`.
+//! argument. Ids are `quicklink:<name>`; the typed query rides in the id's `arg`. The
+//! editor (`editor.rs`) adds, edits and removes links in config.toml.
 
+mod editor;
 mod link;
+mod validate;
+
+use std::path::PathBuf;
 
 pub use link::Quicklink;
 use serde::Deserialize;
 
 use crate::config::{Config, Section};
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Action, Cx, Form, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::workspace;
 
 /// Table `[quicklink]`: `[[quicklink.links]]` (legacy: top-level `[[quicklinks]]`), unique names.
@@ -20,6 +25,8 @@ struct Settings {
 #[derive(Default)]
 pub struct Quicklinks {
     links: Vec<Quicklink>,
+    /// The file the editor writes; `None` is config.toml. Tests point it at a temp file.
+    file: Option<PathBuf>,
 }
 
 impl Quicklinks {
@@ -150,6 +157,37 @@ impl Module for Quicklinks {
             None => workspace::open_url(&url),
         }
         Outcome::Hide
+    }
+
+    fn form(&mut self, name: &str, _cx: &mut Cx) -> Option<Form> {
+        self.editor_form(name)
+    }
+
+    fn submit(&mut self, form: &Form, _cx: &mut Cx) -> Result<String, String> {
+        self.submit_form(form)
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.link_actions(id)
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        match key {
+            "open" => self.activate(id, cx),
+            _ => self.link_act(id, key),
+        }
+    }
+
+    fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
+        self.delete_confirmed(token)
+    }
+
+    fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        self.run_verb(args)
+    }
+
+    fn verbs(&self) -> &'static str {
+        "quicklink list | quicklink add <name> <url> [--keyword k] [--app a] | quicklink remove <name>"
     }
 }
 

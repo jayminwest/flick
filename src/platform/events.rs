@@ -16,9 +16,12 @@ use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{
     NSApplicationDidChangeScreenParametersNotification, NSWorkspace,
     NSWorkspaceDidActivateApplicationNotification, NSWorkspaceDidWakeNotification,
+    NSWorkspaceSessionDidBecomeActiveNotification, NSWorkspaceSessionDidResignActiveNotification,
+    NSWorkspaceWillSleepNotification,
 };
 use objc2_foundation::{
-    NSNotification, NSNotificationCenter, NSNotificationName, NSObjectProtocol,
+    NSDistributedNotificationCenter, NSNotification, NSNotificationCenter, NSNotificationName,
+    NSObjectProtocol, NSString,
 };
 
 use super::{pasteboard, timer, workspace};
@@ -118,11 +121,56 @@ fn observe(
     name: &NSNotificationName,
     event: impl Fn() -> Option<Event> + 'static,
 ) {
-    let block = RcBlock::new(move |_n: NonNull<NSNotification>| {
+    observe_with(center, name, move || {
         if let (Some(event), Some(sink)) = (event(), SINK.get()) {
             sink(event);
         }
     });
+}
+
+/// A change in whether this login session is in use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
+pub enum SessionChange {
+    /// The machine is about to sleep.
+    Sleep,
+    /// The screen locked, or another user's session took over (fast user switching).
+    Locked,
+    /// The screen unlocked, or this session became active again.
+    Unlocked,
+}
+
+/// Call `on_change` on the main thread on sleep, screen lock/unlock and fast user switching.
+/// Nothing is observed until this is called.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
+pub fn on_session(on_change: fn(SessionChange)) {
+    let ws = NSWorkspace::sharedWorkspace().notificationCenter();
+    // SAFETY: notification names are immutable framework constants, set at load time.
+    let (sleep, resign, become_active) = unsafe {
+        (
+            NSWorkspaceWillSleepNotification,
+            NSWorkspaceSessionDidResignActiveNotification,
+            NSWorkspaceSessionDidBecomeActiveNotification,
+        )
+    };
+    observe_with(&ws, sleep, move || on_change(SessionChange::Sleep));
+    observe_with(&ws, resign, move || on_change(SessionChange::Locked));
+    observe_with(&ws, become_active, move || on_change(SessionChange::Unlocked));
+    // Screen lock has no public notification name; loginwindow posts these on the
+    // distributed center, delivered on the main thread.
+    let distributed = NSDistributedNotificationCenter::defaultCenter();
+    let locked = NSString::from_str(SCREEN_LOCKED);
+    let unlocked = NSString::from_str(SCREEN_UNLOCKED);
+    observe_with(&distributed, &locked, move || on_change(SessionChange::Locked));
+    observe_with(&distributed, &unlocked, move || on_change(SessionChange::Unlocked));
+}
+
+const SCREEN_LOCKED: &str = "com.apple.screenIsLocked";
+const SCREEN_UNLOCKED: &str = "com.apple.screenIsUnlocked";
+
+/// Call `f` on each `name` notification from `center`, on the posting thread.
+fn observe_with(center: &NSNotificationCenter, name: &NSNotificationName, f: impl Fn() + 'static) {
+    let block = RcBlock::new(move |_n: NonNull<NSNotification>| f());
     // SAFETY: the block is 'static, takes the `NSNotification` argument the center passes,
     // and runs on the posting (main) thread; the observer is kept below, which keeps the
     // registration.
@@ -142,6 +190,11 @@ pub fn post(event: Event) {
         // null context and is a plain function, so nothing outlives the call.
         unsafe { dispatch_async_f(&raw const _dispatch_main_q, std::ptr::null_mut(), drain) };
     }
+}
+
+/// The main dispatch queue, for other dispatch sources in `platform`.
+pub(super) fn main_queue() -> *const c_void {
+    (&raw const _dispatch_main_q).cast()
 }
 
 /// Main queue: hand every posted event to the sink, oldest first.
@@ -170,5 +223,39 @@ extern "C" fn run_job(context: *mut c_void) {
     let job = unsafe { Box::from_raw(context.cast::<Job>()) };
     if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
         eprintln!("flick: main-queue job panicked");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    thread_local! {
+        static SEEN: RefCell<Vec<SessionChange>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn record(change: SessionChange) {
+        SEEN.with(|s| s.borrow_mut().push(change));
+    }
+
+    #[test]
+    fn session_notifications_map_to_changes() {
+        on_session(record);
+        let ws = NSWorkspace::sharedWorkspace().notificationCenter();
+        // Posted by hand on this process's workspace center: nothing sleeps or switches.
+        // SAFETY: immutable framework constants, set at load time.
+        let names = unsafe {
+            [
+                NSWorkspaceWillSleepNotification,
+                NSWorkspaceSessionDidResignActiveNotification,
+                NSWorkspaceSessionDidBecomeActiveNotification,
+            ]
+        };
+        for name in names {
+            // SAFETY: a framework name and no object.
+            unsafe { ws.postNotificationName_object(name, None) };
+        }
+        let seen = SEEN.with(|s| s.borrow().clone());
+        assert_eq!(seen, [SessionChange::Sleep, SessionChange::Locked, SessionChange::Unlocked]);
     }
 }

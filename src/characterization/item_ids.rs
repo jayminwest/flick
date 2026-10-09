@@ -104,6 +104,7 @@ fn builtin_ids_are_the_title() {
         [
             "builtin:Clipboard History",
             "builtin:Switch Windows",
+            "builtin:Create Quicklink",
             "builtin:Open Flick Config",
             "builtin:Reload Flick Config",
             "builtin:Quit Flick",
@@ -126,7 +127,7 @@ fn root_items_are_apps_then_windows_then_quicklinks_then_builtins() {
     let prefixes: Vec<&str> =
         items.iter().filter_map(|i| i.id.split(':').next()).filter(|p| known.contains(p)).collect();
     // Apps: one per app plus "Quit Applications" (app:quit, flick-91a6).
-    assert_eq!(prefixes.len(), 2 + 20 + 1 + 5);
+    assert_eq!(prefixes.len(), 2 + 20 + 1 + 6);
     let mut runs = prefixes.clone();
     runs.dedup();
     assert_eq!(runs, known);

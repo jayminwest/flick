@@ -4,12 +4,16 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use crate::core::control::{EVENTS, Reply, request_line};
+use serde_json::Value;
+
+use crate::core::control::{EVENTS, JSON, Reply, request_line};
 
 /// Send `words` to the Flick at `path` and print the reply: its text, or with `json` the
-/// raw reply line. Returns the exit code: 0 for an ok reply, 1 otherwise.
+/// raw reply line. With `json` the request ends in `--json`, so a module may answer with
+/// structured JSON. Returns the exit code: 0 for an ok reply, 1 otherwise.
 pub fn request(path: &Path, words: &[String], json: bool) -> i32 {
-    let reply = connect(path).and_then(|stream| exchange(stream, words));
+    let words = with_json(words, json);
+    let reply = connect(path).and_then(|stream| exchange(stream, &words));
     match reply {
         Ok(line) => {
             let (out, err, code) = render(&line, json);
@@ -53,6 +57,15 @@ fn connect(path: &Path) -> io::Result<UnixStream> {
     })
 }
 
+/// The request words: `words`, plus a trailing `--json` when `json`.
+fn with_json(words: &[String], json: bool) -> Vec<String> {
+    let mut words = words.to_vec();
+    if json {
+        words.push(JSON.to_string());
+    }
+    words
+}
+
 /// Write the request line for `words` and read the one reply line.
 fn exchange(mut stream: UnixStream, words: &[String]) -> io::Result<String> {
     writeln!(stream, "{}", request_line(words))?;
@@ -72,8 +85,11 @@ fn render(line: &str, json: bool) -> (String, String, i32) {
         return (format!("{}\n", line.trim_end()), String::new(), code);
     }
     match reply {
-        Ok(Reply::Ok(out)) if out.is_empty() || out.ends_with('\n') => (out, String::new(), 0),
-        Ok(Reply::Ok(out)) => (format!("{out}\n"), String::new(), 0),
+        Ok(Reply::Ok(Value::String(out))) if out.is_empty() || out.ends_with('\n') => {
+            (out, String::new(), 0)
+        }
+        Ok(Reply::Ok(Value::String(out))) => (format!("{out}\n"), String::new(), 0),
+        Ok(Reply::Ok(value)) => (format!("{value}\n"), String::new(), 0),
         Ok(Reply::Error(e)) | Err(e) => (String::new(), format!("flick: {e}\n"), 1),
     }
 }
@@ -95,12 +111,15 @@ mod tests {
             render("{\"error\":\"no\"}", true),
             ("{\"error\":\"no\"}\n".into(), String::new(), 1)
         );
+        assert_eq!(render("{\"ok\":{\"a\":[1]}}", false), ok("{\"a\":[1]}\n"));
+        assert_eq!(render("{\"ok\":[1]}\n", true), ok("{\"ok\":[1]}\n"));
         let (out, err, code) = render("garbage", false);
         assert!(out.is_empty() && err.starts_with("flick: bad reply") && code == 1);
     }
 
     fn upper(words: Vec<String>) -> Reply {
-        Reply::Ok(words.into_iter().map(|w| w.to_uppercase()).collect::<Vec<_>>().join(" "))
+        let text = words.into_iter().map(|w| w.to_uppercase()).collect::<Vec<_>>().join(" ");
+        Reply::Ok(text.into())
     }
 
     #[test]
@@ -118,5 +137,7 @@ mod tests {
         let line = exchange(connect(&path).unwrap(), &words).unwrap();
         assert_eq!(line, "{\"ok\":\"CLIP GET A B\"}\n");
         assert_eq!(request(&path, &words, true), 0);
+        assert_eq!(with_json(&words, true).last().map(String::as_str), Some("--json"));
+        assert_eq!(with_json(&words, false), words);
     }
 }

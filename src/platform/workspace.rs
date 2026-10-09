@@ -82,6 +82,12 @@ pub fn frontmost_pid() -> Option<i32> {
     NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
 }
 
+/// Some app with bundle identifier `id` ("com.knollsoft.Hyperkey") is running.
+pub fn is_running(id: &str) -> bool {
+    !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(id))
+        .is_empty()
+}
+
 /// App `pid` is a regular (Dock) app, not a menu-bar or background one.
 pub fn is_regular(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
@@ -140,10 +146,19 @@ pub(super) fn open_running(app: &NSRunningApplication) -> bool {
 
 /// The bundle identifier of the app bundle at `path` ("com.apple.Safari"); `None` when it is
 /// not a bundle or declares none. Reads its Info.plist, so call it per action, not per scan.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn bundle_id(path: &Path) -> Option<String> {
     let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.display().to_string()))?;
     bundle.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty())
+}
+
+/// The bundle identifier ("com.apple.Safari") and display name ("Safari") of running app
+/// `pid`. `None` when no app runs with that pid; the id is `None` for an app without one.
+/// The by-pid sibling of `bundle_id`: cheap enough to call on every activation.
+pub fn app_identity(pid: i32) -> Option<(Option<String>, String)> {
+    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+    let id = app.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty());
+    let name = app.localizedName().map(|n| n.to_string()).unwrap_or_default();
+    Some((id, name))
 }
 
 /// Pids of the running apps launched from the bundle at `path`, in the system's order.
@@ -175,7 +190,6 @@ pub fn terminate(pid: i32) -> bool {
 
 /// Force app `pid` to quit, like Force Quit: unsaved work is lost. `false` when `pid` is not a
 /// running app or the request failed.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn force_terminate(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.forceTerminate())
@@ -183,7 +197,6 @@ pub fn force_terminate(pid: i32) -> bool {
 
 /// Show the file, folder or bundle at `path` selected in a Finder window. Untested: it opens
 /// Finder.
-#[expect(dead_code, reason = "first caller is the app actions (flick-78f6)")]
 pub fn reveal(path: &Path) {
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
     NSWorkspace::sharedWorkspace()
@@ -248,6 +261,22 @@ mod tests {
     fn an_app_that_is_not_running_has_no_pids() {
         assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle"))).is_empty());
         assert!(running_for_bundle(Path::new("/nonexistent/flick/Nope.app")).is_empty());
+    }
+
+    #[test]
+    fn app_identity_names_running_apps_only() {
+        let out = std::process::Command::new("/usr/bin/pgrep").args(["-x", "Dock"]).output();
+        let dock = out.ok().and_then(|o| String::from_utf8(o.stdout).ok());
+        if let Some(pid) = dock.and_then(|p| p.lines().next()?.trim().parse::<i32>().ok()) {
+            let (id, name) = app_identity(pid).unwrap();
+            assert_eq!(id.as_deref(), Some("com.apple.dock"));
+            assert_eq!(name, "Dock");
+        }
+        assert!(app_identity(-1).is_none());
+        let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        assert!(app_identity(i32::try_from(child.id()).unwrap()).is_none());
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 
     #[test]
