@@ -49,6 +49,7 @@ pub fn expand(path: &str) -> PathBuf {
 }
 
 /// herdr's default server socket.
+#[cfg(test)]
 pub fn default_socket() -> PathBuf {
     expand("~/.config/herdr/herdr.sock")
 }
@@ -92,6 +93,7 @@ impl Local {
     }
 
     /// The same client with requests timing out after `timeout`.
+    #[cfg(test)]
     pub fn with_timeout(self, timeout: Duration) -> Local {
         Local { timeout, ..self }
     }
