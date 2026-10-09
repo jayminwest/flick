@@ -261,7 +261,7 @@ fn status(outcome: Outcome) -> Option<String> {
 fn the_launcher_starts_a_new_task_and_stops_it() {
     with_cx(|cx| {
         let mut t = tasks();
-        assert_eq!(item_ids(&t.items(cx)), ["task:start", "task:today"]);
+        assert_eq!(item_ids(&t.items(cx)), ["task:start", "task:list", "task:today"]);
         assert_eq!(shown(t.activate(&ItemId::new("task", "start"), cx)), "push task/pick");
         assert!(t.open("nope", cx).is_none());
         let items = list(&mut t, cx, "pick", "Review PR #kota");
@@ -271,7 +271,7 @@ fn the_launcher_starts_a_new_task_and_stops_it() {
         assert!(t.on_event(Event::TaskChanged { task: Some(1) }, cx));
         at(T + 185);
         let root = t.items(cx);
-        assert_eq!(item_ids(&root), ["task:stop", "task:switch", "task:today"]);
+        assert_eq!(item_ids(&root), ["task:stop", "task:switch", "task:list", "task:today"]);
         assert_eq!(root[0].title, "Stop Task: Review PR · 0:03");
         assert_eq!(shown(t.activate(&root[1].id, cx)), "push task/pick");
         assert_eq!(status(t.activate(&root[0].id, cx)).as_deref(), Some("Stopped Review PR #kota"));
@@ -325,17 +325,111 @@ fn task_rows_have_start_done_and_stop_actions() {
         run(&mut t, cx, &["add", "A"]).unwrap();
         let (row, root) = (ItemId::new("task", "run/1"), ItemId::new("task", "start"));
         let keys = |t: &mut Tasks, cx: &mut Cx| t.actions(&row, cx).into_iter().map(|a| a.key).collect::<Vec<_>>();
-        assert_eq!(keys(&mut t, cx), ["start", "done"]);
+        assert_eq!(keys(&mut t, cx), ["start", "done", "rename", "delete"]);
         assert!(t.actions(&root, cx).is_empty());
+        assert!(t.actions(&ItemId::new("task", "run/7"), cx).is_empty());
         assert_eq!(shown(t.act(&row, "start", cx)), "hide");
-        assert_eq!(keys(&mut t, cx), ["done", "stop"]);
+        assert_eq!(keys(&mut t, cx), ["stop", "done", "rename", "delete"]);
         at(T + 60);
         assert_eq!(status(t.act(&row, "stop", cx)).as_deref(), Some("Stopped A"));
         assert_eq!(status(t.act(&row, "done", cx)).as_deref(), Some("Done 1: A"));
+        assert_eq!(keys(&mut t, cx), ["start", "reopen", "rename", "delete"]);
         assert_eq!(status(t.act(&ItemId::new("task", "run/7"), "done", cx)).as_deref(), Some("task: no task 7"));
         assert_eq!(status(t.act(&row, "nope", cx)), None);
         assert_eq!(status(t.act(&root, "done", cx)), None);
         assert!(list(&mut t, cx, "pick", "").is_empty());
+    });
+}
+
+#[test]
+fn reopen_puts_a_done_task_back_in_the_picker() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "A"]).unwrap();
+        run(&mut t, cx, &["done", "A"]).unwrap();
+        let row = ItemId::new("task", "run/1");
+        assert_eq!(status(t.act(&row, "reopen", cx)).as_deref(), Some("Reopened 1: A"));
+        assert_eq!(item_ids(&list(&mut t, cx, "pick", "")), ["task:run/1"]);
+        assert_eq!(status(t.act(&ItemId::new("task", "run/7"), "rename", cx)).as_deref(), Some("task: no task 7"));
+    });
+}
+
+#[test]
+fn the_tasks_view_lists_every_task_open_ones_first() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "Mail"]).unwrap();
+        run(&mut t, cx, &["add", "Review", "--project", "kota"]).unwrap();
+        run(&mut t, cx, &["start", "Write"]).unwrap();
+        run(&mut t, cx, &["done", "Mail"]).unwrap();
+        at(T + 120);
+        assert_eq!(shown(t.activate(&ItemId::new("task", "list"), cx)), "push task/list");
+        let items = list(&mut t, cx, "list", "");
+        assert_eq!(item_ids(&items), ["task:run/3", "task:run/2", "task:run/1"]);
+        assert_eq!((items[0].accessory.as_str(), items[2].accessory.as_str()), ("Running · 0:02", "Done · 0:00"));
+        assert_eq!(items[1].subtitle, "#kota");
+        assert_eq!(item_ids(&list(&mut t, cx, "list", "mail")), ["task:run/1"]);
+        // Enter on a done task starts it again.
+        assert_eq!(shown(t.activate(&items[2].id, cx)), "hide");
+        assert_eq!((t.running, cx.store.task_get(1).map(|t| t.status)), (Some(1), Some(Status::Doing)));
+    });
+}
+
+#[test]
+fn rename_is_a_form() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "Mail", "--project", "home"]).unwrap();
+        run(&mut t, cx, &["add", "Write"]).unwrap();
+        let row = ItemId::new("task", "run/1");
+        let Outcome::Form { module: "task", name } = t.act(&row, "rename", cx) else { panic!("rename opens a form") };
+        let mut form = t.form(&name, cx).unwrap();
+        assert_eq!((form.title.as_str(), form.value("title"), form.value("project")), ("Rename Task", Some("Mail"), Some("home")));
+        assert!(t.form("rename/9", cx).is_none() && t.form("nope", cx).is_none());
+        form.set_value(0, "Write");
+        form.set_value(1, "");
+        assert!(t.submit(&form, cx).unwrap_err().contains("task 2 is already"));
+        form.set_value(0, " Inbox ");
+        form.set_value(1, "#admin");
+        assert_eq!(t.submit(&form, cx).as_deref(), Ok("Renamed Inbox #admin"));
+        assert!(t.submit(&Form::new("task", "other", "x"), cx).is_err());
+    });
+}
+
+#[test]
+fn delete_asks_first_then_drops_the_task_and_its_time() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "Inbox", "--project", "admin"]).unwrap();
+        let row = ItemId::new("task", "run/1");
+        t.act(&row, "start", cx);
+        at(T + 60);
+        let Outcome::Confirm(c) = t.act(&row, "delete", cx) else { panic!("delete asks first") };
+        assert!(c.destructive && c.token == "delete/1" && c.title == "Delete task \"Inbox\"?");
+        assert_eq!(c.rows[0].title, "Inbox #admin");
+        calls();
+        assert_eq!(status(t.confirmed(&c.token, cx)).as_deref(), Some("Deleted 1: Inbox #admin"));
+        assert_eq!(calls(), [changed(None)]);
+        assert_eq!((t.running, cx.store.task_get(1), rows(cx).len()), (None, None, 0));
+        assert_eq!(status(t.confirmed(&c.token, cx)).as_deref(), Some("task: no task 1"));
+        assert_eq!(status(t.confirmed("nope", cx)), None);
+    });
+}
+
+#[test]
+fn cli_reopens_renames_and_removes() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        run(&mut t, cx, &["add", "Mail", "--project", "home"]).unwrap();
+        run(&mut t, cx, &["done", "1"]).unwrap();
+        assert_eq!(run(&mut t, cx, &["reopen", "Mail"]).unwrap(), "Reopened 1: Mail #home");
+        assert_eq!(run(&mut t, cx, &["rename", "1", "Inbox"]).unwrap(), "Renamed 1: Inbox #home");
+        let v = json(&mut t, cx, &["rename", "Inbox", "Inbox", "--project", ""]);
+        assert!(v["task"]["project"].is_null() && v["message"] == "Renamed");
+        assert!(run(&mut t, cx, &["reopen", "nope"]).unwrap_err().contains("no task matches"));
+        let v = json(&mut t, cx, &["rm", "1"]);
+        assert!(v["task"].is_null() && v["message"] == "Deleted 1: Inbox");
+        assert!(run(&mut t, cx, &["rm", "1"]).is_err());
     });
 }
 

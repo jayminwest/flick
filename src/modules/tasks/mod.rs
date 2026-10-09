@@ -7,12 +7,14 @@
 //! (`task_state`); the time Flick was down is not counted.
 //! Every change of the running task posts `Event::TaskChanged`, also at `Started`, so other
 //! modules (activity) learn it without reading this module's tables.
-//! Launcher: root items Start/Stop/Switch Task and Tasks Today, views `task/pick` and
-//! `task/today` (`view.rs`, ids there), a task row's ⌘K menu (Start, Mark Done, Stop).
+//! Launcher: root items Start/Stop/Switch Task, Tasks and Tasks Today, views `task/pick`,
+//! `task/list` and `task/today` (`view.rs`, ids there), a task row's ⌘K menu (Start or Stop,
+//! Mark Done or Reopen, Rename, Delete; `manage.rs`).
 //! Durations are computed when a list refreshes. Table `[task]`: `hotkey` (unbound by
 //! default) opens `task/pick`.
 
 mod cli;
+mod manage;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -25,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
 use crate::core::track::{Clock, Input, Op, Span};
-use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Action, Binding, Cx, Event, Form, Item, ItemId, ListView, Module, Outcome};
 use crate::core::store::Store;
 use cli::{Listing, Range, Report, Verb};
 use store::{MIGRATIONS, Status, Task, TaskStore};
@@ -193,7 +195,7 @@ impl Tasks {
     }
 
     /// Answer a verb that changed task `id`: the status line (with the task's label after
-    /// "Added" and "Done"), or with `json` the JSON document.
+    /// "Added", "Done", "Reopened" and "Renamed"), or with `json` the JSON document.
     fn answer(&self, changed: Changed, json: bool, store: &Store) -> Result<String, String> {
         let (message, id) = changed?;
         let task = id.and_then(|id| store.task_get(id));
@@ -201,7 +203,7 @@ impl Tasks {
             return self::json(&Answer { message: &message, task, running: self.running });
         }
         Ok(match task {
-            Some(t) if ["Added", "Done"].contains(&message.as_str()) => {
+            Some(t) if ["Added", "Done", "Reopened", "Renamed"].contains(&message.as_str()) => {
                 format!("{message} {}: {}", t.id, cli::label(&t))
             }
             _ => message,
@@ -309,6 +311,7 @@ impl Module for Tasks {
     fn open(&mut self, name: &str, _cx: &mut Cx) -> Option<ListView> {
         match name {
             view::PICK => Some(view::pick()),
+            view::LIST => Some(view::list()),
             view::TODAY => Some(view::today()),
             _ => None,
         }
@@ -316,9 +319,11 @@ impl Module for Tasks {
 
     fn refresh(&mut self, list: &mut ListView, cx: &mut Cx) {
         let (store, now) = (cx.store, (self.env.now)());
-        list.items = if list.name == view::PICK {
+        list.items = if list.name == view::PICK || list.name == view::LIST {
             let secs = self.today_secs(store, now);
-            view::pick_items(cx.query, &store.task_list(false), &secs, self.running, cx.ranker)
+            let all = list.name == view::LIST;
+            let items = if all { view::list_items } else { view::pick_items };
+            items(cx.query, &store.task_list(all), &secs, self.running, cx.ranker)
         } else {
             let running = self.running.and_then(|id| store.task_get(id));
             self.today(store, now)
@@ -332,6 +337,7 @@ impl Module for Tasks {
         let (store, now) = (cx.store, (self.env.now)());
         match id.key() {
             "start" | "switch" => Outcome::Push(view::pick()),
+            view::LIST => Outcome::Push(view::list()),
             view::TODAY => Outcome::Push(view::today()),
             "stop" => Outcome::Stay(Some(self.stop_status(store, now))),
             view::NEW => self.start_new(id.arg().unwrap_or_default(), store, now),
@@ -342,11 +348,8 @@ impl Module for Tasks {
         }
     }
 
-    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
-        match view::task_id(id.key()) {
-            Some(task) => view::actions(self.running == Some(task)),
-            None => vec![],
-        }
+    fn actions(&mut self, id: &ItemId, cx: &mut Cx) -> Vec<Action> {
+        view::task_id(id.key()).map_or_else(Vec::new, |task| self.task_actions(task, cx.store))
     }
 
     fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
@@ -359,8 +362,20 @@ impl Module for Tasks {
                 let changed = self.done(&task.to_string(), store, now);
                 Outcome::Stay(Some(self.answer(changed, false, store).unwrap_or_else(|e| e)))
             }
-            _ => Outcome::Stay(None),
+            key => self.manage_act(task, key, store, now),
         }
+    }
+
+    fn form(&mut self, name: &str, cx: &mut Cx) -> Option<Form> {
+        manage::rename_form(name, cx.store)
+    }
+
+    fn submit(&mut self, form: &Form, cx: &mut Cx) -> Result<String, String> {
+        manage::submit_rename(form, cx.store, (self.env.now)())
+    }
+
+    fn confirmed(&mut self, token: &str, cx: &mut Cx) -> Outcome {
+        self.delete_confirmed(token, cx.store, (self.env.now)())
     }
 
     /// `hotkey` binds key `pick`.
@@ -403,7 +418,7 @@ impl Module for Tasks {
     }
 
     fn verbs(&self) -> &'static str {
-        "task start|switch <id|title> [--project P] | task stop | task ls [--all] [--project P] | task add <title> [--project P] | task done <id|title> | task report [today|week|<date>[..<date>]] [--project P]"
+        "task start|switch <id|title> [--project P] | task stop | task ls [--all] [--project P] | task add <title> [--project P] | task done|reopen|rm <id|title> | task rename <id|title> <new title> [--project P] | task report [today|week|<date>[..<date>]] [--project P]"
     }
 
     /// `--json` (`cx.json`) makes every verb answer with JSON.
@@ -435,6 +450,15 @@ impl Module for Tasks {
             }
             Verb::Done { target } => {
                 let changed = self.done(&target, store, now);
+                self.answer(changed, cx.json, store)
+            }
+            Verb::Reopen { target } => self.answer(manage::reopen(&target, store, now), cx.json, store),
+            Verb::Rename { target, title, project } => {
+                let changed = manage::rename(&target, &title, project.as_deref(), store, now);
+                self.answer(changed, cx.json, store)
+            }
+            Verb::Rm { target } => {
+                let changed = self.remove(&target, store, now);
                 self.answer(changed, cx.json, store)
             }
         }
