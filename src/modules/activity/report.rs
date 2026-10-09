@@ -1,5 +1,5 @@
-//! Reports over stored spans: local-day ranges, totals by category, project, app and title,
-//! and the raw span list. Pure: callers pass the spans, the time and the UTC offset. Each
+//! Reports over stored spans: local-day ranges, totals by category, project, app, title and
+//! domain, and the raw span list. Pure: callers pass the spans, the time and the UTC offset. Each
 //! report is `Serialize` for `--json` and has a plain text form.
 
 use serde::Serialize;
@@ -10,7 +10,7 @@ use std::fmt::Write;
 use crate::core::track::{Span, Subject, local_day, split_days, sum_by};
 
 const DAY: i64 = 86_400;
-/// Titles listed in a report.
+/// Titles, and domains, listed in a report.
 const TOP_TITLES: usize = 10;
 /// Category of spans no rule names.
 pub const UNCATEGORIZED: &str = "Uncategorized";
@@ -109,6 +109,25 @@ pub struct Report {
     pub by_app: Vec<Total>,
     /// Longest titles, only when titles are stored.
     pub top_titles: Vec<Total>,
+    /// Longest web hosts, only when URLs are stored.
+    pub top_domains: Vec<Total>,
+}
+
+/// The host of http(s) URL `url`, lowercased, without user info, port or `www.`.
+pub fn domain(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let host = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or_default(),
+        None => host.split(':').next().unwrap_or_default(),
+    }
+    .to_lowercase();
+    let host = host.strip_prefix("www.").map(str::to_owned).unwrap_or(host);
+    (!host.is_empty()).then_some(host)
 }
 
 /// `spans` cut to `from..to`, empty parts dropped.
@@ -153,6 +172,8 @@ impl Report {
             .collect();
         let mut top_titles = by(&|s| s.subject.title.clone());
         top_titles.truncate(TOP_TITLES);
+        let mut top_domains = by(&|s| s.subject.url.as_deref().and_then(domain));
+        top_domains.truncate(TOP_TITLES);
         Report {
             range,
             from,
@@ -167,6 +188,7 @@ impl Report {
             by_project: by(&|s| rules.classify(&s.subject).1.map(str::to_owned)),
             by_app: by(&|s| Some(s.subject.name.clone())),
             top_titles,
+            top_domains,
         }
     }
 
@@ -185,6 +207,7 @@ impl Report {
             ("Projects", &self.by_project[..]),
             ("Apps", &self.by_app[..]),
             ("Titles", &self.top_titles[..]),
+            ("Domains", &self.top_domains[..]),
         ] {
             if totals.is_empty() {
                 continue;
@@ -255,6 +278,7 @@ pub struct SpanOut<'a> {
     pub app: &'a str,
     pub name: &'a str,
     pub title: Option<&'a str>,
+    pub url: Option<&'a str>,
     pub task: Option<i64>,
     pub category: Option<&'a str>,
     pub project: Option<&'a str>,
@@ -272,6 +296,7 @@ pub fn span_list<'a>(spans: &'a [Span<Subject>], rules: &'a Config) -> Vec<SpanO
                 app: &s.subject.app,
                 name: &s.subject.name,
                 title: s.subject.title.as_deref(),
+                url: s.subject.url.as_deref(),
                 task: s.subject.task,
                 category,
                 project,
@@ -280,18 +305,20 @@ pub fn span_list<'a>(spans: &'a [Span<Subject>], rules: &'a Config) -> Vec<SpanO
         .collect()
 }
 
-/// Tab-separated lines: local start, duration, app name, bundle id, title.
+/// Tab-separated lines: local start, duration, app name, bundle id, title, and the URL when
+/// the span has one.
 pub fn span_text(spans: &[SpanOut], utc_offset_secs: i32) -> String {
     spans
         .iter()
         .map(|s| {
             format!(
-                "{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}{}",
                 local_time(s.start, utc_offset_secs),
                 duration(s.secs),
                 s.name,
                 s.app,
-                s.title.unwrap_or("")
+                s.title.unwrap_or(""),
+                s.url.map(|u| format!("\t{u}")).unwrap_or_default()
             )
         })
         .collect::<Vec<_>>()
@@ -372,6 +399,7 @@ mod tests {
         assert_eq!(names(&r.by_project), [("flick".into(), 400)]);
         assert_eq!(names(&r.by_app), [("zed".into(), 400), ("mail".into(), 100)]);
         assert_eq!(names(&r.top_titles), [("main.rs".into(), 400)]);
+        assert!(r.top_domains.is_empty(), "no URLs stored, no domains");
         assert!((r.by_app[0].share - 0.8).abs() < 1e-9);
         let text = r.text();
         assert!(text.starts_with("Activity today (recording on)\nRecorded 8m, gaps 1m"), "{text}");
@@ -382,6 +410,32 @@ mod tests {
         let empty = Report::new("week", (0, 1, 0), &[], &Config::default(), false);
         assert_eq!((empty.recorded_secs, empty.gap_secs), (0, 0));
         assert_eq!(empty.text(), "Activity week (recording off)\nRecorded 0s, gaps 0s");
+    }
+
+    #[test]
+    fn domains_are_http_hosts() {
+        assert_eq!(domain("https://www.GitHub.com/a/b?q#x").as_deref(), Some("github.com"));
+        assert_eq!(domain("http://me:pw@localhost:8600/x").as_deref(), Some("localhost"));
+        assert_eq!(domain("https://[::1]:80/").as_deref(), Some("::1"));
+        assert_eq!(domain("HTTPS://docs.rs").as_deref(), Some("docs.rs"));
+        for no in ["chrome://newtab/", "file:///tmp/x", "about:blank", "https:///x", ""] {
+            assert_eq!(domain(no), None, "{no}");
+        }
+    }
+
+    #[test]
+    fn reports_total_by_domain() {
+        let mut spans = [span(0, 300, "brave", None), span(300, 400, "brave", None), span(400, 450, "brave", None)];
+        for (s, url) in spans.iter_mut().zip(["https://github.com/a", "https://www.github.com/b", "chrome://newtab/"]) {
+            s.subject = s.subject.clone().with_url(Some(url));
+        }
+        let rules = Config::default();
+        let r = Report::new("today", (0, 1000, 0), &spans, &rules, true);
+        assert_eq!(r.top_domains, [Total { name: "github.com".into(), secs: 400, share: 400.0 / 450.0 }]);
+        assert!(r.text().ends_with("\nDomains\n        6m   89%  github.com"), "{}", r.text());
+        let list = span_list(&spans, &rules);
+        assert_eq!(serde_json::to_value(&list).unwrap()[0]["url"], "https://github.com/a");
+        assert!(span_text(&list[..1], 0).ends_with("\tbrave\tbrave\t\thttps://github.com/a"));
     }
 
     #[test]

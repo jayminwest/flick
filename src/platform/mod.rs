@@ -2,11 +2,13 @@
 //! Accessibility, `CoreGraphics` or Carbon. Everything here is a safe, Flick-shaped function;
 //! callers never see Objective-C objects, CF types or selectors.
 //!
-//! `AppKit` runs on the main thread, and so does every function here.
+//! `AppKit` runs on the main thread, and so does every function here except
+//! `browser::front_tab_url`, which blocks on another app and runs on a worker thread.
 
 pub mod app;
 pub mod ax;
 pub mod axwatch;
+pub mod browser;
 pub mod capture;
 pub mod clock;
 pub mod events;

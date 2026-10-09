@@ -1,12 +1,13 @@
 //! Module `activity`: records which app is in front as time spans, on this machine only,
 //! and reports them. Event driven: no timer, no polling. Recording is off until turned on
 //! (`flick activity on`, the root item or the hotkey); the flag lives in `activity_state`,
-//! not in config. Window titles are never read unless `titles = true`. Excluded apps leave
-//! a gap. The open span is a row whose `end` advances on every event while recording, so a
-//! crash loses at most the time since the last event.
-//! While recording, a menu bar indicator shows; with `titles = true` the front app's window
-//! is followed for title changes (`Event::WindowChanged`), and only then. Sleep and screen
-//! lock pause recording; wake and unlock resume it. Quit closes the open span.
+//! not in config. Window titles are never read unless `titles = true`, browser tab URLs
+//! unless `urls = true` (`urls`). Excluded apps leave a gap. The open span is a row whose
+//! `end` advances on every event while recording, so a crash loses at most the time since
+//! the last event.
+//! While recording, a menu bar indicator shows; with `titles` or `urls` on the front app's
+//! window is followed for title changes (`Event::WindowChanged`), and only then. Sleep and
+//! screen lock pause recording; wake and unlock resume it. Quit closes the open span.
 //! Spans carry the running task's id, learned from `Event::TaskChanged` (activity never
 //! reads the task module's tables); a task change splits the open span.
 //! Agent sessions (`Cx::remote`) read reports only with the user's grant (`remote`).
@@ -16,9 +17,11 @@
 mod remote;
 mod report;
 mod rules;
+mod status;
 mod store;
 #[cfg(test)]
 mod tests;
+mod urls;
 mod wire;
 
 use crate::core::track::{Clock, Input, Op, Span, Subject};
@@ -47,6 +50,7 @@ pub struct Activity {
     away: Away,
     /// The running task, from the last `Event::TaskChanged`.
     task: Option<i64>,
+    urls: urls::Urls,
 }
 
 /// Why the machine is not in use; recording pauses while either holds.
@@ -112,7 +116,8 @@ impl Activity {
         self.front = Some(pid);
         // With `titles = false` no title is ever read.
         let title = if self.config.titles { (self.env.title)(pid) } else { None };
-        let subject = Subject::new(&app, &name, title.as_deref(), self.task);
+        let url = self.tab_url(pid, &app, &name);
+        let subject = Subject::new(&app, &name, title.as_deref(), self.task).with_url(url.as_deref());
         Some(if std::mem::take(&mut self.excluded) {
             Input::Resume(subject)
         } else {
@@ -138,8 +143,8 @@ impl Activity {
     }
 
     /// Match the system to the recording state: the indicator shows while recording, and
-    /// the front app's titles are followed only while recording with titles on and the
-    /// machine in use.
+    /// the front app's titles are followed only while recording with titles or URLs on and
+    /// the machine in use.
     fn sync(&mut self, store: &Store) {
         let recording = store.recording();
         if recording != self.indicated {
@@ -150,7 +155,7 @@ impl Activity {
             }
         }
         let away = self.away.any();
-        let want = self.front.filter(|_| recording && self.config.titles && !away);
+        let want = self.front.filter(|_| recording && self.config.follows() && !away);
         if want != self.watched {
             match want {
                 Some(pid) => (self.env.follow)(pid),
@@ -193,11 +198,12 @@ impl Activity {
             Event::ModuleChanged { module: "activity" } if wire::take_stop() => {
                 self.set_recording(false, store);
             }
+            Event::ModuleChanged { module: "activity" } if !away => self.take_url(store, now),
             Event::AppActivated { pid } if !away => match self.focus(pid) {
                 Some(input) => self.apply(input, store, now),
                 None => self.touch(store, now),
             },
-            Event::WindowChanged { pid } if !away && self.config.titles && self.front == Some(pid) => {
+            Event::WindowChanged { pid } if !away && self.config.follows() && self.front == Some(pid) => {
                 match self.focus(pid) {
                     Some(input) => self.apply(input, store, now),
                     None => self.touch(store, now),
@@ -259,9 +265,7 @@ impl Activity {
         match args {
             [] => {
                 let mut r = self.report(range, cx.store);
-                if self.hide_titles(cx) {
-                    r.top_titles.clear();
-                }
+                self.redact_report(cx, &mut r);
                 if cx.json { json(serde_json::to_string(&r)) } else { Ok(r.text()) }
             }
             [by, what] if by == "--by" && what == "task" => {
@@ -271,26 +275,6 @@ impl Activity {
             }
             _ => Err(format!("activity: usage: activity {range} [--by task]")),
         }
-    }
-
-    fn status(&self, store: &Store) -> String {
-        let on = if store.recording() { "on" } else { "off" };
-        let titles = match (self.config.titles, (self.env.trusted)()) {
-            (false, _) => "off",
-            (true, true) => "on",
-            (true, false) => "no Accessibility permission",
-        };
-        let open = match self.clock.open() {
-            Some((s, start)) => {
-                let since = report::local_time(start, (self.env.utc_offset)(start));
-                format!("{} since {}", s.name, &since[11..])
-            }
-            None if self.away.any() => "screen locked or asleep".into(),
-            None if self.excluded && self.clock.is_paused() => "excluded app in front".into(),
-            None if self.clock.is_idle() => "idle".into(),
-            None => "none".into(),
-        };
-        format!("recording: {on}\ntitles: {titles}\nopen span: {open}")
     }
 
     fn spans(&self, args: &[String], cx: &Cx) -> Result<String, String> {
@@ -306,11 +290,7 @@ impl Activity {
         self.touch(cx.store, now);
         let spans = cx.store.spans(from, now + 1);
         let mut list = span_list(&spans, &self.config);
-        if self.hide_titles(cx) {
-            for s in &mut list {
-                s.title = None;
-            }
-        }
+        self.redact_spans(cx, &mut list);
         if cx.json {
             return serde_json::to_string(&list).map_err(|e| format!("activity: {e}"));
         }
