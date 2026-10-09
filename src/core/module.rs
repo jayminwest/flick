@@ -1,7 +1,7 @@
 //! The module contract: one feature behind a narrow interface.
 
 use super::{Event, Item, ItemId, ListView, Outcome, Ranker};
-use crate::config::Config;
+use crate::config::Section;
 use crate::store::Store;
 
 /// A global hotkey a module asks for: `spec` (e.g. "cmd+Space") runs the module's `hotkey`
@@ -16,7 +16,6 @@ pub struct Binding {
 pub struct Cx<'a> {
     /// The text in the search field.
     pub query: &'a str,
-    pub config: &'a mut Config,
     pub store: &'a Store,
     pub ranker: &'a mut Ranker,
     /// Hides the launcher now. Call it before an action that needs the previous app
@@ -30,12 +29,12 @@ impl Cx<'_> {
     }
 }
 
-/// Run `f` with a context over `config`, an in-memory store and a no-op `hide`.
+/// Run `f` with a context over an in-memory store and a no-op `hide`.
 #[cfg(test)]
-pub fn test_cx<R>(query: &str, mut config: Config, f: impl FnOnce(&mut Cx) -> R) -> R {
+pub fn test_cx<R>(query: &str, f: impl FnOnce(&mut Cx) -> R) -> R {
     let store = Store::in_memory();
     let mut ranker = Ranker::new();
-    f(&mut Cx { query, config: &mut config, store: &store, ranker: &mut ranker, hide: || {} })
+    f(&mut Cx { query, store: &store, ranker: &mut ranker, hide: || {} })
 }
 
 /// A feature. Every method has a do-nothing default, so a module implements only what it
@@ -80,8 +79,14 @@ pub trait Module {
         false
     }
 
-    /// Global hotkeys this module wants under `config`.
-    fn hotkeys(&self, _config: &Config) -> Vec<Binding> {
+    /// Take settings from this module's `[<id>]` config table: at registration, and again
+    /// on config reload (state such as history is kept). `Err` names what is wrong.
+    fn configure(&mut self, _table: &Section) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Global hotkeys this module wants, from its config table.
+    fn hotkeys(&self) -> Vec<Binding> {
         vec![]
     }
 

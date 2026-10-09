@@ -5,13 +5,23 @@ pub mod list;
 
 use list::AppWindow;
 
-use crate::config::Config;
+use serde::Deserialize;
+
+use crate::config::Section;
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, RecentPids};
 use crate::platform::workspace;
+
+/// Table `[switcher]`: `hotkey` (legacy: top-level `windows_hotkey`).
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Settings {
+    hotkey: Option<String>,
+}
 
 /// `recent`: apps by activation, most recent first.
 #[derive(Default)]
 pub struct Switcher {
+    hotkey: Option<String>,
     windows: Vec<AppWindow>,
     recent: RecentPids,
 }
@@ -19,6 +29,11 @@ pub struct Switcher {
 impl Module for Switcher {
     fn id(&self) -> &'static str {
         "switcher"
+    }
+
+    fn configure(&mut self, table: &Section) -> Result<(), String> {
+        self.hotkey = table.get::<Settings>()?.hotkey;
+        Ok(())
     }
 
     /// View `windows`. Captures the window list once per open.
@@ -83,10 +98,9 @@ impl Module for Switcher {
         false
     }
 
-    /// `windows_hotkey` binds key `windows`.
-    fn hotkeys(&self, config: &Config) -> Vec<Binding> {
-        config
-            .windows_hotkey
+    /// `hotkey` binds key `windows`.
+    fn hotkeys(&self) -> Vec<Binding> {
+        self.hotkey
             .iter()
             .map(|spec| Binding { spec: spec.clone(), key: Ok("windows".into()) })
             .collect()
@@ -104,12 +118,21 @@ mod tests {
 
     #[test]
     fn windows_hotkey_toggles_the_switcher_view() {
-        let config = Config { windows_hotkey: Some("cmd+Space".into()), ..Config::default() };
+        let switcher = |text: &str| {
+            let config = crate::config::parse(text).unwrap();
+            let mut switcher = Switcher::default();
+            switcher.configure(&config.section("switcher").unwrap().unwrap()).unwrap();
+            switcher
+        };
         let want = Binding { spec: "cmd+Space".into(), key: Ok("windows".into()) };
-        assert_eq!(Switcher::default().hotkeys(&config), [want]);
-        assert!(Switcher::default().hotkeys(&Config::default()).is_empty());
-        crate::core::test_cx("", Config::default(), |cx| {
-            let mut s = Switcher::default();
+        assert_eq!(
+            switcher("[switcher]\nhotkey = \"cmd+Space\"").hotkeys(),
+            std::slice::from_ref(&want)
+        );
+        assert_eq!(switcher("windows_hotkey = \"cmd+Space\"").hotkeys(), [want]);
+        assert!(switcher("").hotkeys().is_empty());
+        crate::core::test_cx("", |cx| {
+            let mut s = switcher("");
             assert!(s.hotkey("windows", cx).is_some_and(|v| v.is("switcher", "windows")));
             assert!(s.hotkey("other", cx).is_none());
         });
