@@ -140,7 +140,6 @@ pub(super) fn open_running(app: &NSRunningApplication) -> bool {
 
 /// The bundle identifier of the app bundle at `path` ("com.apple.Safari"); `None` when it is
 /// not a bundle or declares none. Reads its Info.plist, so call it per action, not per scan.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the uninstall (flick-4077)"))]
 pub fn bundle_id(path: &Path) -> Option<String> {
     let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.display().to_string()))?;
     bundle.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty())
