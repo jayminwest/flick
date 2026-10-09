@@ -14,6 +14,7 @@ mod module;
 mod rank;
 mod registry;
 mod routing;
+pub mod store;
 pub mod track;
 mod view;
 

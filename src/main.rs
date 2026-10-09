@@ -10,7 +10,6 @@ mod modules;
 mod platform;
 mod raycast;
 mod root;
-mod store;
 mod ui;
 
 use platform::app as macos;
@@ -41,7 +40,7 @@ fn launch() {
         config::Config::default()
     });
     let db = config::data_dir().join("flick.db");
-    let store = store::Store::open(&db)
+    let store = core::store::Store::open(&db)
         .unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
 
     let hotkeys = hotkey::init();

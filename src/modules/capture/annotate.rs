@@ -16,7 +16,7 @@ use crate::platform::events;
 use crate::platform::ink::editor::{self, Done, EditOpts};
 use crate::platform::ink::model::Style;
 use crate::platform::ink::overlay::{self, Halo};
-use crate::store::{Store, now};
+use crate::core::store::{Store, now};
 
 use super::store::{Row, Shots};
 use super::{Capture, Settings, name};

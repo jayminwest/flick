@@ -2,8 +2,8 @@
 
 use std::panic::{self, AssertUnwindSafe};
 
+use super::store::Store;
 use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
-use crate::store::Store;
 
 pub struct Registry {
     modules: Vec<Box<dyn Module>>,

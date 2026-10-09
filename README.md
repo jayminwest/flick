@@ -365,7 +365,7 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 | [`root.rs`](src/root.rs) | Root search ranking |
 | [`ui.rs`](src/ui.rs) | The launcher view over the platform panel |
 | [`hotkey.rs`](src/hotkey.rs) | Global hotkey bindings |
-| [`store.rs`](src/store.rs) | SQLite: one connection, per-module migrations, usage counts |
+| [`core/store.rs`](src/core/store.rs) | SQLite: one connection, per-module migrations, usage counts |
 | [`config.rs`](src/config.rs) | TOML config: per-module tables, legacy keys |
 | [`raycast.rs`](src/raycast.rs) | Raycast quicklink import |
 | [`control/`](src/control), [`cli/`](src/cli) | Control socket server, and the command-line client |

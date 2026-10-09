@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::core::{Action, Confirm, ConfirmRow, Cx, Icon, Item, ItemId, ListView};
-use crate::store::{Store, now};
+use crate::core::store::{Store, now};
 
 use super::store::{Row, Shots};
 
