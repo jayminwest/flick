@@ -3,7 +3,8 @@
 //! the repo's .gitignore lists). Ids are `feedback:new` (Add Feedback…, form `new`),
 //! `feedback:list` (Recent Feedback, view `recent`), `feedback:save` (the `<keyword> <text>`
 //! row and the `write` view's row; the text rides in the id's `arg`) and `feedback:entry/<n>`
-//! (rows of `recent`, which do not record use). Table `[feedback]`: `file` (default the
+//! (rows of `recent`, which do not record use; ⌘K Mark Resolved). Resolved entries leave
+//! `recent` and `ls` (`ls --all` shows them). Table `[feedback]`: `file` (default the
 //! checkout's), `keyword` (default `fb`), `hotkey` (unbound by default) opens view `write`.
 
 mod entry;
@@ -16,9 +17,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
-use crate::core::{Binding, Cx, Event, Field, Form, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Action, Binding, Cx, Event, Field, Form, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::core::unknown_verb;
-use entry::Entry;
+use entry::{Entry, Resolution, Resolved};
 use wire::{App, Env};
 
 /// Rows in Recent Feedback.
@@ -83,9 +84,31 @@ impl Feedback {
             app: app.filter(|a| !a.is_empty()),
             bundle_id,
             query: query.filter(|q| !q.trim().is_empty()),
+            resolved: None,
         };
         entry::append(&path, &entry)?;
         Ok((path, entry))
+    }
+
+    /// Mark the entries saved at `ts` resolved, with an optional `note`.
+    fn resolve(&self, ts: &str, note: Option<String>) -> Result<(), String> {
+        let path = self.path()?;
+        let entries = entry::read(&path, usize::MAX, true)?;
+        let mut matching = entries.iter().filter(|e| e.ts == ts).peekable();
+        if matching.peek().is_none() {
+            return Err(format!("No feedback at {ts}"));
+        }
+        if matching.all(|e| e.resolved.is_some()) {
+            return Err(format!("Feedback at {ts} is already resolved"));
+        }
+        let now = (self.env.now)();
+        let resolved = Resolved { ts: entry::rfc3339(now, (self.env.utc_offset)(now)), note };
+        entry::append(&path, &Resolution { resolves: ts.into(), resolved })
+    }
+
+    /// The entries `recent` lists, newest first: row `entry/<n>` is the nth.
+    fn open_entries(&self) -> Vec<Entry> {
+        entry::read(&self.path().unwrap_or_default(), RECENT, false).unwrap_or_default()
     }
 
     /// Save from the launcher: hide on success, a status line on failure.
@@ -116,7 +139,7 @@ impl Feedback {
     }
 
     fn recent(&self, cx: &mut Cx) -> Vec<Item> {
-        let entries = entry::read(&self.path().unwrap_or_default(), RECENT).unwrap_or_default();
+        let entries = self.open_entries();
         let items: Vec<Item> = entries
             .into_iter()
             .enumerate()
@@ -138,7 +161,7 @@ impl Feedback {
         })
     }
 
-    /// `add <text...>`, `ls [--limit n]`, `path`.
+    /// `add <text...>`, `ls [--all] [--limit n]`, `resolve <ts> [note...]`, `path`.
     fn run_verb(&self, args: &[String], json: bool) -> Result<String, String> {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
@@ -152,21 +175,52 @@ impl Feedback {
             }
             ["add"] => Err("usage: flick feedback add <text...>".into()),
             ["ls", rest @ ..] => {
-                let limit = match rest {
-                    [] => LS_LIMIT,
-                    ["--limit", n] => n.parse().map_err(|_| format!("--limit {n}: not a number"))?,
-                    _ => return Err("usage: flick feedback ls [--limit n]".into()),
-                };
-                let entries = entry::read(&self.path()?, limit)?;
+                let (limit, all) = ls_flags(rest)?;
+                let entries = entry::read(&self.path()?, limit, all)?;
                 if json {
                     return serde_json::to_string(&entries).map_err(|e| e.to_string());
                 }
-                Ok(entries.iter().map(|e| format!("{}\t{}", e.ts, e.text.replace('\n', " "))).collect::<Vec<_>>().join("\n"))
+                Ok(entries.iter().map(ls_line).collect::<Vec<_>>().join("\n"))
             }
+            ["resolve", ts, note @ ..] => {
+                let note = Some(note.join(" ")).filter(|n| !n.trim().is_empty());
+                self.resolve(ts, note)?;
+                Ok(format!("Resolved feedback at {ts}"))
+            }
+            ["resolve"] => Err("usage: flick feedback resolve <ts> [note...]".into()),
             ["path"] => self.path().map(|p| p.display().to_string()),
             _ => Err(unknown_verb("feedback", args)),
         }
     }
+}
+
+/// `ls` flags: `--limit n` and `--all`, in any order.
+fn ls_flags(mut rest: &[&str]) -> Result<(usize, bool), String> {
+    let (mut limit, mut all) = (LS_LIMIT, false);
+    loop {
+        match rest {
+            [] => return Ok((limit, all)),
+            ["--all", more @ ..] => (all, rest) = (true, more),
+            ["--limit", n, more @ ..] => {
+                limit = n.parse().map_err(|_| format!("--limit {n}: not a number"))?;
+                rest = more;
+            }
+            _ => return Err("usage: flick feedback ls [--all] [--limit n]".into()),
+        }
+    }
+}
+
+/// A row of `ls`: `ts`, text on one line, and `resolved [note]` when resolved.
+fn ls_line(e: &Entry) -> String {
+    let mut line = format!("{}\t{}", e.ts, e.text.replace('\n', " "));
+    if let Some(r) = &e.resolved {
+        line.push_str("\tresolved");
+        if let Some(note) = &r.note {
+            line.push(' ');
+            line.push_str(note);
+        }
+    }
+    line
 }
 
 /// View `write` (the hotkey): the search field is the feedback.
@@ -223,7 +277,7 @@ impl Module for Feedback {
         match view {
             "recent" => Some(ListView {
                 placeholder: "Search feedback…".into(),
-                footer: "Recent Feedback  ·  ↵ copies".into(),
+                footer: "Recent Feedback  ·  ↵ copies  ·  ⌘K Mark Resolved".into(),
                 empty: "No feedback yet".into(),
                 ..ListView::new("feedback", "recent")
             }),
@@ -259,6 +313,23 @@ impl Module for Feedback {
             }
             _ => Outcome::Stay(None),
         }
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        if id.key().starts_with(ENTRY) {
+            vec![Action::new("resolve", "Mark Resolved", Icon::Symbol("checkmark.circle"))]
+        } else {
+            vec![]
+        }
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, _cx: &mut Cx) -> Outcome {
+        let n = id.key().strip_prefix(ENTRY).and_then(|n| n.parse::<usize>().ok());
+        let Some(entry) = n.filter(|_| key == "resolve").and_then(|n| self.open_entries().into_iter().nth(n)) else {
+            return Outcome::Stay(None);
+        };
+        let status = self.resolve(&entry.ts, None).map_or_else(|e| e, |()| "Feedback resolved".into());
+        Outcome::Stay(Some(status))
     }
 
     fn form(&mut self, name: &str, _cx: &mut Cx) -> Option<Form> {
@@ -302,6 +373,6 @@ impl Module for Feedback {
     }
 
     fn verbs(&self) -> &'static str {
-        "feedback add <text...> | feedback ls [--limit n] | feedback path"
+        "feedback add <text...> | feedback ls [--all] [--limit n] | feedback resolve <ts> [note...] | feedback path"
     }
 }

@@ -373,7 +373,7 @@ flick capture annotate ~/Desktop/shot.png  # opens the editor; prints the copy's
 
 ### Feedback
 
-The `feedback` module keeps notes about Flick while you use it. **Add Feedback…** in the launcher opens a one-field form; ↵ saves. `fb <text>` in root search shows **Save feedback: <text>**; ↵ saves and closes the launcher. **Recent Feedback** lists the last 50 notes, newest first; ↵ copies one. From a terminal: `flick feedback add <text>`, `flick feedback ls [--limit n]` (`--json` for the entries), `flick feedback path`.
+The `feedback` module keeps notes about Flick while you use it. **Add Feedback…** in the launcher opens a one-field form; ↵ saves. `fb <text>` in root search shows **Save feedback: <text>**; ↵ saves and closes the launcher. **Recent Feedback** lists the last 50 open notes, newest first; ↵ copies one, ⌘K **Mark Resolved** resolves it. From a terminal: `flick feedback add <text>`, `flick feedback ls [--all] [--limit n]` (`--json` for the entries; `--all` adds resolved ones), `flick feedback resolve <ts> [note]` (the entry's `ts` from `ls`; the note can name the issue that tracks it), `flick feedback path`.
 
 Notes go to `feedback.jsonl` in the checkout this Flick was built from. The repo's `.gitignore` lists it, so git never commits it. The file is JSON Lines: one object per line, appended, never rewritten:
 
@@ -381,7 +381,7 @@ Notes go to `feedback.jsonl` in the checkout this Flick was built from. The repo
 {"ts":"2026-10-09T11:31:01-07:00","text":"the switcher is slow","build":"<sha>","app":"Safari","bundle_id":"com.apple.Safari","query":"add fee"}
 ```
 
-`ts` is local time with its UTC offset, `build` the commit Flick was built from (`-dirty` for uncommitted changes, `dev` for `cargo build`), `app` and `bundle_id` the app in front when the launcher opened (not from the CLI), and `query` the root search text when **Add Feedback…** ran. Fields without a value are left out. Read it with `jq -r .text feedback.jsonl`.
+`ts` is local time with its UTC offset, `build` the commit Flick was built from (`-dirty` for uncommitted changes, `dev` for `cargo build`), `app` and `bundle_id` the app in front when the launcher opened (not from the CLI), and `query` the root search text when **Add Feedback…** ran. Fields without a value are left out. Resolving appends a line `{"resolves":"<entry ts>","ts":"...","note":"..."}`; read open notes with `flick feedback ls`, or every line's text with `jq -r '.text // empty' feedback.jsonl`.
 
 ```toml
 [feedback]
@@ -407,7 +407,7 @@ flick --json remote status | jq .ok.last
 ```
 
 - **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
-- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything or `feedback add`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, windows, app list and open, clipboard) answers.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything or `feedback add` or `resolve`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, windows, app list and open, clipboard) answers.
 - **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
 
 [docs/remote.md](docs/remote.md) has setup steps and a manual test checklist.

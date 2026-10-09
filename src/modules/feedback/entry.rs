@@ -1,7 +1,10 @@
-//! The feedback file: JSON Lines, one `Entry` object per line, append only. Each save is one
-//! `write` of one line to a file opened with `O_APPEND`, so a crash or a second writer never
-//! damages earlier lines; `read` skips a line it cannot parse. Pure but for the file I/O.
+//! The feedback file: JSON Lines, one `Entry` or `Resolution` object per line, append only.
+//! Each save is one `write` of one line to a file opened with `O_APPEND`, so a crash or a
+//! second writer never damages earlier lines; `read` skips a line it cannot parse. Resolving
+//! appends a `Resolution` naming the entry's `ts`; builds without it skip that line (it has
+//! no `text`). Pure but for the file I/O.
 
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,10 +31,40 @@ pub struct Entry {
     /// The root search text when "Add Feedback…" ran, when not empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    /// Set by `read` from a later `Resolution` line; never written with the entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<Resolved>,
 }
 
-/// Append `entry` as one line, creating the file and its folder first.
-pub fn append(path: &Path, entry: &Entry) -> Result<(), String> {
+/// How an entry was resolved.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resolved {
+    /// When, like `Entry::ts`.
+    pub ts: String,
+    /// E.g. the issue that tracks it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// A line marking every entry whose `ts` is `resolves` as resolved.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resolution {
+    pub resolves: String,
+    #[serde(flatten)]
+    pub resolved: Resolved,
+}
+
+/// One parsed line.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Line {
+    Resolution(Resolution),
+    Entry(Entry),
+}
+
+/// Append `entry` (an `Entry` or a `Resolution`) as one line, creating the file and its
+/// folder first.
+pub fn append(path: &Path, entry: &impl Serialize) -> Result<(), String> {
     let fail = |e: std::io::Error| format!("Can't write {}: {e}", path.display());
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(fail)?;
@@ -42,14 +75,25 @@ pub fn append(path: &Path, entry: &Entry) -> Result<(), String> {
     file.write_all(line.as_bytes()).map_err(fail)
 }
 
-/// The last `limit` entries, newest first. A missing file has none; bad lines are skipped.
-pub fn read(path: &Path, limit: usize) -> Result<Vec<Entry>, String> {
+/// The last `limit` entries, newest first, with `resolved` set; resolved ones only when
+/// `all`. A missing file has none; bad lines are skipped.
+pub fn read(path: &Path, limit: usize, all: bool) -> Result<Vec<Entry>, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(format!("Can't read {}: {e}", path.display())),
     };
-    Ok(text.lines().rev().filter_map(|l| serde_json::from_str(l).ok()).take(limit).collect())
+    let (mut entries, mut resolved) = (vec![], HashMap::new());
+    for line in text.lines().filter_map(|l| serde_json::from_str::<Line>(l).ok()) {
+        match line {
+            Line::Entry(e) => entries.push(e),
+            Line::Resolution(r) => {
+                resolved.insert(r.resolves, r.resolved);
+            }
+        }
+    }
+    let entries = entries.into_iter().rev().map(|e| Entry { resolved: resolved.get(&e.ts).cloned(), ..e });
+    Ok(entries.filter(|e| all || e.resolved.is_none()).take(limit).collect())
 }
 
 /// Unix time `ts` as RFC 3339 local time, `utc_offset_secs` east of UTC.
@@ -121,7 +165,15 @@ mod tests {
     const TS: i64 = 1_791_570_661;
 
     fn entry(text: &str) -> Entry {
-        Entry { ts: "t".into(), text: text.into(), build: "dev".into(), app: None, bundle_id: None, query: None }
+        Entry {
+            ts: "t".into(),
+            text: text.into(),
+            build: "dev".into(),
+            app: None,
+            bundle_id: None,
+            query: None,
+            resolved: None,
+        }
     }
 
     #[test]
@@ -159,7 +211,7 @@ mod tests {
     fn entries_append_as_lines_and_read_back_newest_first() {
         let dir = std::env::temp_dir().join(format!("flick-feedback-entry-{}", std::process::id()));
         let path = dir.join("sub/feedback.jsonl");
-        assert_eq!(read(&path, 5).unwrap(), []);
+        assert_eq!(read(&path, 5, false).unwrap(), []);
         let mut first = entry("one\nline two");
         first.app = Some("Safari".into());
         append(&path, &first).unwrap();
@@ -168,10 +220,27 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 3);
         assert!(text.starts_with(r#"{"ts":"t","text":"one\nline two","build":"dev","app":"Safari"}"#), "{text}");
-        assert_eq!(read(&path, 5).unwrap(), [entry("two"), first]);
-        assert_eq!(read(&path, 1).unwrap(), [entry("two")]);
-        assert!(read(&dir, 1).unwrap_err().starts_with("Can't read"));
+        assert_eq!(read(&path, 5, false).unwrap(), [entry("two"), first]);
+        assert_eq!(read(&path, 1, false).unwrap(), [entry("two")]);
+        assert!(read(&dir, 1, false).unwrap_err().starts_with("Can't read"));
         assert!(append(&dir, &entry("x")).unwrap_err().starts_with("Can't write"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolutions_mark_entries_by_ts_and_hide_them_unless_all() {
+        let dir = std::env::temp_dir().join(format!("flick-feedback-resolve-{}", std::process::id()));
+        let path = dir.join("feedback.jsonl");
+        let (a, b) = (Entry { ts: "a".into(), ..entry("one") }, Entry { ts: "b".into(), ..entry("two") });
+        append(&path, &a).unwrap();
+        append(&path, &b).unwrap();
+        let done = Resolved { ts: "c".into(), note: Some("flick-1234".into()) };
+        append(&path, &Resolution { resolves: "a".into(), resolved: done.clone() }).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.ends_with("{\"resolves\":\"a\",\"ts\":\"c\",\"note\":\"flick-1234\"}\n"), "{text}");
+        assert_eq!(read(&path, 5, false).unwrap(), std::slice::from_ref(&b));
+        let resolved_a = Entry { resolved: Some(done), ..a };
+        assert_eq!(read(&path, 5, true).unwrap(), [b, resolved_a]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

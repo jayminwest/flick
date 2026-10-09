@@ -142,7 +142,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("app", &["uninstall"]),
     ("quicklink", &["add", "remove"]),
     ("capture", &[]),
-    ("feedback", &["add"]),
+    ("feedback", &["add", "resolve"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn network_policy_refuses_side_effects() {
-        let refused: [&[&str]; 13] = [
+        let refused: [&[&str]; 14] = [
             &["reload"],
             &["flick", "rebuild"],
             &["flick", "cancel"],
@@ -361,6 +361,7 @@ mod tests {
             &["capture"],
             &["capture", "screen", "--out", "/tmp/x.png"],
             &["feedback", "add", "hi"],
+            &["feedback", "resolve", "2026-10-09T11:31:01-07:00"],
         ];
         for req in refused {
             let err = net_policy(&words(req)).unwrap_err();
