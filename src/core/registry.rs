@@ -83,6 +83,17 @@ impl Registry {
         self.modules.iter().flat_map(|m| m.hotkeys().into_iter().map(|b| (m.id(), b))).collect()
     }
 
+    /// Run control command `args` (`<module> <verb> [args...]`) on its module. A module
+    /// that panics is reported as an error, like one that fails.
+    pub fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
+        let (module, rest) = args.split_first().ok_or("empty request")?;
+        let ids: Vec<&str> = self.modules.iter().map(|m| m.id()).collect();
+        let unknown = || format!("unknown module \"{module}\" (modules: {})", ids.join(", "));
+        let m = self.modules.iter_mut().find(|m| m.id() == module).ok_or_else(unknown)?;
+        panic::catch_unwind(AssertUnwindSafe(|| m.command(rest, cx)))
+            .unwrap_or_else(|_| Err(format!("{module}: command panicked")))
+    }
+
     /// Run module `module`'s hotkey `key`. An unknown module does nothing.
     pub fn hotkey(&mut self, module: &str, key: &str, cx: &mut Cx) -> Option<ListView> {
         self.get(module)?.hotkey(key, cx)
@@ -92,7 +103,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Icon, test_cx};
+    use crate::core::{Icon, test_cx, unknown_verb};
 
     /// Records calls; owns view "list".
     struct Toy {
@@ -148,6 +159,15 @@ mod tests {
 
         fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
             (key == "show").then(|| ListView::new(self.id, "list"))
+        }
+
+        fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
+            match args {
+                [verb, rest @ ..] if verb == "echo" => {
+                    Ok(format!("{} {}", cx.query, rest.join(" ")))
+                }
+                _ => Err(unknown_verb(self.id, args)),
+            }
         }
     }
 
@@ -271,6 +291,38 @@ mod tests {
         fn on_event(&mut self, _event: Event, _cx: &mut Cx) -> bool {
             panic!("faulty module")
         }
+
+        fn command(&mut self, _args: &[String], _cx: &mut Cx) -> Result<String, String> {
+            panic!("faulty command")
+        }
+    }
+
+    fn words(w: &[&str]) -> Vec<String> {
+        w.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn commands_route_by_module_and_fail_as_errors() {
+        let mut r = Registry::new(vec![
+            Box::new(Toy { id: "a", events: 0 }),
+            Box::new(Bare),
+            Box::new(Faulty),
+        ]);
+        with_cx("q", |cx| {
+            assert_eq!(r.command(&words(&["a", "echo", "x", "y"]), cx).unwrap(), "q x y");
+            let mut err = |w: &[&str], cx: &mut Cx| r.command(&words(w), cx).unwrap_err();
+            assert_eq!(err(&["a", "nope"], cx), "a: unknown command \"nope\"");
+            assert_eq!(err(&["a"], cx), "a: missing command");
+            assert_eq!(err(&["bare", "list"], cx), "bare: unknown command \"list\"");
+            assert_eq!(err(&["faulty", "x"], cx), "faulty: command panicked");
+            assert_eq!(
+                err(&["nobody", "x"], cx),
+                "unknown module \"nobody\" (modules: a, bare, faulty)"
+            );
+            assert_eq!(err(&[], cx), "empty request");
+            // The faulty module stays registered and keeps being isolated.
+            assert_eq!(err(&["faulty"], cx), "faulty: command panicked");
+        });
     }
 
     #[test]

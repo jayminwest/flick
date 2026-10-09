@@ -2,6 +2,7 @@
 //! `Module` contract and its registry, and ranking. Plain Rust: no `crate::platform`, so
 //! everything here unit-tests without `AppKit`.
 
+pub mod control;
 mod event;
 mod item;
 mod module;
@@ -13,7 +14,7 @@ pub use event::{Event, RecentPids};
 pub use item::{Icon, Item, ItemId};
 #[cfg(test)]
 pub use module::test_cx;
-pub use module::{Binding, Cx, Module};
+pub use module::{Binding, Cx, Module, unknown_verb};
 pub use rank::{Ranker, Usage, frecency};
 pub use registry::Registry;
 pub use view::{ListView, Outcome};

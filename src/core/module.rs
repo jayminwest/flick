@@ -95,4 +95,18 @@ pub trait Module {
     fn hotkey(&mut self, _key: &str, _cx: &mut Cx) -> Option<ListView> {
         None
     }
+
+    /// Run a control command (`flick <id> <verb> [args...]`); `args` starts at the verb.
+    /// `Ok` is the text to print, `Err` a message for the caller.
+    fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        Err(unknown_verb(self.id(), args))
+    }
+}
+
+/// The error for a verb module `id` doesn't have.
+pub fn unknown_verb(id: &str, args: &[String]) -> String {
+    match args.first() {
+        Some(verb) => format!("{id}: unknown command \"{verb}\""),
+        None => format!("{id}: missing command"),
+    }
 }
