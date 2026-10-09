@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Minimize window action.
+- Minimize and Hide window actions. Hide works like ⌘H, with no animation.
 - `flick snapshot` renders the launcher to a PNG without showing it.
 - Fix: a second Flick started by launchd no longer runs next to an existing one.
 
