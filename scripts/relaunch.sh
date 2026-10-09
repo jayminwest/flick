@@ -14,6 +14,7 @@
 # Restart: stop each Flick and wait until it exits (10 s, then kill -9), so the new copy
 # does not see an old one and exit as "already running". Then start Flick through the
 # launchd agent when it exists (launchctl kickstart -k), else with open.
+if [ -z "${BASH_VERSION:-}" ]; then exec /bin/bash "$0" "$@"; fi
 set -euo pipefail
 
 usage() {

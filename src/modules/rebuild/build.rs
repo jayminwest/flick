@@ -357,8 +357,8 @@ fn kill_group(pgid: u32) {
 
 /// A failed build's message, with a hint when the log tail shows a known cause.
 fn explain(err: &str, tail: &str, source: &Path) -> String {
-    if tail.contains("command not found: cargo") || tail.contains("cargo: command not found") {
-        "cargo not found on login-shell PATH".into()
+    if ["command not found: cargo", "cargo: command not found", "cargo not found"].iter().any(|s| tail.contains(s)) {
+        "cargo not found on login-shell PATH: install Rust with rustup".into()
     } else if tail.contains("--offline was specified") || tail.contains("using offline mode") {
         format!("build {err}; a crate may be missing offline: run `cargo fetch` in {}", source.display())
     } else {

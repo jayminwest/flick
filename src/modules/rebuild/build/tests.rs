@@ -206,8 +206,10 @@ fn progress_text_for_each_phase() {
 
 #[test]
 fn failures_explain_known_causes() {
+    const NO_CARGO: &str = "cargo not found on login-shell PATH: install Rust with rustup";
     let src = Path::new("/src/flick");
-    assert_eq!(explain("failed (x)", "zsh:1: command not found: cargo\n", src), "cargo not found on login-shell PATH");
+    assert_eq!(explain("failed (x)", "zsh:1: command not found: cargo\n", src), NO_CARGO);
+    assert_eq!(explain("failed (x)", "bundle.sh: cargo not found: install Rust", src), NO_CARGO);
     assert_eq!(
         explain("failed (x)", "error: no matching package named `foo` found\nAs a reminder, you're using offline mode (--offline)", src),
         "build failed (x); a crate may be missing offline: run `cargo fetch` in /src/flick"
@@ -229,6 +231,50 @@ fn last_line_reads_the_tail_and_caps_its_length() {
     assert_eq!(last_line(&log), "y".repeat(LINE_MAX));
     assert!(Paths::standard().log.ends_with("Library/Logs/Flick/rebuild.log"));
     let _ = fs::remove_dir_all(&dir);
+}
+
+/// Run this checkout's real scripts/bundle.sh --install under /bin/bash (3.2 on macOS) with
+/// `cargo` (a shell script, or `None` for no cargo) as the only cargo on PATH. A stale
+/// Flick.app sits in the target dir. Returns (exit code, stderr, target dir, install dir).
+fn real_bundle(name: &str, cargo: Option<&str>) -> (Option<i32>, String, PathBuf, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("flk-{}-bundle-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let (bin, target, install) = (dir.join("bin"), dir.join("target"), dir.join("install"));
+    fs::create_dir_all(target.join("Flick.app")).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    if let Some(body) = cargo {
+        fs::write(bin.join("cargo"), format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(bin.join("cargo"), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let out = Command::new("/bin/bash")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/bundle.sh"))
+        .args(["--install", "--no-restart"])
+        .env("PATH", format!("{}:/usr/bin:/bin:/usr/sbin:/sbin", bin.display()))
+        .env("CARGO_TARGET_DIR", &target)
+        .env("FLICK_INSTALL_DIR", &install)
+        .env_remove("FLICK_CARGO_ARGS")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    (out.status.code(), String::from_utf8_lossy(&out.stderr).into_owned(), target, install)
+}
+
+#[test]
+fn bundle_sh_fails_without_cargo_and_installs_nothing() {
+    let cases = [
+        ("missing", None, "cargo not found: install Rust with rustup"),
+        ("no-toolchain", Some("echo 'error: no default toolchain' >&2; exit 1"), "cargo does not run"),
+        ("fails", Some("[ \"$1\" = --version ] && exit 0; echo 'error: boom' >&2; exit 101"), "cargo build failed"),
+        ("no-binary", Some("exit 0"), "cargo made no binary"),
+    ];
+    for (name, cargo, message) in cases {
+        let (code, stderr, target, install) = real_bundle(name, cargo);
+        assert_eq!(code, Some(1), "{name}: {stderr}");
+        assert!(stderr.contains(message) && stderr.contains("nothing installed"), "{name}: {stderr}");
+        assert!(!install.exists(), "{name}: relaunch.sh ran");
+        assert!(!target.join("Flick.app").exists(), "{name}: stale bundle left to install");
+        let _ = fs::remove_dir_all(target.parent().unwrap());
+    }
 }
 
 /// The real thing: export this checkout's HEAD, `cargo build --release --locked --offline`,
