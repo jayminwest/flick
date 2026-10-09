@@ -101,7 +101,7 @@ fn existing_rows_survive_open() {
 #[test]
 fn record_use_counts_and_stamps_now() {
     let store = Store::in_memory();
-    let before = crate::store::now();
+    let before = crate::core::store::now();
     store.record_use("quicklink:Google");
     store.record_use("quicklink:Google");
     store.record_use("window:Left Half");
@@ -109,7 +109,7 @@ fn record_use_counts_and_stamps_now() {
     assert_eq!(usage.len(), 2);
     let (count, last) = usage["quicklink:Google"];
     assert_eq!(count, 2);
-    assert!(last >= before && last <= crate::store::now());
+    assert!(last >= before && last <= crate::core::store::now());
     assert_eq!(usage["window:Left Half"].0, 1);
 }
 

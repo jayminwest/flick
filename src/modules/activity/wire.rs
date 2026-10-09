@@ -9,7 +9,7 @@ use std::sync::Once;
 
 use crate::core::Event;
 use crate::platform::{app, ax, axwatch, clock, events, status_item, workspace};
-use crate::store::{self, Store};
+use crate::core::store::{self, Store};
 
 use super::store::Spans;
 

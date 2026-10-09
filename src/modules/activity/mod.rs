@@ -20,7 +20,7 @@ mod wire;
 
 use crate::core::track::{Clock, Input, Op, Span, Subject};
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::store::Store;
+use crate::core::store::Store;
 use report::{TaskReport, Report, clip, parse_since, span_list, span_text};
 use rules::Config;
 use store::{MIGRATIONS, Spans};

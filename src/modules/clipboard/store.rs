@@ -2,7 +2,7 @@
 
 use rusqlite::params;
 
-use crate::store::{Store, now};
+use crate::core::store::{Store, now};
 
 const MAX_CLIPS: i64 = 500;
 

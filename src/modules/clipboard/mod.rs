@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::{ax, pasteboard, timer};
-use crate::store::now;
+use crate::core::store::now;
 use store::{Clips, MIGRATIONS};
 
 pub struct Clipboard;

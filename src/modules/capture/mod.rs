@@ -31,7 +31,7 @@ use crate::config::Section;
 use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::capture::{self, Error, Request, Shot, Target};
 use crate::platform::{clock, events, files, pasteboard, workspace};
-use crate::store::{Store, now};
+use crate::core::store::{Store, now};
 use annotate::{INK_ENV, Ink, InkEnv};
 use args::{last, list, options, parse_limit, parse_rect};
 use run::{Job, Worker};

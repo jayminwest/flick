@@ -5,7 +5,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
 use crate::core::track::Span;
-use crate::store::Store;
+use crate::core::store::Store;
 
 /// Append only.
 pub const MIGRATIONS: &[&str] = &["CREATE TABLE task_list (
