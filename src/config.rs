@@ -14,6 +14,9 @@ hotkey = "alt+shift+Space"
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
 # desktop_toggle = "cmd+Backquote"
 
+# Window switcher: fuzzy-search open windows; the first result is the previous window.
+# windows_hotkey = "cmd+Space"
+
 # Global window hotkeys: <action> = "<hotkey>". Actions are the window command
 # titles in kebab case: left-half, right-half, top-half, bottom-half,
 # top-left-quarter, ..., first-third, center-third, last-third, first-two-thirds,
@@ -52,6 +55,8 @@ pub struct Config {
     pub hotkey: String,
     /// Hotkey that switches to the most recent app on another desktop.
     pub desktop_toggle: Option<String>,
+    /// Hotkey that opens the window switcher.
+    pub windows_hotkey: Option<String>,
     #[serde(default)]
     pub window_keys: BTreeMap<String, String>,
     #[serde(default)]

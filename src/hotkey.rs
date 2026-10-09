@@ -13,6 +13,7 @@ use crate::windows::WindowAction;
 enum Binding {
     Toggle,
     DesktopToggle,
+    Windows,
     Window(WindowAction),
 }
 
@@ -42,6 +43,7 @@ fn dispatch(id: u32) {
     match binding {
         Some(Binding::Toggle) => crate::app::toggle(),
         Some(Binding::Window(action)) => crate::app::window_action(action),
+        Some(Binding::Windows) => crate::app::toggle_windows(),
         Some(Binding::DesktopToggle) => {
             if let Err(e) = crate::spaces::toggle() {
                 eprintln!("flick: desktop toggle: {e}");
@@ -56,6 +58,9 @@ pub fn register(config: &Config) -> Result<(), String> {
     let mut wanted = vec![(config.hotkey.as_str(), Ok(Binding::Toggle))];
     if let Some(spec) = &config.desktop_toggle {
         wanted.push((spec.as_str(), Ok(Binding::DesktopToggle)));
+    }
+    if let Some(spec) = &config.windows_hotkey {
+        wanted.push((spec.as_str(), Ok(Binding::Windows)));
     }
     for (name, spec) in &config.window_keys {
         let binding = WindowAction::from_slug(name).map(Binding::Window).ok_or(format!("Unknown window action \"{name}\""));

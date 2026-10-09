@@ -28,7 +28,12 @@ fn record(pid: i32) {
     });
 }
 
-fn frontmost_pid() -> Option<i32> {
+/// Pids of activated apps, most recent first.
+pub fn recent() -> Vec<i32> {
+    RECENT.with(|r| r.borrow().clone())
+}
+
+pub fn frontmost_pid() -> Option<i32> {
     NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
 }
 
@@ -65,7 +70,7 @@ unsafe extern "C" {
 
 /// Pids owning normal (layer 0) windows: on the current Space only, or anywhere.
 /// Reading pids and layers needs no Screen Recording permission.
-fn window_pids(current_space_only: bool) -> HashSet<i32> {
+pub fn window_pids(current_space_only: bool) -> HashSet<i32> {
     let option = CG_WINDOW_LIST_EXCLUDE_DESKTOP
         | if current_space_only { CG_WINDOW_LIST_ON_SCREEN_ONLY } else { CG_WINDOW_LIST_ALL };
     // CFArray of CFDictionary, toll-free bridged; "Copy" returns +1.
