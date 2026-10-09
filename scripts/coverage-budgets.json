@@ -27,6 +27,8 @@
     "src/modules/herdr/remote.rs": 99.1,
     "src/modules/herdr/views.rs": 100.0,
     "src/modules/quicklinks/editor.rs": 99.6,
+    "src/modules/remote/mod.rs": 99.4,
+    "src/modules/remote/store.rs": 100.0,
     "src/modules/tasks/cli.rs": 100.0,
     "src/modules/tasks/mod.rs": 99.6,
     "src/modules/tasks/store.rs": 99.4,
