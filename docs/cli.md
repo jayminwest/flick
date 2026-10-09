@@ -13,6 +13,7 @@ flick clip list                # <id>\t<first line>, newest first
 flick clip get 42              # one clip's full text
 flick window left-half         # any action from `flick window list`
 flick feedback add "Tab should complete paths"  # append to feedback.jsonl
+flick message post --title KOTA "Done"  # show a message card (docs/message.md)
 flick reload                   # reload config.toml
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
@@ -28,4 +29,4 @@ FLICK_HOST=mac-studio:7419 flick --json herdr ls
 flick --host mac-studio events # only with [remote] events = true there
 ```
 
-Each module's commands are in its own page: [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [capture](capture.md), [feedback](feedback.md), [remote](remote.md), and [rebuild](install.md#rebuild-from-the-checkout).
+Each module's commands are in its own page: [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [capture](capture.md), [feedback](feedback.md), [messages](message.md), [remote](remote.md), and [rebuild](install.md#rebuild-from-the-checkout).
