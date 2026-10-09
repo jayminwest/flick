@@ -6,7 +6,7 @@ use std::sync::Once;
 
 use crate::core::Event;
 use crate::platform::{app, clock, events};
-use crate::store::{self, Store};
+use crate::core::store::{self, Store};
 
 use super::store::TaskStore;
 

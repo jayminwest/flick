@@ -14,7 +14,7 @@ this file in the same commit.
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
-| shared services | `src/config.rs`, `src/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
+| shared services | `src/config.rs`, `src/core/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server. Runs requests on the main thread. Streams events. |
 | cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
 
@@ -31,8 +31,8 @@ There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code
 
 Comment lines do not count. To exempt one file, add an `[[allow]]` entry with a `why`. An allow
 entry that matches no violation fails the gate. Not enforced: core imports
-`crate::config::Section` and `crate::store::Store`, so core is free of the platform, not of
-the crate. The controller (`app.rs`) may import `crate::modules`; nothing in core or a module may.
+`crate::config::Section`, so core is free of the platform, not of the crate.
+The controller (`app.rs`) may import `crate::modules`; nothing in core or a module may.
 
 ## Module contract
 
@@ -262,7 +262,7 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 
 ## Store
 
-`src/store.rs`. One SQLite connection on `~/Library/Application Support/Flick/flick.db`.
+`src/core/store.rs`. One SQLite connection on `~/Library/Application Support/Flick/flick.db`.
 
 - `schema_versions(owner, version)` records how many migrations each owner ran. Owner `core`
   owns `usage`. Each module is an owner under its `id()`.
@@ -394,7 +394,7 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
    (`Ids are toy:<key>`).
 2. Define `pub struct Toy` with `#[derive(Default)]`. Implement `Module`: `id()` returns
    `"toy"`, plus only the methods you need. Import only `crate::core`, `crate::platform`,
-   `crate::config::Section` and `crate::store`. Never import another module.
+   `crate::config::Section` and `crate::core::store`. Never import another module.
 3. Settings: a private `Settings` type with `#[derive(Default, Deserialize)]` and
    `#[serde(default)]`, read in `configure` with `table.get()?`. Keep runtime state outside
    `Settings` because `configure` runs again on reload.

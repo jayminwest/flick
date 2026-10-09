@@ -7,7 +7,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::core::Usage;
+use super::Usage;
 
 /// Core's migrations. Step 1 adopts the `usage` table of a pre-versioning flick.db: the same
 /// SQL with `IF NOT EXISTS`, so an existing table and its rows stay as they are.
@@ -95,11 +95,11 @@ impl Store {
 
     pub fn usage(&self) -> Usage {
         let mut out = Usage::new();
-        if let Ok(mut stmt) = self.conn.prepare("SELECT id, count, last FROM usage") {
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?))));
-            if let Ok(rows) = rows {
-                out.extend(rows.flatten());
-            }
+        if let Ok(mut stmt) = self.conn.prepare("SELECT id, count, last FROM usage")
+            && let Ok(rows) =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?))))
+        {
+            out.extend(rows.flatten());
         }
         out
     }
@@ -139,5 +139,22 @@ mod tests {
         assert!(s.migrate("bad", &bad).is_err());
         assert_eq!(s.version("bad").unwrap(), 0);
         assert!(s.conn().prepare("SELECT a FROM half").is_err());
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_database_fails_to_open() {
+        let path = std::env::temp_dir().join(format!("flick-store-{}.db", std::process::id()));
+        std::fs::write(&path, b"not a sqlite database, just text that fills the header").unwrap();
+        let opened = Store::open(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(opened.is_err());
+    }
+
+    #[test]
+    fn usage_is_empty_without_its_table() {
+        let s = Store::in_memory();
+        s.record_use("a");
+        s.conn().execute_batch("DROP TABLE usage;").unwrap();
+        assert!(s.usage().is_empty());
     }
 }

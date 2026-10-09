@@ -4,7 +4,7 @@
 use rusqlite::params;
 
 use crate::core::track::{Span, Subject};
-use crate::store::Store;
+use crate::core::store::Store;
 
 /// Step 1 holds the `task` column for the tasks plan (flick-86be), so that plan needs no
 /// migration on this table. Append only.

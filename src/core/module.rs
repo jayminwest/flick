@@ -1,8 +1,8 @@
 //! The module contract: one feature behind a narrow interface.
 
+use super::store::Store;
 use super::{Action, Event, Form, Item, ItemId, ListView, Outcome, Ranker};
 use crate::config::Section;
-use crate::store::Store;
 
 /// A global hotkey a module asks for: `spec` (e.g. "cmd+Space") runs the module's `hotkey`
 /// with `key`. `Err` reports a binding the module can't map, e.g. an unknown action name.

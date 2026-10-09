@@ -4,8 +4,9 @@
 
 mod client;
 
+use crate::core::store;
 use crate::platform::app as macos;
-use crate::{app, config, control, raycast, store, ui};
+use crate::{app, config, control, raycast, ui};
 
 const USAGE: &str = "usage: flick                              run the launcher
        flick [--json] <module> <verb> [args]  ask the running Flick (--json: raw reply)
