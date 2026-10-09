@@ -19,6 +19,7 @@ Each page has the module's settings and commands, then a manual test checklist.
 - [`herdr.md`](herdr.md): coding agents in herdr, local and over SSH.
 - [`capture.md`](capture.md): screenshots, annotation, drawing on screen.
 - [`feedback.md`](feedback.md): notes about Flick, kept in `feedback.jsonl`.
+- [`message.md`](message.md): messages from agents (KOTA) in a corner card, with history.
 - [`remote.md`](remote.md): network access over Tailscale; setup between two Macs.
 
 ## Change Flick

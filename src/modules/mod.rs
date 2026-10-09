@@ -50,6 +50,7 @@ modules! {
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
         mod feedback => "feedback", feedback::Feedback::default;
+        mod message => "message", message::Inbox::default;
         mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
     }
 }
