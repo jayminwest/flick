@@ -4,6 +4,7 @@
     "src/config.rs": 81.6,
     "src/control/server.rs": 95.9,
     "src/core/": 100.0,
+    "src/modules/apps/leftovers.rs": 100.0,
     "src/modules/windows/action.rs": 100.0,
     "src/root.rs": 100.0,
     "src/store.rs": 96.1

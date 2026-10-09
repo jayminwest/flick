@@ -1,5 +1,7 @@
 //! Installed application index, and the module that lists and opens apps.
 
+mod leftovers;
+
 use std::path::{Path, PathBuf};
 
 use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
