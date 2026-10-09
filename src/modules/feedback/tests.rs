@@ -111,7 +111,7 @@ fn the_form_saves_with_the_root_query() {
     assert!(test_cx("", |cx| f.form("other", cx)).is_none());
     let mut form = test_cx("", |cx| f.form("new", cx)).unwrap();
     assert_eq!((form.title.as_str(), form.fields.len()), ("Add Feedback", 1));
-    assert!(form.fields[0].required);
+    assert!(form.fields[0].required && form.fields[0].multiline);
     form.set_value(0, "Tab should complete");
     assert_eq!(test_cx("", |cx| f.submit(&form, cx)), Ok("Feedback saved".into()));
     // The query is used once; the CLI adds no app.

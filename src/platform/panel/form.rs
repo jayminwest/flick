@@ -1,14 +1,15 @@
 //! The panel's search-area modes and its form layout: a title in place of the search field,
-//! labelled text fields, and an error line. Which view has keyboard focus follows the mode.
+//! labelled text fields (a multiline one is taller and wraps), and an error line. Which view
+//! has keyboard focus follows the mode.
 
 use std::cell::Cell;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
+use objc2::{MainThreadMarker, MainThreadOnly, sel};
 use objc2_app_kit::{
-    NSColor, NSFocusRingType, NSFont, NSResponder, NSTextAlignment, NSTextField,
-    NSTextFieldBezelStyle, NSView,
+    NSColor, NSFocusRingType, NSFont, NSLineBreakMode, NSResponder, NSStandardKeyBindingResponding,
+    NSTextAlignment, NSTextField, NSTextFieldBezelStyle, NSTextView, NSView,
 };
 
 use super::rows::{label, ns, top_rect};
@@ -22,6 +23,8 @@ const LABEL_W: f64 = 140.0;
 const INPUT_X: f64 = 20.0 + LABEL_W + 16.0;
 const INPUT_W: f64 = W - INPUT_X - 40.0;
 const INPUT_H: f64 = 24.0;
+/// How many field rows a multiline field takes.
+const MULTILINE_ROWS: usize = 3;
 const ERROR_H: f64 = 16.0;
 // A full form's fields and error line fit above the footer.
 const _: () = assert!(FIELDS_TOP + FORM_FIELDS as f64 * FIELD_ROW_H + ERROR_H <= H - FOOTER_H);
@@ -30,12 +33,15 @@ pub struct FormField<'a> {
     pub label: &'a str,
     pub value: &'a str,
     pub placeholder: &'a str,
+    /// Taller and wrapping; Return inserts a newline.
+    pub multiline: bool,
 }
 
 /// A form: a title in the search area, labelled text fields below it, an error line, a footer.
 pub struct FormFrame<'a> {
     pub title: &'a str,
-    /// At most `FORM_FIELDS` fields, top to bottom.
+    /// Top to bottom, as many as fit in `FORM_FIELDS` rows (a multiline field takes
+    /// `MULTILINE_ROWS`); the rest are not shown.
     pub fields: &'a [FormField<'a>],
     /// Index into `fields` of the field with keyboard focus.
     pub focused: usize,
@@ -61,6 +67,8 @@ pub(super) struct FormViews {
     title: Retained<NSTextField>,
     labels: Vec<Retained<NSTextField>>,
     inputs: Vec<Retained<NSTextField>>,
+    /// Which inputs are multiline, as last drawn.
+    multiline: Vec<Cell<bool>>,
     error: Retained<NSTextField>,
     pub(super) mode: Cell<Mode>,
 }
@@ -103,7 +111,8 @@ pub(super) fn make_form(mtm: MainThreadMarker, root: &NSView, delegate: &Delegat
     error.setHidden(true);
     root.addSubview(&error);
 
-    FormViews { title, labels, inputs, error, mode: Cell::new(Mode::Search) }
+    let multiline = (0..FORM_FIELDS).map(|_| Cell::new(false)).collect();
+    FormViews { title, labels, inputs, multiline, error, mode: Cell::new(Mode::Search) }
 }
 
 /// The index of the form field that is `object`, if it is one.
@@ -112,6 +121,53 @@ pub(super) fn field_index(object: *const AnyObject) -> Option<usize> {
         ui.form.inputs.iter().position(|f| std::ptr::eq(Retained::as_ptr(f).cast(), object))
     })
     .flatten()
+}
+
+/// Return in a multiline form field: insert a newline into `view` instead of submitting.
+/// True when it did.
+pub(super) fn newline(object: *const AnyObject, view: &NSTextView, sel: Sel) -> bool {
+    let multiline = sel == sel!(insertNewline:)
+        && field_index(object)
+            .and_then(|i| with_ui(|ui| ui.form.multiline.get(i).is_some_and(Cell::get)))
+            .unwrap_or(false);
+    if multiline {
+        // SAFETY: NSTextView implements this action; nil is a valid sender.
+        unsafe { view.insertNewlineIgnoringFieldEditor(None) };
+    }
+    multiline
+}
+
+/// The top row of each field that fits, and the rows they take: a multiline field takes
+/// `MULTILINE_ROWS`.
+fn layout(multiline: impl IntoIterator<Item = bool>) -> (Vec<usize>, usize) {
+    let mut tops = vec![];
+    let mut row = 0;
+    for m in multiline {
+        let rows = if m { MULTILINE_ROWS } else { 1 };
+        if row + rows > FORM_FIELDS {
+            break;
+        }
+        tops.push(row);
+        row += rows;
+    }
+    (tops, row)
+}
+
+/// Make `input` a one-line field or a taller wrapping one with its top at row `row`.
+fn shape(input: &NSTextField, row: usize, multiline: bool) {
+    let rows = if multiline { MULTILINE_ROWS } else { 1 };
+    let h = INPUT_H + (rows - 1) as f64 * FIELD_ROW_H;
+    input.setFrame(top_rect(H, INPUT_X, FIELDS_TOP + row as f64 * FIELD_ROW_H, INPUT_W, h));
+    input.setUsesSingleLineMode(!multiline);
+    input.setLineBreakMode(if multiline {
+        NSLineBreakMode::ByWordWrapping
+    } else {
+        NSLineBreakMode::ByClipping
+    });
+    if let Some(cell) = input.cell() {
+        cell.setWraps(multiline);
+        cell.setScrollable(!multiline);
+    }
 }
 
 /// The view that should have keyboard focus in `mode`; `None` means the panel itself.
@@ -162,20 +218,31 @@ pub fn render_form(frame: &FormFrame) {
             row.view.setHidden(true);
         }
         ui.form.title.setStringValue(&ns(frame.title));
-        let fields = frame.fields.iter().map(Some).chain(std::iter::repeat(None));
-        for ((l, input), field) in ui.form.labels.iter().zip(&ui.form.inputs).zip(fields) {
+        let (tops, rows) = layout(frame.fields.iter().map(|f| f.multiline));
+        let shown = tops.len();
+        let fields = frame.fields.iter().zip(&tops).map(Some).chain(std::iter::repeat(None));
+        let views = ui.form.labels.iter().zip(&ui.form.inputs).zip(&ui.form.multiline);
+        for (((l, input), multiline), field) in views.zip(fields) {
             l.setHidden(field.is_none());
             input.setHidden(field.is_none());
-            let Some(field) = field else { continue };
+            let Some((field, &row)) = field else { continue };
+            l.setFrame(top_rect(
+                H,
+                20.0,
+                FIELDS_TOP + row as f64 * FIELD_ROW_H + 4.0,
+                LABEL_W,
+                17.0,
+            ));
             l.setStringValue(&ns(field.label));
+            shape(input, row, field.multiline);
+            multiline.set(field.multiline);
             if input.stringValue().to_string() != field.value {
                 input.setStringValue(&ns(field.value));
             }
             input.setPlaceholderString(Some(&ns(field.placeholder)));
         }
-        let shown = frame.fields.len().min(FORM_FIELDS);
         // The error line sits right under the last field.
-        let error_top = FIELDS_TOP + shown as f64 * FIELD_ROW_H - (FIELD_ROW_H - INPUT_H - 8.0);
+        let error_top = FIELDS_TOP + rows as f64 * FIELD_ROW_H - (FIELD_ROW_H - INPUT_H - 8.0);
         ui.form.error.setFrame(top_rect(H, INPUT_X, error_top, INPUT_W, ERROR_H));
         ui.form.error.setStringValue(&ns(frame.error));
         ui.footer_left.setStringValue(&ns(frame.footer));
@@ -194,4 +261,17 @@ pub fn field_value(index: usize) -> String {
 /// The form field being edited, which a mouse click can change behind the controller's back.
 pub fn focused_field() -> Option<usize> {
     with_ui(|ui| ui.form.inputs.iter().position(|f| f.currentEditor().is_some())).flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multiline_fields_take_more_rows_and_overflow_is_dropped() {
+        assert_eq!(layout([false, false]), (vec![0, 1], 2));
+        assert_eq!(layout([false, true, false]), (vec![0, 1, 4], 5));
+        assert_eq!(layout([true, true, true]), (vec![0, 3], 6));
+        assert_eq!(layout([false; 8]), (vec![0, 1, 2, 3, 4, 5], 6));
+    }
 }
