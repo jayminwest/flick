@@ -1,9 +1,13 @@
 //! Module `switcher`: the window switcher view. Ids are `switcher:<index>` into the window
 //! list captured when the view opened.
 
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
-use crate::spaces;
-use crate::windows::{self, AppWindow};
+pub mod list;
+
+use list::AppWindow;
+
+use crate::config::Config;
+use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::platform::workspace;
 
 #[derive(Default)]
 pub struct Switcher {
@@ -20,7 +24,7 @@ impl Module for Switcher {
         if view != "windows" {
             return None;
         }
-        self.windows = windows::list_windows(&spaces::recent(), spaces::frontmost_pid());
+        self.windows = list::list_windows(&workspace::recent_pids(), workspace::frontmost_pid());
         Some(ListView {
             placeholder: "Search windows…".into(),
             footer: format!("{} windows", self.windows.len()),
@@ -66,8 +70,40 @@ impl Module for Switcher {
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
         cx.hide();
         if let Some(w) = id.key().parse::<usize>().ok().and_then(|i| self.windows.get(i)) {
-            windows::focus(w);
+            list::focus(w);
         }
         Outcome::Hide
+    }
+
+    /// `windows_hotkey` binds key `windows`.
+    fn hotkeys(&self, config: &Config) -> Vec<Binding> {
+        config
+            .windows_hotkey
+            .iter()
+            .map(|spec| Binding { spec: spec.clone(), key: Ok("windows".into()) })
+            .collect()
+    }
+
+    /// Toggles the launcher on view `windows`.
+    fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+        (key == "windows").then(|| ListView::new("switcher", "windows"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_hotkey_toggles_the_switcher_view() {
+        let config = Config { windows_hotkey: Some("cmd+Space".into()), ..Config::default() };
+        let want = Binding { spec: "cmd+Space".into(), key: Ok("windows".into()) };
+        assert_eq!(Switcher::default().hotkeys(&config), [want]);
+        assert!(Switcher::default().hotkeys(&Config::default()).is_empty());
+        crate::core::test_cx("", Config::default(), |cx| {
+            let mut s = Switcher::default();
+            assert!(s.hotkey("windows", cx).is_some_and(|v| v.is("switcher", "windows")));
+            assert!(s.hotkey("other", cx).is_none());
+        });
     }
 }

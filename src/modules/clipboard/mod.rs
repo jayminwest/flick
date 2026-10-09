@@ -1,13 +1,17 @@
-//! Module `clip`: the clipboard history view and pasting a clip. Ids are `clip:<row id>`.
+//! Module `clip`: records copied text, shows the clipboard history view and pastes a clip.
+//! Ids are `clip:<row id>`.
 
 use std::collections::HashMap;
 
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
-use crate::platform::{pasteboard, timer};
+use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::platform::{ax, pasteboard, timer};
 use crate::store;
-use crate::windows;
 
-pub struct Clipboard;
+/// `count`: the pasteboard's change count when last checked; set on `Event::Started`.
+#[derive(Default)]
+pub struct Clipboard {
+    count: Option<isize>,
+}
 
 fn relative_time(ts: i64) -> String {
     let secs = (store::now() - ts).max(0);
@@ -65,9 +69,30 @@ impl Module for Clipboard {
         pasteboard::set_text(&text);
         cx.hide();
         // Give focus a moment to return to the previous app, then paste there.
-        if windows::ensure_trusted() {
-            timer::after(0.08, windows::send_paste);
+        if ax::ensure_trusted() {
+            timer::after(0.08, ax::send_paste);
         }
         Outcome::Hide
+    }
+
+    /// Record new clipboard text. Skips content that password managers mark as concealed or
+    /// transient.
+    fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
+        match event {
+            Event::Started => self.count = Some(pasteboard::change_count()),
+            Event::Tick => {
+                let count = pasteboard::change_count();
+                if self.count == Some(count) {
+                    return false;
+                }
+                self.count = Some(count);
+                if let Some(text) = pasteboard::copied_text() {
+                    cx.store.add_clip(&text);
+                    return true;
+                }
+            }
+            Event::LauncherOpened => {}
+        }
+        false
     }
 }

@@ -1,21 +1,15 @@
 mod app;
-mod apps;
-mod builtins;
 #[cfg(test)]
 mod characterization;
-mod clipboard;
 mod config;
 mod core;
 mod hotkey;
+mod modules;
 mod platform;
-mod quicklinks;
 mod raycast;
 mod root;
-mod spaces;
 mod store;
-mod switcher;
 mod ui;
-mod windows;
 
 use platform::app as macos;
 
@@ -57,19 +51,19 @@ fn main() {
     let store = store::Store::open(&db)
         .unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
 
-    if let Err(e) = hotkey::init().and_then(|()| hotkey::register(&config)) {
+    let launcher = config.hotkey.clone();
+    let hotkeys = hotkey::init();
+    platform::workspace::track_recent();
+    ui::init();
+    app::init(config, store);
+    if let Err(e) = hotkeys.and_then(|()| app::bind_hotkeys()) {
         eprintln!("flick: {e}");
     }
     eprintln!(
-        "flick: press {} to open (Accessibility: {})",
-        config.hotkey,
-        if windows::is_trusted(false) { "granted" } else { "NOT granted" }
+        "flick: press {launcher} to open (Accessibility: {})",
+        if platform::ax::is_trusted(false) { "granted" } else { "NOT granted" }
     );
-
-    spaces::init();
-    ui::init();
-    app::init(config, store);
-    platform::timer::every(0.5, app::poll_clipboard);
+    platform::timer::every(0.5, app::tick);
 
     macos::run();
 }

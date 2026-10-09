@@ -4,7 +4,7 @@ use crate::config;
 use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::app;
 
-pub struct Builtins;
+pub struct Flick;
 
 /// Title, SF Symbol, verb, keywords.
 const BUILTINS: [(&str, &str, &str, &str); 5] = [
@@ -15,7 +15,7 @@ const BUILTINS: [(&str, &str, &str, &str); 5] = [
     ("Quit Flick", "power", "Run Command", "exit"),
 ];
 
-impl Module for Builtins {
+impl Module for Flick {
     fn id(&self) -> &'static str {
         "builtin"
     }
@@ -42,14 +42,7 @@ impl Module for Builtins {
                     std::process::Command::new("open").arg("-t").arg(config::config_path()).spawn();
                 Outcome::Hide
             }
-            "Reload Flick Config" => match config::load() {
-                Ok(config) => {
-                    let hotkey = crate::hotkey::register(&config);
-                    *cx.config = config;
-                    Outcome::Pop(Some(hotkey.map_or_else(|e| e, |()| "Config reloaded".into())))
-                }
-                Err(e) => Outcome::Stay(Some(e)),
-            },
+            "Reload Flick Config" => Outcome::ReloadConfig,
             "Quit Flick" => {
                 app::quit();
                 Outcome::Stay(None)
