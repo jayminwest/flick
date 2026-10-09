@@ -102,7 +102,6 @@ pub fn request_line(words: &[String]) -> String {
 }
 
 /// The TCP port the network transport listens on when `[remote] port` is not set.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: remote module, flick-dc30"))]
 pub const DEFAULT_PORT: u16 = 7419;
 
 /// Whether `ip` is a Tailscale address: IPv4 100.64.0.0/10 (CGNAT) or IPv6
