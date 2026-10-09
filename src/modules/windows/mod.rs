@@ -5,7 +5,11 @@ pub mod action;
 
 use action::{WindowAction, frame_for};
 
-use crate::config::Config;
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
+
+use crate::config::Section;
 use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::{ax, screens, workspace};
 
@@ -35,11 +39,27 @@ fn run(action: WindowAction) {
     }
 }
 
-pub struct Windows;
+/// Table `[window]`: `[window.keys]`, `<action slug> = "<hotkey>"` (legacy: top-level
+/// `[window_keys]`).
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Settings {
+    keys: BTreeMap<String, String>,
+}
+
+#[derive(Default)]
+pub struct Windows {
+    keys: BTreeMap<String, String>,
+}
 
 impl Module for Windows {
     fn id(&self) -> &'static str {
         "window"
+    }
+
+    fn configure(&mut self, table: &Section) -> Result<(), String> {
+        self.keys = table.get::<Settings>()?.keys;
+        Ok(())
     }
 
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
@@ -68,10 +88,9 @@ impl Module for Windows {
         Outcome::Hide
     }
 
-    /// `[window_keys]`: `<action slug> = "<hotkey>"`, in key order.
-    fn hotkeys(&self, config: &Config) -> Vec<Binding> {
-        config
-            .window_keys
+    /// `keys`, in key order.
+    fn hotkeys(&self) -> Vec<Binding> {
+        self.keys
             .iter()
             .map(|(name, spec)| Binding {
                 spec: spec.clone(),
@@ -97,11 +116,13 @@ mod tests {
 
     #[test]
     fn window_keys_bind_action_slugs() {
-        let mut config = Config::default();
-        config.window_keys.insert("left-half".into(), "ctrl+alt+ArrowLeft".into());
-        config.window_keys.insert("sideways".into(), "ctrl+alt+KeyS".into());
+        let text =
+            "[window.keys]\nleft-half = \"ctrl+alt+ArrowLeft\"\nsideways = \"ctrl+alt+KeyS\"";
+        let config = crate::config::parse(text).unwrap();
+        let mut windows = Windows::default();
+        windows.configure(&config.section("window").unwrap().unwrap()).unwrap();
         assert_eq!(
-            Windows.hotkeys(&config),
+            windows.hotkeys(),
             [
                 Binding { spec: "ctrl+alt+ArrowLeft".into(), key: Ok("left-half".into()) },
                 Binding {

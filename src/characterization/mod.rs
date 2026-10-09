@@ -14,6 +14,7 @@
 
 mod item_ids;
 mod legacy_config;
+mod legacy_view;
 mod ranking;
 mod store_fixture;
 mod store_schema;
