@@ -81,7 +81,7 @@ impl Default for Config {
         reason = "DEFAULT_CONFIG is a compile-time constant covered by tests"
     )]
     fn default() -> Self {
-        toml::from_str(DEFAULT_CONFIG).expect("default config parses")
+        parse(DEFAULT_CONFIG).expect("default config parses")
     }
 }
 
@@ -109,7 +109,12 @@ pub fn load() -> Result<Config, String> {
         let _ = std::fs::write(&path, DEFAULT_CONFIG);
     }
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Parse config.toml text. Existing files must keep parsing; see `crate::characterization`.
+pub fn parse(text: &str) -> Result<Config, toml::de::Error> {
+    toml::from_str(text)
 }
 
 impl Quicklink {
