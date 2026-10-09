@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Script commands:** new `[[script.commands]]` table. Each command is a root item that runs `shell` with `/bin/sh -c`; one with `{query}` takes an argument, typed as `<keyword> <text>` and passed as one single-quoted word. A failed command posts a notification. [Script commands](docs/scripts.md).
+
 ## 0.0.2 — 2026-10-09
 
 New macOS permissions: capture needs **Screen Recording**. Activity URLs need **Automation** for each browser. The key tap and activity window titles need **Accessibility**. Notifications (herdr) ask on first launch.
