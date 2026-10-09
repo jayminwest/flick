@@ -13,6 +13,7 @@ domains:
   herdr: {}
   apps: {}
   activity: {}
+  tasks: {}
 governance:
   max_entries: 100
   warn_entries: 150
