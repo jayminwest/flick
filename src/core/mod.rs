@@ -14,7 +14,6 @@ mod module;
 mod rank;
 mod registry;
 mod routing;
-#[cfg_attr(not(test), expect(dead_code, reason = "used from flick-e2d5 and flick-feab on"))]
 pub mod track;
 mod view;
 
