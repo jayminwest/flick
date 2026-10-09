@@ -4,7 +4,7 @@ use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
 use crate::modules::herdr::model::Status;
-use testkit::{CLI, CLICKS, Cli, HOOKS, LISTENS, NOTES, Server, info, status_event, wait};
+use testkit::{CLI, CLICKS, COPIED, Cli, HOOKS, LISTENS, NOTES, Server, info, status_event, wait};
 
 fn configured(text: &str) -> Result<Herdr, String> {
     let mut h = Herdr::with_hooks(HOOKS);
@@ -135,13 +135,17 @@ fn enter_and_actions_jump_and_show_output() {
 
         let Outcome::Push(view) = h.act(&id, "output", cx) else { panic!("no push") };
         let mut view = h.open(&view.name, cx).unwrap();
-        wait("preview", || lock(&h.shared.preview).as_ref().is_some_and(|p| p.lines.is_some()));
+        wait("preview", || lock(&h.shared.preview).as_ref().is_some_and(|p| p.reply.is_some()));
         h.refresh(&mut view, cx);
         let titles: Vec<&str> = view.items.iter().map(|i| i.title.as_str()).collect();
-        assert_eq!(titles, ["Jump to n-w1:p1", "one", "two"]);
+        assert_eq!(titles, ["Jump to n-w1:p1", "Copy Reply"]);
+        assert_eq!(view.text, "one\ntwo");
         assert!(view.footer.starts_with("n-w1:p1 · local"), "{}", view.footer);
+        let copied = h.activate(&view.items[1].id, cx);
+        assert!(matches!(copied, Outcome::Stay(Some(s)) if s == "Copied the reply"));
+        assert_eq!(COPIED.with_borrow(Clone::clone), ["one\ntwo"]);
         let calls = server.calls().iter().filter(|c| c.starts_with("agent.focus")).count();
-        assert!(matches!(h.activate(&view.items[1].id, cx), Outcome::Hide));
+        assert!(matches!(h.activate(&ItemId::new(ID, "line/0"), cx), Outcome::Hide));
         wait("line jump", || {
             server.calls().iter().filter(|c| c.starts_with("agent.focus")).count() > calls
         });
@@ -151,8 +155,10 @@ fn enter_and_actions_jump_and_show_output() {
     test_cx("", |cx| {
         let mut view = ListView::new(ID, "agent");
         h.refresh(&mut view, cx);
-        assert!(view.items.is_empty());
+        assert!(view.items.is_empty() && view.text.is_empty());
         assert_eq!(view.footer, "Agent gone");
+        // No reply to copy.
+        assert!(matches!(h.activate(&ItemId::new(ID, "reply"), cx), Outcome::Stay(None)));
     });
 }
 
@@ -275,4 +281,9 @@ fn an_agent_that_starts_to_wait_posts_one_notification_and_a_click_jumps() {
     changed(&mut h);
     assert!(NOTES.take().is_empty());
     test_cx("", |cx| assert!(h.command(&args(&["status"]), cx).unwrap().ends_with("notifications: off")));
+}
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("herdr");
 }

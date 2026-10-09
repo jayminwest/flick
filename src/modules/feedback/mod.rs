@@ -335,7 +335,10 @@ impl Module for Feedback {
     fn form(&mut self, name: &str, _cx: &mut Cx) -> Option<Form> {
         (name == "new").then(|| Form {
             fields: vec![
-                Field::new("text", "Feedback").required().placeholder("What worked, what got in the way…"),
+                Field::new("text", "Feedback")
+                    .required()
+                    .multiline()
+                    .placeholder("What worked, what got in the way…"),
             ],
             submit_label: "Save Feedback".into(),
             ..Form::new("feedback", "new", "Add Feedback")

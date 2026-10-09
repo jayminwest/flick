@@ -1,6 +1,6 @@
 # Command line
 
-A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mode 0600; set `FLICK_SOCKET` to use another path). The `flick` binary is its client:
+A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mode 0600; set `FLICK_SOCKET` to use another path). The `flick` binary is its client. `bundle.sh --install` and the in-app rebuild link it as `~/.local/bin/flick`; by hand: `ln -s ~/Applications/Flick.app/Contents/MacOS/Flick ~/.local/bin/flick`.
 
 ```bash
 flick app list                 # <name>\t<path> per app
@@ -15,6 +15,7 @@ flick window left-half         # any action from `flick window list`
 flick feedback add "Tab should complete paths"  # append to feedback.jsonl
 flick message post --title KOTA "Done"  # show a message card (docs/message.md)
 flick reload                   # reload config.toml
+flick config example           # every config option, commented (no running Flick needed)
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
 ```

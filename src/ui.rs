@@ -28,6 +28,8 @@ pub struct View<'a> {
     pub empty: &'a str,
     /// Right-aligned footer text: what Return does.
     pub action: &'a str,
+    /// Read-only text under the rows (`ListView::text`).
+    pub text: &'a str,
 }
 
 pub fn render(view: &View) {
@@ -53,6 +55,7 @@ pub fn render(view: &View) {
         empty: if view.items.is_empty() { view.empty } else { "" },
         footer: view.footer,
         action: view.action,
+        text: view.text,
     });
 }
 
@@ -65,10 +68,15 @@ pub fn render_form(form: &Form, footer: &str) {
         focused: form.focused,
         error: form.error.as_deref().unwrap_or(""),
         footer,
-        action: &format!("{}  ↵", form.submit_label),
+        action: &form.submit_hint(),
     });
 }
 
 fn form_field(f: &Field) -> FormField<'_> {
-    FormField { label: &f.label, value: &f.value, placeholder: &f.placeholder }
+    FormField {
+        label: &f.label,
+        value: &f.value,
+        placeholder: &f.placeholder,
+        multiline: f.multiline,
+    }
 }

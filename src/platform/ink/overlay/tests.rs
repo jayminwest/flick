@@ -17,6 +17,7 @@ fn return_stops_drawing_and_esc_also_clears() {
         Command::Undo,
         Command::Redo,
         Command::Clear,
+        Command::Help,
     ] {
         assert_eq!(key_action(cmd), None);
     }

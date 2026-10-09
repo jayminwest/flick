@@ -3,7 +3,7 @@
 //! cursor halo that follows the pointer.
 //!
 //! In draw mode the panels take the mouse and become key without activating Flick, so the
-//! canvas keys work (tools, colors, undo, Delete); Return ends drawing and keeps the shapes,
+//! canvas keys work (tools, colors, undo, Delete) and a key legend shows; Return ends drawing and keeps the shapes,
 //! Esc ends drawing and clears them. Out of draw mode the shapes stay, click-through, until
 //! Esc or `clear`. With `Style::fade_secs` set, each finished shape goes after that long.
 //! Panels exist only while drawing or while shapes remain, so an idle overlay costs nothing.
@@ -27,8 +27,10 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize};
 
+use super::hud::ns_color;
+use super::legend::Mode;
 use super::model::{Command, Style, Tool};
-use super::view::{FlickInkView, now, ns_color};
+use super::view::{FlickInkView, now};
 use crate::platform::{Rect, mtm, timer};
 
 /// The halo's ring width, and how long a click pulse shows.
@@ -132,6 +134,7 @@ pub fn set_drawing(on: bool, style: &Style) {
         let mouse = NSEvent::mouseLocation();
         for screen in &screens {
             screen.view.set_style(style.clone());
+            screen.view.set_legend(Some(Mode::Overlay));
             screen.panel.setIgnoresMouseEvents(false);
             screen.panel.orderFrontRegardless();
             if contains(screen.frame, mouse) {
@@ -206,6 +209,7 @@ pub fn relayout() {
     let on = DRAWING.get();
     for screen in &screens {
         screen.view.set_style(style.clone());
+        screen.view.set_legend(on.then_some(Mode::Overlay));
         screen.panel.setIgnoresMouseEvents(!on);
         screen.panel.orderFrontRegardless();
     }
@@ -215,6 +219,9 @@ pub fn relayout() {
 
 /// End draw mode: click-through, and give up key status (ordering out resigns it).
 fn stop() {
+    for view in views() {
+        view.set_legend(None);
+    }
     for screen in
         STATE.with_borrow(|s| s.screens.iter().map(|x| x.panel.clone()).collect::<Vec<_>>())
     {
@@ -313,6 +320,11 @@ fn command(cmd: Command) {
             }
             stop();
         }
+        None if cmd == Command::Help => {
+            for view in views() {
+                view.setNeedsDisplay(true);
+            }
+        }
         None => {}
     }
 }
@@ -334,7 +346,8 @@ fn key_action(cmd: Command) -> Option<Action> {
         | Command::Color(_)
         | Command::Undo
         | Command::Redo
-        | Command::Clear => None,
+        | Command::Clear
+        | Command::Help => None,
     }
 }
 

@@ -10,7 +10,7 @@ mod wire;
 use serde::Deserialize;
 
 use crate::config::Section;
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome, Tab};
 
 /// The longest argument, in bytes, that Flick passes to a command.
 const MAX_QUERY: usize = 4000;
@@ -98,7 +98,7 @@ fn item(s: &Script, arg: Option<String>) -> Item {
     let tab = arg.is_none();
     Item {
         accessory: "Script".into(),
-        tab,
+        tab: if tab { Tab::Activate } else { Tab::None },
         ..Item::new(
             match arg {
                 Some(arg) => id.with_arg(arg),

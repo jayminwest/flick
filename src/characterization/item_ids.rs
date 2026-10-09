@@ -174,11 +174,11 @@ fn capture_ids_are_fixed_keys() {
 #[test]
 fn task_ids_are_fixed_keys() {
     // While no task runs; a running task swaps `task:start` for `task:stop` and `task:switch`.
-    // Rows in `task/pick` and `task/today` are `task:run/<id>`, `task:new` and
+    // Rows in `task/pick`, `task/list` and `task/today` are `task:run/<id>`, `task:new` and
     // `task:project/<name>`; those views do not record use.
     let items = root_items(&[], &[]);
     let task: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("task:")).collect();
-    assert_eq!(task, ["task:start", "task:today"]);
+    assert_eq!(task, ["task:start", "task:list", "task:today"]);
 }
 
 #[test]
@@ -208,6 +208,15 @@ fn remote_ids_are_fixed_keys() {
     let remote: Vec<&str> =
         ids(&items).into_iter().filter(|id| id.starts_with("remote:")).collect();
     assert_eq!(remote, ["remote:network"]);
+}
+
+#[test]
+fn help_ids_are_fixed_keys() {
+    // Rows in `help/topics` are `help:topic/<slug>` and in `help/keys/<slug>`
+    // `help:key/<slug>/<n>`; those views do not record use.
+    let items = root_items(&[], &[]);
+    let help: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("help:")).collect();
+    assert_eq!(help, ["help:index"]);
 }
 
 #[test]

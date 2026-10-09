@@ -111,10 +111,15 @@ impl Hub {
     }
 }
 
+/// A live process answers at `path` (a stale file left by a crash does not).
+pub fn answering(path: &Path) -> bool {
+    UnixStream::connect(path).is_ok()
+}
+
 /// Listen at `path`, readable and writable by this user only (0600). A stale socket file
 /// left by a crash is replaced; one another live process answers on is an error.
 pub fn bind(path: &Path) -> io::Result<UnixListener> {
-    if UnixStream::connect(path).is_ok() {
+    if answering(path) {
         return Err(io::Error::new(
             io::ErrorKind::AddrInUse,
             format!("{} is in use by another Flick", path.display()),
@@ -291,6 +296,18 @@ mod tests {
         assert_eq!(ask(&mut connect(&path), r#"["up"]"#), "{\"ok\":\"up\"}\n");
         let leftovers = fs::read_dir(path.parent().unwrap()).unwrap().count();
         assert_eq!(leftovers, 1);
+    }
+
+    #[test]
+    fn only_a_live_socket_is_answering() {
+        static HUB: Hub = Hub::new();
+        let path = socket_path("answering");
+        assert!(!answering(&path));
+        drop(UnixListener::bind(&path).unwrap());
+        assert!(!answering(&path), "a stale file");
+        start(&path, &HUB);
+        assert!(answering(&path));
+        assert_eq!(bind(&path).unwrap_err().kind(), io::ErrorKind::AddrInUse);
     }
 
     #[test]

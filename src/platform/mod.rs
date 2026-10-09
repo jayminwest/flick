@@ -21,6 +21,7 @@ pub mod keytap;
 pub mod notify;
 pub mod panel;
 pub mod pasteboard;
+pub mod poll;
 pub mod screens;
 pub mod spaces;
 pub mod status_item;

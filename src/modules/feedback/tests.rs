@@ -111,7 +111,7 @@ fn the_form_saves_with_the_root_query() {
     assert!(test_cx("", |cx| f.form("other", cx)).is_none());
     let mut form = test_cx("", |cx| f.form("new", cx)).unwrap();
     assert_eq!((form.title.as_str(), form.fields.len()), ("Add Feedback", 1));
-    assert!(form.fields[0].required);
+    assert!(form.fields[0].required && form.fields[0].multiline);
     form.set_value(0, "Tab should complete");
     assert_eq!(test_cx("", |cx| f.submit(&form, cx)), Ok("Feedback saved".into()));
     // The query is used once; the CLI adds no app.
@@ -273,4 +273,9 @@ fn mark_resolved_in_recent_feedback() {
     assert!(matches!(test_cx("", |cx| f.act(&ItemId::new("feedback", "entry/5"), "resolve", cx)), Outcome::Stay(None)));
     assert!(matches!(test_cx("", |cx| f.act(&view.items[0].id, "other", cx)), Outcome::Stay(None)));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("feedback");
 }

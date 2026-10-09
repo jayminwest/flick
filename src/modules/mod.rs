@@ -52,6 +52,7 @@ modules! {
         mod feedback => "feedback", feedback::Feedback::default;
         mod message => "message", message::Inbox::default;
         mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
+        mod help => "help", help::Help::default;
     }
 }
 

@@ -13,6 +13,8 @@ pub struct Field {
     pub placeholder: String,
     /// Submit refuses while the value is blank.
     pub required: bool,
+    /// A taller, wrapping input where Return inserts a newline; only ⌘↵ submits.
+    pub multiline: bool,
 }
 
 impl Field {
@@ -24,12 +26,20 @@ impl Field {
             value: String::new(),
             placeholder: String::new(),
             required: false,
+            multiline: false,
         }
     }
 
     #[must_use]
     pub fn required(mut self) -> Field {
         self.required = true;
+        self
+    }
+
+    /// Several wrapping lines: Return inserts a newline, ⌘↵ submits, Tab still moves focus.
+    #[must_use]
+    pub fn multiline(mut self) -> Field {
+        self.multiline = true;
         self
     }
 
@@ -120,6 +130,12 @@ impl Form {
         self.fields.iter().find(|f| f.key == key).map(|f| f.value.as_str())
     }
 
+    /// The footer's submit hint: the label and its key, ⌘↵ when a field takes Return.
+    pub fn submit_hint(&self) -> String {
+        let key = if self.fields.iter().any(|f| f.multiline) { "⌘↵" } else { "↵" };
+        format!("{}  {key}", self.submit_label)
+    }
+
     /// The required fields that are still blank, in order.
     pub fn missing_required(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| f.is_missing()).collect()
@@ -151,6 +167,16 @@ mod tests {
         let field = Field::new("k", "Key");
         assert_eq!(field.label, "Key");
         assert!(field.value.is_empty() && field.placeholder.is_empty() && !field.required);
+        assert!(!field.multiline && Field::new("k", "Key").multiline().multiline);
+    }
+
+    #[test]
+    fn submit_hint_names_cmd_return_when_a_field_is_multiline() {
+        let mut f = form();
+        f.submit_label = "Save".into();
+        assert_eq!(f.submit_hint(), "Save  ↵");
+        f.fields.push(Field::new("text", "Text").multiline());
+        assert_eq!(f.submit_hint(), "Save  ⌘↵");
     }
 
     #[test]
