@@ -146,6 +146,17 @@ pub fn bundle_id(path: &Path) -> Option<String> {
     bundle.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty())
 }
 
+/// The bundle identifier ("com.apple.Safari") and display name ("Safari") of running app
+/// `pid`. `None` when no app runs with that pid; the id is `None` for an app without one.
+/// The by-pid sibling of `bundle_id`: cheap enough to call on every activation.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a513 step 6 (flick-a30b)"))]
+pub fn app_identity(pid: i32) -> Option<(Option<String>, String)> {
+    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+    let id = app.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty());
+    let name = app.localizedName().map(|n| n.to_string()).unwrap_or_default();
+    Some((id, name))
+}
+
 /// Pids of the running apps launched from the bundle at `path`, in the system's order.
 /// Matches the bundle's location, so a second copy of the same app is not included.
 #[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
@@ -250,6 +261,22 @@ mod tests {
     fn an_app_that_is_not_running_has_no_pids() {
         assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle"))).is_empty());
         assert!(running_for_bundle(Path::new("/nonexistent/flick/Nope.app")).is_empty());
+    }
+
+    #[test]
+    fn app_identity_names_running_apps_only() {
+        let out = std::process::Command::new("/usr/bin/pgrep").args(["-x", "Dock"]).output();
+        let dock = out.ok().and_then(|o| String::from_utf8(o.stdout).ok());
+        if let Some(pid) = dock.and_then(|p| p.lines().next()?.trim().parse::<i32>().ok()) {
+            let (id, name) = app_identity(pid).unwrap();
+            assert_eq!(id.as_deref(), Some("com.apple.dock"));
+            assert_eq!(name, "Dock");
+        }
+        assert!(app_identity(-1).is_none());
+        let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        assert!(app_identity(i32::try_from(child.id()).unwrap()).is_none());
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 
     #[test]
