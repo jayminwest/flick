@@ -137,7 +137,8 @@ the list, refreshed) or `Hide`.
 `Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
 `ModuleChanged { module }`, `Chord { index, down }`, `WindowChanged { pid }`, `Sleep`,
-`Locked`, `Unlocked`. Each serializes as `{"event":"<snake_case>",...}`.
+`Locked`, `Unlocked`, `TaskChanged { task }` (the `task` module's running task, posted with
+`events::post`). Each serializes as `{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
 named module's view is stale whatever its `on_event` returns. Root search lists every
 module's items, so a visible root search refreshes on any `ModuleChanged` too. Both refreshes
