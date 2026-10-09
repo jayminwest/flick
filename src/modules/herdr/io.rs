@@ -40,6 +40,17 @@ pub struct Hooks {
     pub visible: fn() -> bool,
     /// Bring terminal app `name` to the front (any thread; it hops to the main thread).
     pub front: fn(String),
+    /// App `name` is frontmost (main thread).
+    pub is_front: fn(&str) -> bool,
+    /// Post a notification `(id, title, body)` (main thread).
+    pub notify: fn(&str, &str, &str),
+    /// Route notification clicks to `clicks` and ask for permission when `ask` (main
+    /// thread, `Started` and reloads).
+    pub listen: fn(ask: bool),
+    /// Ids of the notifications clicked since the last call (main thread).
+    pub clicks: fn() -> Vec<String>,
+    /// Whether notifications can show: `on`, `not permitted`, ... (main thread).
+    pub notifications: fn() -> String,
 }
 
 /// One agent's output, for the detail view. In memory only.
