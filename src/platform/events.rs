@@ -192,6 +192,11 @@ pub fn post(event: Event) {
     }
 }
 
+/// The main dispatch queue, for other dispatch sources in `platform`.
+pub(super) fn main_queue() -> *const c_void {
+    (&raw const _dispatch_main_q).cast()
+}
+
 /// Main queue: hand every posted event to the sink, oldest first.
 extern "C" fn drain(_context: *mut c_void) {
     let events = std::mem::take(&mut *POSTED.lock().unwrap_or_else(PoisonError::into_inner));
