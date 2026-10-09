@@ -66,8 +66,9 @@ Do the steps in this order. Hyperkey and Flick must never both remap Caps Lock.
 To go back: remove the `[keys]` table, reload Flick (this clears the Caps Lock remap), and
 start Hyperkey and Hammerspoon again.
 
-If Caps Lock does nothing after a crash or a failed step, reset the HID key mappings. This
-clears every `hidutil` mapping, not only Flick's:
+After a crash, starting Flick again sets or clears its Caps Lock entry to match the config.
+If Caps Lock still does nothing, reset the HID key mappings. This clears every `hidutil`
+mapping, not only Flick's:
 
 ```bash
 hidutil property --set '{"UserKeyMapping":[]}'
@@ -122,4 +123,6 @@ Recovery:
 - [ ] Stop Flick with launchd (`launchctl kickstart -k gui/$(id -u)/org.nix-community.home.flick`):
       the remap is cleared on stop and set again on start, and everything above works.
 - [ ] Remove `hyper` from the config and reload: the remap is cleared.
+- [ ] With the remap set, `kill -9` Flick, remove `hyper` from the config and start Flick:
+      the remap is cleared (`hidutil property --get UserKeyMapping` has no Flick entry).
 - [ ] Idle CPU stays near 0% for 60 s in Activity Monitor.
