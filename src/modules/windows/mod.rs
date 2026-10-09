@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use crate::config::Section;
-use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::{ax, screens, workspace};
 
 pub fn apply(action: WindowAction) -> Result<(), &'static str> {
@@ -108,11 +108,39 @@ impl Module for Windows {
         }
         None
     }
+
+    /// `list`: every action slug. `<slug>`: apply it to the focused window.
+    fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        match args {
+            [verb] if verb == "list" => {
+                Ok(WindowAction::ALL.iter().map(|a| a.slug()).collect::<Vec<_>>().join("\n"))
+            }
+            [slug] => match WindowAction::from_slug(slug) {
+                Some(action) => {
+                    apply(action).map(|()| String::new()).map_err(|e| format!("window: {e}"))
+                }
+                None => Err(unknown_verb("window", args)),
+            },
+            _ => Err(unknown_verb("window", args)),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commands_list_actions_and_reject_unknown_ones() {
+        crate::core::test_cx("", |cx| {
+            let list = Windows::default().command(&["list".into()], cx).unwrap();
+            assert_eq!(list.lines().count(), WindowAction::ALL.len());
+            assert!(list.lines().any(|l| l == "left-half"));
+            let err = Windows::default().command(&["sideways".into()], cx).unwrap_err();
+            assert_eq!(err, "window: unknown command \"sideways\"");
+            assert!(Windows::default().command(&["left-half".into(), "x".into()], cx).is_err());
+        });
+    }
 
     #[test]
     fn window_keys_bind_action_slugs() {

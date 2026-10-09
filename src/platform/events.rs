@@ -1,5 +1,5 @@
 //! Platform observers that turn macOS notifications into `core::Event`s, and the main-queue
-//! hand-off for events raised on other threads.
+//! hand-off for events and work raised on other threads.
 //!
 //! Observers run on the main thread and call the sink synchronously. macOS has no
 //! notification for pasteboard writes or user idle time, so one half-second timer polls the
@@ -149,5 +149,26 @@ extern "C" fn drain(_context: *mut c_void) {
     let events = std::mem::take(&mut *POSTED.lock().unwrap_or_else(PoisonError::into_inner));
     if let Some(sink) = SINK.get() {
         events.into_iter().for_each(sink);
+    }
+}
+
+/// Work queued by `on_main`.
+type Job = Box<dyn FnOnce() + Send>;
+
+/// Run `job` on the main queue's next turn, from any thread. A panic in `job` is logged and
+/// stops there: it never unwinds into libdispatch.
+pub fn on_main(job: impl FnOnce() + Send + 'static) {
+    let context = Box::into_raw(Box::new(Box::new(job) as Job)).cast::<c_void>();
+    // SAFETY: as in `post`; `run_job` takes back ownership of `context`, a leaked `Box<Job>`,
+    // exactly once.
+    unsafe { dispatch_async_f(&raw const _dispatch_main_q, context, run_job) };
+}
+
+/// Main queue: run one job from `on_main`.
+extern "C" fn run_job(context: *mut c_void) {
+    // SAFETY: `context` is the `Box<Job>` that `on_main` leaked, delivered once.
+    let job = unsafe { Box::from_raw(context.cast::<Job>()) };
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+        eprintln!("flick: main-queue job panicked");
     }
 }

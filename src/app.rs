@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 
 use crate::config::{self, Config};
+use crate::control;
 use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::hotkey::{self, Target};
 use crate::modules;
@@ -116,6 +117,7 @@ fn toggle_view(request: Option<ListView>) {
     with_state(|s| {
         if request.is_none() {
             s.registry.dispatch(Event::LauncherOpened, &mut s.env.cx(""));
+            control::publish(Event::LauncherOpened);
         }
         s.status = None;
         s.enter(request);
@@ -179,6 +181,7 @@ pub fn on_event(event: Event) {
         let Ok(mut s) = s.try_borrow_mut() else { return true };
         if let Some(s) = s.as_mut() {
             let stale = s.registry.dispatch(event, &mut s.env.cx(""));
+            control::publish(event);
             if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
                 s.refresh();
             }
@@ -190,7 +193,34 @@ pub fn on_event(event: Event) {
     }
 }
 
+/// A control request: `reload`, or `<module> <verb> [args...]` for that module.
+pub fn control(words: &[String]) -> Result<String, String> {
+    STATE.with(|s| {
+        let Ok(mut s) = s.try_borrow_mut() else { return Err("Flick is busy; try again".into()) };
+        let s = s.as_mut().ok_or("Flick is still starting")?;
+        match words {
+            [verb] if verb == "reload" => s.reload(),
+            _ => s.registry.command(words, &mut s.env.cx("")),
+        }
+    })
+}
+
 impl State {
+    /// Reload config.toml, reconfigure modules, migrate the store, and rebind hotkeys.
+    /// `Err` is a load, configure, or binding error.
+    fn reload(&mut self) -> Result<String, String> {
+        let config = config::load()?;
+        modules::reload(&mut self.registry, &config)
+            .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
+        self.env.config = config;
+        if let Err(e) = self.registry.migrate(&self.env.store) {
+            eprintln!("flick: store migration failed: {e}");
+        }
+        let bound = self.bind();
+        self.enter(None);
+        bound.map(|()| "Config reloaded".into())
+    }
+
     /// Bind the launcher hotkey, then every module's.
     fn bind(&self) -> Result<(), String> {
         let mut wanted = vec![(self.env.config.hotkey.clone(), Ok(Target::Launcher))];
@@ -282,22 +312,10 @@ impl State {
                 }
             }
             Outcome::Push(view) => self.enter(Some(view)),
-            Outcome::ReloadConfig => match config::load().and_then(|c| {
-                modules::reload(&mut self.registry, &c)
-                    .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
-                Ok(c)
-            }) {
-                Ok(config) => {
-                    self.env.config = config;
-                    if let Err(e) = self.registry.migrate(&self.env.store) {
-                        eprintln!("flick: store migration failed: {e}");
-                    }
-                    let bound = self.bind();
-                    self.enter(None);
-                    self.set_status(bound.map_or_else(|e| e, |()| "Config reloaded".into()));
-                }
-                Err(e) => self.set_status(e),
-            },
+            Outcome::ReloadConfig => {
+                let status = self.reload().unwrap_or_else(|e| e);
+                self.set_status(status);
+            }
         }
     }
 }

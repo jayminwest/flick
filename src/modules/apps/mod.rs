@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome};
+use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
 use crate::platform::workspace;
 
 #[derive(Clone)]
@@ -93,5 +93,45 @@ impl Module for Apps {
             self.apps = scan();
         }
         false
+    }
+
+    /// `list`: `<name>\t<path>` per app. `open <name>`: open the app with that name, any case.
+    fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        match args {
+            [verb] if verb == "list" => Ok(self
+                .apps
+                .iter()
+                .map(|a| format!("{}\t{}", a.name, a.path.display()))
+                .collect::<Vec<_>>()
+                .join("\n")),
+            [verb, name @ ..] if verb == "open" && !name.is_empty() => {
+                let name = name.join(" ");
+                let app = self.apps.iter().find(|a| a.name.eq_ignore_ascii_case(&name));
+                let app = app.ok_or_else(|| format!("app: no app named \"{name}\""))?;
+                workspace::open_file(&app.path);
+                Ok(String::new())
+            }
+            _ => Err(unknown_verb("app", args)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::test_cx;
+
+    #[test]
+    fn commands_list_apps_and_reject_unknown_ones() {
+        let mut apps = Apps::new(vec![App { name: "Safari".into(), path: "/A/Safari.app".into() }]);
+        test_cx("", |cx| {
+            assert_eq!(apps.command(&["list".into()], cx).unwrap(), "Safari\t/A/Safari.app");
+            let err = apps.command(&["open".into(), "No".into(), "Such".into()], cx).unwrap_err();
+            assert_eq!(err, "app: no app named \"No Such\"");
+            assert_eq!(
+                apps.command(&["open".into()], cx).unwrap_err(),
+                "app: unknown command \"open\""
+            );
+        });
     }
 }
