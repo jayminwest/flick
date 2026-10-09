@@ -163,6 +163,13 @@ writes a commented default.
   validate the file. On error nothing changes. Modules still enabled keep their instance and
   get `configure` again. Newly enabled modules start fresh. Migrations run again, the fresh
   modules get `Started`, then hotkeys rebind.
+- Writes: `config::edit::edit_entries(module, key, &Edit)` appends, replaces or removes one
+  `[[<module>.<key>]]` entry, found by its `name` field. It uses `toml_edit`, so comments,
+  blank lines and key order outside that entry do not change. Replace and remove also look in
+  the legacy array that `LEGACY` maps there; append always writes the table form. It re-reads
+  the file each time, refuses a file or a result that `parse` rejects, writes through a
+  symlink, and replaces the file atomically (temp file, fsync, rename). It does not reload:
+  the caller updates its own state.
 
 ## Control socket and CLI
 
