@@ -12,7 +12,6 @@ mod event;
 #[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
 mod form;
 mod item;
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-df71"))]
 pub mod keys;
 mod module;
 mod rank;

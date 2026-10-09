@@ -30,7 +30,6 @@ pub enum Event {
     ModuleChanged { module: &'static str },
     /// Key chord `index` (into the `keys` module's chords) went down or up. Posted from the
     /// key tap thread with `events::post`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "posted by the key tap, flick-df71"))]
     Chord { index: u16, down: bool },
 }
 

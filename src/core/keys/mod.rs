@@ -25,6 +25,7 @@ pub mod flags {
 }
 
 /// cmd|ctrl|alt|shift, the flags a hyper key adds (Hyperkey's `hyperFlags`).
+#[cfg(test)]
 pub const HYPER_FLAGS: u64 = flags::CMD | flags::CTRL | flags::ALT | flags::SHIFT;
 /// Virtual keycode of Caps Lock.
 pub const CAPS_LOCK: u16 = 57;
@@ -142,6 +143,7 @@ impl Engine {
         engine
     }
 
+    #[cfg(test)]
     pub fn rules(&self) -> &Rules {
         &self.rules
     }
