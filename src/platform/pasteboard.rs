@@ -40,7 +40,6 @@ pub fn set_text(text: &str) {
 /// Replace the pasteboard's contents with a PNG image (`bytes` is the whole file). Also
 /// writes TIFF, for apps that read only TIFF; skipped when `NSBitmapImageRep` cannot decode
 /// `bytes`.
-#[expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)")]
 pub fn set_png(bytes: &[u8]) {
     let png = NSData::with_bytes(bytes);
     let tiff = NSBitmapImageRep::imageRepWithData(&png).and_then(|rep| rep.TIFFRepresentation());

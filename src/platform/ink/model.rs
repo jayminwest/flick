@@ -15,13 +15,11 @@ const MIN_SIZE: f64 = 1.0;
 
 /// A position in points.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub struct Point {
     pub x: f64,
     pub y: f64,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 impl Point {
     pub fn new(x: f64, y: f64) -> Self {
         Point { x, y }
@@ -34,12 +32,10 @@ impl Point {
 
 /// An index into `Style::palette`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub struct Color(pub u8);
 
 /// How new shapes look and how long overlay strokes stay.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub struct Style {
     /// RGBA, each 0.0 to 1.0. `Color(n)` picks entry n.
     pub palette: Vec<[f32; 4]>,
@@ -66,7 +62,6 @@ impl Default for Style {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 impl Style {
     /// The RGBA for `color`; an index past the palette (or an empty palette) is opaque red.
     pub fn rgba(&self, color: Color) -> [f32; 4] {
@@ -75,7 +70,6 @@ impl Style {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub enum Tool {
     #[default]
     Arrow,
@@ -88,7 +82,6 @@ pub enum Tool {
     Redact,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 impl Tool {
     /// Pen and highlight keep every point; the others keep only start and end.
     fn freehand(self) -> bool {
@@ -98,7 +91,6 @@ impl Tool {
 
 /// One finished or in-progress mark.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub struct Shape {
     pub tool: Tool,
     pub color: Color,
@@ -114,7 +106,6 @@ pub struct Shape {
 /// What the canvas shows: finished shapes in drawing order, the redo stack, and the shape
 /// under the mouse.
 #[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub struct Canvas {
     /// Stroke width for new shapes, in points.
     pub width: f32,
@@ -123,18 +114,19 @@ pub struct Canvas {
     drag: Option<Shape>,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 impl Canvas {
     pub fn new(width: f32) -> Self {
         Canvas { width, ..Canvas::default() }
     }
 
     /// Finished shapes, oldest first.
+    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)"))]
     pub fn shapes(&self) -> &[Shape] {
         &self.shapes
     }
 
     /// The shape being dragged, if any.
+    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)"))]
     pub fn active(&self) -> Option<&Shape> {
         self.drag.as_ref()
     }
@@ -234,6 +226,7 @@ impl Canvas {
 
     /// Drop finished shapes (and undone ones) started `fade_secs` or more before `now`. A
     /// `fade_secs` of 0 or less never expires anything. Returns whether a visible shape went.
+    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 4 (flick-ee1d)"))]
     pub fn expire(&mut self, now: f64, fade_secs: f32) -> bool {
         if fade_secs <= 0.0 {
             return false;
@@ -247,7 +240,6 @@ impl Canvas {
 }
 
 /// Two points far enough apart to draw: an arrow with length, a box with area.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 fn sized(points: &[Point]) -> bool {
     match points {
         [a, b] => (a.x - b.x).abs() >= MIN_SIZE || (a.y - b.y).abs() >= MIN_SIZE,
@@ -258,7 +250,6 @@ fn sized(points: &[Point]) -> bool {
 /// The filled head of an arrow from `from` to `to`: `[left, tip, right]`, with the tip at
 /// `to`. It grows with the stroke width (4x, at least 10 pt long) and is as wide as it is
 /// long. A zero-length arrow points right.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub fn arrow_head(from: Point, to: Point, width: f32) -> [Point; 3] {
     let len = f64::from(width * 4.0).max(10.0);
     let d = from.distance(to);
@@ -269,13 +260,11 @@ pub fn arrow_head(from: Point, to: Point, width: f32) -> [Point; 3] {
 }
 
 /// The rectangle with `a` and `b` as opposite corners, whichever way it was dragged.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub fn normalized(a: Point, b: Point) -> Rect {
     Rect { x: a.x.min(b.x), y: a.y.min(b.y), w: (a.x - b.x).abs(), h: (a.y - b.y).abs() }
 }
 
 /// `shape` with its points and width multiplied by `k`: points to pixels on export.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub fn scaled(shape: &Shape, k: f64) -> Shape {
     Shape {
         points: shape.points.iter().map(|p| Point::new(p.x * k, p.y * k)).collect(),
@@ -286,7 +275,6 @@ pub fn scaled(shape: &Shape, k: f64) -> Shape {
 
 /// What a key does in the editor or the drawing overlay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub enum Command {
     Tool(Tool),
     Color(Color),
@@ -307,7 +295,6 @@ pub enum Command {
 /// upper case); `cmd` and `shift` are the modifier flags. Keys: a r p h t x pick arrow, rect,
 /// pen, highlight, text, redact; 1-5 pick a color; Delete clears; Return is done; Esc
 /// cancels; cmd+z undo, cmd+shift+z redo, cmd+c copy, cmd+s save.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 3 (flick-bbcd)"))]
 pub fn key_command(chars: &str, cmd: bool, shift: bool) -> Option<Command> {
     let key = chars.to_ascii_lowercase();
     if cmd {
