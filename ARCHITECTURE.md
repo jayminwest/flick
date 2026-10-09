@@ -360,7 +360,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   5 s). Tests use fakes and never run the CLI.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
-  `quicklink add|remove`, `capture` (any verb) or `feedback add`, and of `remote` only
+  `quicklink add|remove`, `capture` (any verb) or `feedback add|resolve`, and of `remote` only
   `remote status`. `["events"]` needs `[remote] events = true`. Everything else reaches the
   module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
   **Adding a verb that changes config, runs code, reads the screen or writes files means

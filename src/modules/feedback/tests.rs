@@ -164,6 +164,7 @@ fn ls_lists_newest_first_as_text_or_json() {
     assert!(saved["path"].as_str().unwrap().ends_with("feedback.jsonl"));
     assert!(run(&mut f, false, &["ls", "--limit", "x"]).unwrap_err().contains("not a number"));
     assert!(run(&mut f, false, &["ls", "x"]).unwrap_err().starts_with("usage"));
+    assert!(run(&mut f, false, &["ls", "--limit"]).unwrap_err().starts_with("usage"));
     assert!(run(&mut f, false, &["add"]).unwrap_err().starts_with("usage"));
     assert!(run(&mut f, false, &["nope"]).is_err());
     assert!(f.verbs().starts_with("feedback add"));
@@ -225,4 +226,51 @@ fn settings_are_checked() {
     assert!(f.configure(&table("[feedback]\nkeyword = \"a b\"")).is_err());
     assert!(f.configure(&table("[feedback]\nnope = 1")).is_err());
     assert_eq!(f.id(), "feedback");
+}
+
+/// A checkout with entries `one`, `two`, `three` at ts `t1`, `t2`, `t3`.
+fn three_entries() -> (PathBuf, Feedback) {
+    let dir = checkout();
+    for (ts, text) in [("t1", "one"), ("t2", "two"), ("t3", "three")] {
+        let e = Entry { ts: ts.into(), text: text.into(), build: SHA.into(), app: None, bundle_id: None, query: None, resolved: None };
+        entry::append(&dir.join("feedback.jsonl"), &e).unwrap();
+    }
+    let f = feedback(Some(&dir), "");
+    (dir, f)
+}
+
+#[test]
+fn resolving_hides_entries_from_ls() {
+    let (dir, mut f) = three_entries();
+    let path = dir.join("feedback.jsonl");
+    assert_eq!(run(&mut f, false, &["resolve", "t1", "flick-1234", "filed"]).unwrap(), "Resolved feedback at t1");
+    assert_eq!(lines(&path)[3], serde_json::json!({"resolves": "t1", "ts": "2026-10-09T11:31:01-07:00", "note": "flick-1234 filed"}));
+    assert!(run(&mut f, false, &["resolve", "t1"]).unwrap_err().contains("already resolved"));
+    assert_eq!(run(&mut f, false, &["resolve", "nope"]).unwrap_err(), "No feedback at nope");
+    assert!(run(&mut f, false, &["resolve"]).unwrap_err().starts_with("usage"));
+    assert_eq!(run(&mut f, false, &["ls"]).unwrap(), "t3\tthree\nt2\ttwo");
+    assert_eq!(run(&mut f, false, &["ls", "--limit", "9", "--all"]).unwrap(), "t3\tthree\nt2\ttwo\nt1\tone\tresolved flick-1234 filed");
+    let json: serde_json::Value = serde_json::from_str(&run(&mut f, true, &["ls", "--all"]).unwrap()).unwrap();
+    assert_eq!(json[2]["resolved"]["note"], "flick-1234 filed");
+    assert_eq!(json[0].get("resolved"), None);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn mark_resolved_in_recent_feedback() {
+    let (dir, mut f) = three_entries();
+    run(&mut f, false, &["resolve", "t1"]).unwrap();
+    let mut view = test_cx("", |cx| f.open("recent", cx)).unwrap();
+    test_cx("", |cx| f.refresh(&mut view, cx));
+    let titles: Vec<_> = view.items.iter().map(|i| i.title.as_str()).collect();
+    assert_eq!(titles, ["three", "two"]);
+    let actions = test_cx("", |cx| f.actions(&view.items[1].id, cx));
+    assert_eq!(actions.iter().map(|a| a.key).collect::<Vec<_>>(), ["resolve"]);
+    assert!(test_cx("", |cx| f.actions(&ItemId::new("feedback", "list"), cx)).is_empty());
+    let out = test_cx("", |cx| f.act(&view.items[1].id, "resolve", cx));
+    assert!(matches!(out, Outcome::Stay(Some(s)) if s == "Feedback resolved"));
+    assert_eq!(run(&mut f, false, &["ls"]).unwrap(), "t3\tthree");
+    assert!(matches!(test_cx("", |cx| f.act(&ItemId::new("feedback", "entry/5"), "resolve", cx)), Outcome::Stay(None)));
+    assert!(matches!(test_cx("", |cx| f.act(&view.items[0].id, "other", cx)), Outcome::Stay(None)));
+    std::fs::remove_dir_all(dir).unwrap();
 }
