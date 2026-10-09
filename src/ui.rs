@@ -1,8 +1,8 @@
 //! The launcher view: turns results into what the platform panel draws, and wires the panel's
 //! typing and keys to the controller.
 
+use crate::core::{Icon, Item};
 use crate::platform::panel::{self, Frame, Handlers, Row};
-use crate::search::{Icon, Item};
 
 pub use crate::platform::panel::{
     VISIBLE_ROWS, hide, is_visible, query, set_query, show, snapshot,
@@ -36,7 +36,7 @@ pub fn render(view: &View) {
             },
         })
         .collect();
-    let action = view.items.get(view.selected).map(|i| format!("{}  ↵", i.action.verb()));
+    let action = view.items.get(view.selected).map(|i| format!("{}  ↵", i.verb));
     panel::render(&Frame {
         rows: &rows,
         selected: view.selected.checked_sub(view.scroll),
