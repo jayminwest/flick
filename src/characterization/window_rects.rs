@@ -1,6 +1,6 @@
 //! Window rect math in the Accessibility coordinate space (origin top-left, y down).
 
-use crate::windows::{Rect, WindowAction, frame_for};
+use crate::modules::windows::action::{Rect, WindowAction, frame_for};
 
 const AREA: Rect = Rect { x: 0.0, y: 25.0, w: 1200.0, h: 800.0 };
 const WIN: Rect = Rect { x: 100.0, y: 100.0, w: 400.0, h: 300.0 };

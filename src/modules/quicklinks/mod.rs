@@ -26,7 +26,7 @@ fn item(q: &Quicklink, arg: Option<String>) -> Item {
 }
 
 /// The root item for "<keyword> <text>": runs link `q` with `text` directly.
-pub fn keyword_item(q: &Quicklink, text: &str) -> Item {
+fn keyword_item(q: &Quicklink, text: &str) -> Item {
     Item { subtitle: format!("“{text}”"), ..item(q, Some(text.to_string())) }
 }
 
@@ -50,6 +50,15 @@ impl Module for Quicklinks {
                 ..item(q, (!q.takes_query()).then(String::new))
             })
             .collect()
+    }
+
+    /// "<keyword> <text>" runs the first link with that keyword that takes a query.
+    fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
+        let Some((keyword, rest)) = cx.query.split_once(' ') else { return vec![] };
+        let link = cx.config.quicklinks.iter().find(|q| {
+            q.takes_query() && q.keyword.as_deref() == Some(keyword) && !rest.trim().is_empty()
+        });
+        link.map(|q| keyword_item(q, rest.trim())).into_iter().collect()
     }
 
     /// View `<name>`: type the argument for that link.

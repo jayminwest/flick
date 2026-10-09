@@ -1,13 +1,7 @@
-//! Window management through the Accessibility API.
-//!
-//! Geometry uses the Accessibility coordinate space: origin at the top-left of the
-//! primary screen, y grows downward.
+//! Window commands and their frame math, in the Accessibility coordinate space: origin at
+//! the top-left of the primary screen, y grows downward. Pure Rust.
 
-use std::path::PathBuf;
-
-use crate::core::{Cx, Icon, Item, ItemId, Module, Outcome};
 pub use crate::platform::Rect;
-use crate::platform::{ax, screens, workspace};
 
 impl Rect {
     fn center(&self) -> (f64, f64) {
@@ -194,8 +188,6 @@ fn move_between(current: Rect, from: Rect, to: Rect) -> Rect {
     }
 }
 
-pub use crate::platform::ax::{ensure_trusted, is_trusted, send_paste};
-
 /// The frame `action` gives a window at `current`, on the screen (of usable `areas`) that
 /// holds its center, else the first. Display moves wrap around.
 pub fn frame_for(
@@ -211,133 +203,4 @@ pub fn frame_for(
         WindowAction::PreviousDisplay => move_between(current, area, areas[(index + n - 1) % n]),
         _ => action.cycled(area, current),
     })
-}
-
-pub fn apply(action: WindowAction) -> Result<(), &'static str> {
-    // Hide acts on the app, like cmd+H: instant, and needs no Accessibility permission.
-    if action == WindowAction::Hide {
-        return workspace::hide_frontmost();
-    }
-    if !ensure_trusted() {
-        return Err("Flick needs Accessibility permission");
-    }
-    let win = ax::focused_window().ok_or("No focused window")?;
-    if action == WindowAction::Minimize {
-        win.minimize();
-        return Ok(());
-    }
-    let current = win.frame().ok_or("Can't read window frame")?;
-    let target = frame_for(action, current, &screens::visible_areas())?;
-    win.set_frame(target);
-    Ok(())
-}
-
-/// `apply`, logging a failure (there is no panel to show it in).
-pub fn run(action: WindowAction) {
-    if let Err(e) = apply(action) {
-        eprintln!("flick: {}: {e}", action.title());
-    }
-}
-
-/// Module `window`: the window commands in root search; ids are `window:<title>`.
-pub struct Commands;
-
-impl Module for Commands {
-    fn id(&self) -> &'static str {
-        "window"
-    }
-
-    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
-        WindowAction::ALL
-            .iter()
-            .map(|&w| Item {
-                subtitle: "Window Management".into(),
-                accessory: "Command".into(),
-                keywords: vec!["window".into()],
-                ..Item::new(
-                    ItemId::new("window", w.title()),
-                    w.title(),
-                    "Move Window",
-                    Icon::Symbol(w.symbol()),
-                )
-            })
-            .collect()
-    }
-
-    fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
-        let Some(action) = WindowAction::ALL.into_iter().find(|w| w.title() == id.key()) else {
-            return Outcome::Stay(None);
-        };
-        cx.hide();
-        run(action);
-        Outcome::Hide
-    }
-}
-
-// --- Window switcher ---
-
-/// A window to switch to. `element` is None for an app whose windows are on another
-/// desktop: Accessibility only lists windows on the current one.
-pub struct AppWindow {
-    pub pid: i32,
-    pub title: String,
-    pub app: String,
-    pub bundle: Option<PathBuf>,
-    pub minimized: bool,
-    element: Option<ax::AxWindow>,
-}
-
-impl AppWindow {
-    pub fn on_other_desktop(&self) -> bool {
-        self.element.is_none()
-    }
-}
-
-/// Standard windows of every regular app, apps in `recent` order (most recent first).
-/// The frontmost window goes last, so the first entry is the previous window.
-pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
-    if !ensure_trusted() {
-        return vec![];
-    }
-    let me = std::process::id() as i32;
-    let elsewhere = crate::platform::spaces::window_pids(false);
-    let mut out = Vec::new();
-    for app in workspace::regular_apps(me) {
-        let (pid, name, bundle) = (app.pid, app.name, app.bundle);
-        let before = out.len();
-        for win in ax::standard_windows(pid) {
-            let title = win.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
-            out.push(AppWindow {
-                pid,
-                title,
-                app: name.clone(),
-                bundle: bundle.clone(),
-                minimized: win.minimized,
-                element: Some(win),
-            });
-        }
-        if out.len() == before && elsewhere.contains(&pid) && !app.hidden {
-            out.push(AppWindow {
-                pid,
-                title: name.clone(),
-                app: name,
-                bundle,
-                minimized: false,
-                element: None,
-            });
-        }
-    }
-
-    let rank = |pid: i32| recent.iter().position(|&p| p == pid).unwrap_or(usize::MAX);
-    out.sort_by_key(|w| rank(w.pid)); // stable: keeps each app's front-to-back order
-    if let Some(i) = out.iter().position(|w| Some(w.pid) == frontmost) {
-        let current = out.remove(i);
-        out.push(current);
-    }
-    out
-}
-
-/// Raise `w` and activate its app (switching desktops if needed).
-pub fn focus(w: &AppWindow) {
-    ax::focus(w.pid, w.element.as_ref(), w.minimized);
 }

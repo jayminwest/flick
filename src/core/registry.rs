@@ -1,6 +1,7 @@
 //! The registered modules, and routing by module id.
 
-use super::{Cx, Event, Item, ItemId, ListView, Module, Outcome};
+use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
+use crate::config::Config;
 
 pub struct Registry {
     modules: Vec<Box<dyn Module>>,
@@ -25,6 +26,11 @@ impl Registry {
         self.modules.iter_mut().flat_map(|m| m.items(cx)).collect()
     }
 
+    /// Every module's direct (unranked, shown first) root items, in registration order.
+    pub fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
+        self.modules.iter_mut().flat_map(|m| m.direct(cx)).collect()
+    }
+
     /// Open `view` (a request naming the module and view) through its owning module.
     pub fn open(&mut self, view: &ListView, cx: &mut Cx) -> Option<ListView> {
         self.get(view.module)?.open(&view.name, cx)
@@ -44,10 +50,29 @@ impl Registry {
         }
     }
 
-    pub fn dispatch(&mut self, event: Event, cx: &mut Cx) {
+    /// Send `event` to every module in order. Returns the ids of modules whose views went
+    /// stale.
+    pub fn dispatch(&mut self, event: Event, cx: &mut Cx) -> Vec<&'static str> {
+        let mut stale = vec![];
         for m in &mut self.modules {
-            m.on_event(event, cx);
+            if m.on_event(event, cx) {
+                stale.push(m.id());
+            }
         }
+        stale
+    }
+
+    /// Every module's hotkeys under `config`, in registration order, with the owning module.
+    pub fn hotkeys(&self, config: &Config) -> Vec<(&'static str, Binding)> {
+        self.modules
+            .iter()
+            .flat_map(|m| m.hotkeys(config).into_iter().map(|b| (m.id(), b)))
+            .collect()
+    }
+
+    /// Run module `module`'s hotkey `key`. An unknown module does nothing.
+    pub fn hotkey(&mut self, module: &str, key: &str, cx: &mut Cx) -> Option<ListView> {
+        self.get(module)?.hotkey(key, cx)
     }
 }
 
@@ -84,13 +109,29 @@ mod tests {
         fn activate(&mut self, id: &ItemId, _cx: &mut Cx) -> Outcome {
             match id.key() {
                 "push" => Outcome::Push(ListView::new(self.id, "list")),
-                "pop" => Outcome::Pop(Some("back".into())),
+                "stay" => Outcome::Stay(Some("here".into())),
                 _ => Outcome::Hide,
             }
         }
 
-        fn on_event(&mut self, _event: Event, _cx: &mut Cx) {
+        fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
+            (cx.query == "now")
+                .then(|| Item::new(ItemId::new(self.id, "now"), "Now", "Run", Icon::Symbol("app")))
+                .into_iter()
+                .collect()
+        }
+
+        fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
             self.events += 1;
+            event == Event::Tick
+        }
+
+        fn hotkeys(&self, config: &Config) -> Vec<Binding> {
+            vec![Binding { spec: config.hotkey.clone(), key: Ok(format!("{}-key", self.id)) }]
+        }
+
+        fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+            (key == "show").then(|| ListView::new(self.id, "list"))
         }
     }
 
@@ -131,7 +172,7 @@ mod tests {
         with_cx("", |cx| {
             assert!(matches!(r.activate(&ItemId::new("b", "x"), cx), Outcome::Hide));
             assert!(
-                matches!(r.activate(&ItemId::new("a", "pop"), cx), Outcome::Pop(Some(s)) if s == "back")
+                matches!(r.activate(&ItemId::new("a", "stay"), cx), Outcome::Stay(Some(s)) if s == "here")
             );
             assert!(matches!(r.activate(&ItemId::new("bare", "x"), cx), Outcome::Stay(None)));
             assert!(matches!(r.activate(&ItemId::new("nobody", "x"), cx), Outcome::Stay(None)));
@@ -168,13 +209,41 @@ mod tests {
         let mut toy = Toy { id: "a", events: 0 };
         with_cx("", |cx| {
             let mut bare = Bare;
-            bare.on_event(Event::LauncherOpened, cx);
+            assert!(!bare.on_event(Event::LauncherOpened, cx));
             assert!(bare.items(cx).is_empty());
-            toy.on_event(Event::LauncherOpened, cx);
+            assert!(!toy.on_event(Event::LauncherOpened, cx));
             let mut r = registry();
-            r.dispatch(Event::LauncherOpened, cx);
+            assert!(r.dispatch(Event::Started, cx).is_empty());
+            assert_eq!(r.dispatch(Event::Tick, cx), ["a", "b"]);
         });
         assert_eq!(toy.events, 1);
+    }
+
+    #[test]
+    fn direct_items_come_in_registration_order() {
+        let ids = |q: &str| -> Vec<String> {
+            with_cx(q, |cx| registry().direct(cx)).into_iter().map(|i| i.id.to_string()).collect()
+        };
+        assert_eq!(ids("now"), ["a:now", "b:now"]);
+        assert!(ids("later").is_empty());
+    }
+
+    #[test]
+    fn hotkeys_carry_their_module_and_route_back() {
+        let config = Config::default();
+        let bindings = registry().hotkeys(&config);
+        let owners: Vec<&str> = bindings.iter().map(|(m, _)| *m).collect();
+        assert_eq!(owners, ["a", "b"]);
+        assert_eq!(bindings[1].1, Binding { spec: config.hotkey.clone(), key: Ok("b-key".into()) });
+        assert!(Bare.hotkeys(&config).is_empty());
+        let mut r = registry();
+        with_cx("", |cx| {
+            assert!(r.hotkey("b", "show", cx).is_some_and(|v| v.is("b", "list")));
+            assert!(r.hotkey("b", "other", cx).is_none());
+            assert!(r.hotkey("bare", "show", cx).is_none());
+            assert!(r.hotkey("nobody", "show", cx).is_none());
+            assert!(Bare.direct(cx).is_empty());
+        });
     }
 
     #[test]

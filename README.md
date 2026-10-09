@@ -147,18 +147,18 @@ Flick changes `{argument}` placeholders to `{query}` and skips links with the sa
 
 ## How it works
 
-| File | Role |
+| Path | Role |
 |---|---|
-| [`search.rs`](src/search.rs) | Items, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)), frecency |
-| [`windows.rs`](src/windows.rs) | Window geometry, the Accessibility bridge, the window list |
-| [`spaces.rs`](src/spaces.rs) | Desktop toggle and app activation history |
-| [`ui.rs`](src/ui.rs) | The panel: a borderless, non-activating `NSPanel` |
-| [`app.rs`](src/app.rs) | Controller: modes and actions |
-| [`hotkey.rs`](src/hotkey.rs) | Global hotkeys |
+| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
+| [`core/`](src/core) | Items and their ids, the `Module` trait and registry, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
+| [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
+| [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
+| [`root.rs`](src/root.rs) | Root search ranking |
+| [`ui.rs`](src/ui.rs) | The launcher view over the platform panel |
+| [`hotkey.rs`](src/hotkey.rs) | Global hotkey bindings |
 | [`store.rs`](src/store.rs) | SQLite: usage counts and clipboard history |
 | [`config.rs`](src/config.rs) | TOML config and quicklinks |
 | [`raycast.rs`](src/raycast.rs) | Raycast quicklink import |
-| [`apps.rs`](src/apps.rs) | Installed application index |
 
 The panel is a non-activating `NSPanel`, so the app you came from stays active while Flick has keyboard focus. That is why window commands and paste act on the right app.
 
