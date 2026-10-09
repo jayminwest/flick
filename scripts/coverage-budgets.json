@@ -3,6 +3,7 @@
   "floors": {
     "src/config.rs": 63.2,
     "src/core/": 100.0,
+    "src/modules/windows/action.rs": 100.0,
     "src/root.rs": 100.0,
     "src/store.rs": 96.1
   }

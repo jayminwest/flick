@@ -1,8 +1,8 @@
 //! Launcher ranking: fuzzy score plus frecency over the real root items.
 
-use crate::apps::App;
 use crate::config::Config;
 use crate::core::{Ranker, Usage};
+use crate::modules::apps::App;
 use crate::root::{rank_root, root_items};
 
 const NOW: i64 = 1_700_000_000;

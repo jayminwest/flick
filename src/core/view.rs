@@ -12,8 +12,8 @@ pub enum Outcome {
     /// Show a module's list. The registry asks the owning module (`ListView::module`) to
     /// open it, so any module may push any other module's view by name.
     Push(ListView),
-    /// Back to root search with an empty query; `Some` shows a status line.
-    Pop(Option<String>),
+    /// Load config.toml again, rebind hotkeys, then back to root search with the result.
+    ReloadConfig,
 }
 
 /// A module-owned list that replaces root search, e.g. clipboard history.

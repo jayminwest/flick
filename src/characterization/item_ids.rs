@@ -1,8 +1,8 @@
 //! Item ids are written to the `usage` table; a changed id loses that item's history.
 
-use crate::apps::App;
 use crate::config::{Config, Quicklink};
 use crate::core::Item;
+use crate::modules::apps::App;
 use crate::root::root_items;
 
 fn app(name: &str, path: &str) -> App {

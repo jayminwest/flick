@@ -86,9 +86,12 @@ impl Module for Apps {
         Outcome::Hide
     }
 
-    fn on_event(&mut self, event: Event, _cx: &mut Cx) {
+    /// Rescans on `LauncherOpened`, so new apps show up. Root search re-ranks on every
+    /// keystroke, so no view goes stale.
+    fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
         if event == Event::LauncherOpened {
             self.apps = scan();
         }
+        false
     }
 }
