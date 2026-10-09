@@ -7,6 +7,7 @@
 pub mod app;
 pub mod ax;
 pub mod axwatch;
+pub mod capture;
 pub mod clock;
 pub mod events;
 pub mod files;
