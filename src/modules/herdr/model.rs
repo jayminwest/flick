@@ -13,9 +13,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Longest preview line, in chars, before it is cut with an ellipsis.
-pub const PREVIEW_WIDTH: usize = 200;
-
 /// An agent's state as herdr reports it. Declaration order is display order: the ones
 /// waiting on me first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
@@ -439,25 +436,6 @@ impl Update {
             }
         }
     }
-}
-
-/// The last `lines` non-empty lines of `text` (output herdr already stripped of escapes),
-/// trailing space and control characters removed, each cut to `PREVIEW_WIDTH` chars.
-pub fn preview(text: &str, lines: usize) -> Vec<String> {
-    let clean = |line: &str| -> String {
-        let line: String = line.chars().map(|c| if c == '\t' { ' ' } else { c }).collect();
-        let line: String = line.chars().filter(|c| !c.is_control()).collect();
-        let line = line.trim_end();
-        if line.chars().count() <= PREVIEW_WIDTH {
-            return line.to_string();
-        }
-        let cut: String = line.chars().take(PREVIEW_WIDTH - 1).collect();
-        format!("{}…", cut.trim_end())
-    };
-    let mut out: Vec<String> =
-        text.lines().rev().map(clean).filter(|l| !l.is_empty()).take(lines).collect();
-    out.reverse();
-    out
 }
 
 #[cfg(test)]

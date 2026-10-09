@@ -89,8 +89,20 @@ pub struct Item {
     pub keywords: Vec<String>,
     /// What Enter does, shown in the footer: "Open Application", "Paste", ...
     pub verb: &'static str,
-    /// Tab activates the item too (a quicklink that still needs its argument).
-    pub tab: bool,
+    /// What Tab does on a list.
+    pub tab: Tab,
+}
+
+/// What Tab does to a selected item in root search or a module list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tab {
+    /// Nothing.
+    #[default]
+    None,
+    /// The same as Enter (a quicklink that still needs its argument).
+    Activate,
+    /// Run the item's action with this key (`Module::act`), as if picked in the ⌘K menu.
+    Act(&'static str),
 }
 
 impl Item {
@@ -104,7 +116,7 @@ impl Item {
             icon,
             keywords: vec![],
             verb,
-            tab: false,
+            tab: Tab::None,
         }
     }
 }
@@ -150,7 +162,8 @@ mod tests {
         );
         assert_eq!(item.title, "Quit Flick");
         assert!(item.subtitle.is_empty() && item.accessory.is_empty() && item.keywords.is_empty());
-        assert!(!item.tab);
+        assert_eq!(item.tab, Tab::None);
+        assert_eq!(Tab::default(), Tab::None);
         assert_eq!(item.verb, "Run Command");
         assert_eq!(item.icon, Icon::Symbol("power"));
     }

@@ -3,6 +3,7 @@
 
 use super::screen::{self, Back, ConfirmStep, Screen};
 use super::{State, VISIBLE_ROWS};
+use crate::core::Tab;
 use crate::platform::panel::Key;
 use crate::ui;
 
@@ -40,6 +41,21 @@ impl State {
         self.status = None;
         self.show(Screen::Actions { target, actions, back }, "");
         true
+    }
+
+    /// Tab on a list: what the selected item's `tab` asks for. `Activate` is Enter (a
+    /// quicklink's argument, like Raycast); `Act(key)` runs that action as the ⌘K menu would.
+    pub(super) fn tab(&mut self) {
+        let Some(item) = self.results.get(self.selected).cloned() else { return };
+        match item.tab {
+            Tab::None => {}
+            Tab::Activate => self.activate(),
+            Tab::Act(key) => {
+                let query = ui::query();
+                let outcome = self.registry.act(&item.id, key, &mut self.env.cx(&query));
+                self.apply(outcome, None);
+            }
+        }
     }
 
     /// A key in the action menu. Enter runs the selected action; Escape, ⌘K and Backspace
