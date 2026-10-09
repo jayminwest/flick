@@ -1,7 +1,7 @@
 //! Tests for module `keys`.
 
 use super::action::tests::{listener, read_when_written, serve, temp};
-use super::wire::tests::{SECURE, STUB, calls};
+use super::wire::tests::{REMAP_SET, SECURE, STUB, calls};
 use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
@@ -41,6 +41,7 @@ fn off_without_config() {
 fn reads_chords_and_hyper() {
     let text = format!("[keys]\nhyper = \"caps_lock\"\n{PTT}").replace("PORT", "8600");
     let mut keys = configured(&text).unwrap();
+    REMAP_SET.with(|r| *r.borrow_mut() = Ok(true));
     let hyper = Hyper {
         key: "caps_lock".into(),
         mods: "cmd+ctrl+alt+shift".into(),
@@ -60,6 +61,7 @@ fn reads_chords_and_hyper() {
         "tap: Accessibility needed\nsecure input: off\nchords: 1\n\
          hyper: caps_lock (cmd+ctrl+alt+shift)\ncaps lock remap: set"
     );
+    REMAP_SET.with(|r| *r.borrow_mut() = Ok(false));
     let items = test_cx("", |cx| keys.items(cx));
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].id, "keys:status");
