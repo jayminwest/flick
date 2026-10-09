@@ -213,6 +213,27 @@
 # Opens a feedback field; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyF"
 
+# --- message: a small corner card for messages a peer posts ("flick --host <this Mac>
+# message post <text>"), e.g. an agent's reply to a "k" script command, plus a root item
+# that lists past ones. See docs/message.md.
+#[message]
+# The root item's title and the card header of a post with no --title.
+#name = "KOTA"
+# panel, notification, both or none.
+#style = "panel"
+# top-right, top-left, bottom-right, bottom-left, top or bottom.
+#position = "top-right"
+# Card width in points, 240 to 900.
+#width = 380
+# Seconds the card stays; 0 keeps it until dismissed.
+#timeout_secs = 20
+# Messages kept in history.
+#max_history = 50
+# Play a short sound when a reply arrives (never for pending posts).
+#sound = true
+# Opens the message list; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyM"
+
 # --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
 # addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not
 # reload, rebuild, capture, fire keys or edit config. See docs/remote.md.

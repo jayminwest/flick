@@ -100,6 +100,17 @@ fn default_config_feedback_example_parses_uncommented() {
 }
 
 #[test]
+fn default_config_message_example_parses_uncommented() {
+    let example = uncommented("# [message]");
+    let config = parse(&example).unwrap();
+    let section = config.section("message").unwrap().unwrap();
+    let message: Table = section.get().unwrap();
+    assert_eq!(message.get("name").and_then(Value::as_str), Some("KOTA"));
+    assert_eq!(message.len(), 8);
+    assert!(!DEFAULT_CONFIG.contains("\n[message]"), "the default leaves [message] commented");
+}
+
+#[test]
 fn default_config_capture_example_parses_uncommented() {
     let example = uncommented("# [capture]");
     let capture: Table =
