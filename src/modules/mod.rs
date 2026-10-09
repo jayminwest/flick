@@ -46,6 +46,7 @@ modules! {
         mod herdr => "herdr", herdr::Herdr::default;
         mod keys => "keys", keys::Keys::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
+        mod capture => "capture", capture::Capture::default;
     }
 }
 
