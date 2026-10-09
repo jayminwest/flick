@@ -9,7 +9,7 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard` (text, and PNG with TIFF through `set_png`), `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `clock` (local UTC offset), `notify` (`UNUserNotificationCenter`), `capture` (`/usr/sbin/screencapture`, PNG size, the Screen Recording check and prompt), `ink` (annotation: the pure shape model `ink::model` with a 100% coverage floor, the `FlickInkView` canvas, the editor window and the per-display draw overlay with the cursor halo). Every function runs on the main thread, except `keytap`'s (any thread) and `capture::run`, which blocks until screencapture exits: launcher and hotkey captures run it on a worker thread, never an area or window selection on the main thread. |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard` (text, and PNG with TIFF through `set_png`), `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `clock` (local UTC offset), `notify` (`UNUserNotificationCenter`), `capture` (`/usr/sbin/screencapture`, PNG size, the Screen Recording check and prompt), `ink` (annotation: the pure shape model `ink::model` with a 100% coverage floor, the `FlickInkView` canvas, the editor window and the per-display draw overlay with the cursor halo), `poll` (`poll(2)` on sockets, for the network accept threads). Every function runs on the main thread, except `keytap`'s and `poll`'s (any thread) and `capture::run`, which blocks until screencapture exits: launcher and hotkey captures run it on a worker thread, never an area or window selection on the main thread. |
 | core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`), the span clock (`core::track`: idle backdating, pause/resume, title normalization, flicker merge, local-day split). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
@@ -354,8 +354,14 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   Tailscale peer address and a `tailscale whois` name in `peers`; any failure closes the
   connection and is kept as `NetStatus::last`. Each request is `split_flags`, then forced
   `remote = true`, then checked by `net_policy`. Limits: 64 KiB lines, 30 s idle, 10 s writes,
-  16 open connections. Stop: a flag, a self-connect to wake each `accept`, then shutdown of
-  every open network connection. `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
+  16 open connections. Each address binds once (duplicates from `tailscale ip` are dropped);
+  a bind that finds the address in use retries for about 0.5 s, and its error names the
+  address and, from `lsof`, the process that holds the port. Accept threads wait in
+  `platform::poll` on the listener and the read end of a socket pair. Stop: a flag, then
+  close the write end of the pair to wake every accept thread, join them (so every listener
+  is closed and its port free before a restart binds), then shutdown of every open network
+  connection. Stop never connects to a listener: on macOS a connection to this Mac's own
+  Tailscale IPv6 address times out (flick-3d4c). `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
   (Homebrew or the app binary) under a 2 s budget, whois cached per address (60 s, errors
   5 s). Tests use fakes and never run the CLI.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
