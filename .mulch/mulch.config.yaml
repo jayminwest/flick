@@ -12,6 +12,7 @@ domains:
   scripts: {}
   herdr: {}
   apps: {}
+  activity: {}
 governance:
   max_entries: 100
   warn_entries: 150
