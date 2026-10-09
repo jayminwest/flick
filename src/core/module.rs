@@ -23,7 +23,6 @@ pub struct Cx<'a> {
     pub hide: fn(),
     /// The control request asked for structured output (`--json`): `command` may answer
     /// with a JSON object or array. False for events, hotkeys and the launcher.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by the activity module, flick-a513"))]
     pub json: bool,
 }
 

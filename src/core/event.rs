@@ -26,7 +26,6 @@ pub enum Event {
     Active,
     /// Background work of module `module` progressed: its visible view refreshes, whatever
     /// its `on_event` returns. Posted from the module's own thread with `events::post`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "posted by the rebuild runner, flick-31c8"))]
     ModuleChanged { module: &'static str },
     /// Key chord `index` (into the `keys` module's chords) went down or up. Posted from the
     /// key tap thread with `events::post`.

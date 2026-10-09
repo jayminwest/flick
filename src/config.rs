@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, keys.
+# builtin, clip, activity, keys, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -55,6 +55,14 @@ hotkey = "alt+shift+Space"
 # keys = ["right_cmd", "right_alt"]
 # on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
 # on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+
+# Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
+# source: the checkout; default: the one this app was built from. check_on_open: check
+# it for newer commits when the launcher opens. gates: run scripts/check-all.sh first.
+[flick]
+# source = "~/Projects/flick"
+# check_on_open = true
+# gates = false
 
 # Quicklinks open a URL or a path. "{query}" makes the link take an argument.
 # Typing "<keyword> <text>" runs a link straight from the root search.
@@ -268,7 +276,7 @@ mod tests {
     #[test]
     fn default_config_keys_example_parses_uncommented() {
         let start = DEFAULT_CONFIG.find("# [keys]").unwrap();
-        let end = DEFAULT_CONFIG.find("# Quicklinks").unwrap();
+        let end = start + DEFAULT_CONFIG[start..].find("\n\n").unwrap();
         let example: String = DEFAULT_CONFIG[start..end]
             .lines()
             .map(|l| l.trim_start_matches('#').trim_start())
