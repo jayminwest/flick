@@ -4,3 +4,4 @@
 {"type":"sprout","by":"agent:claude-opus-5-5","at":"2026-10-09T16:08:22Z","node":"s-07eb","slug":"flick-speaks-plain-text","hash":"sha256:f195f7e5377faead4e8d58ffcc1bf295aaa2df417989df15bace40853b8033f7","expiresAt":"2026-11-08T16:08:22Z"}
 {"type":"sprout","by":"agent:claude-opus-5-5","at":"2026-10-09T16:08:22Z","node":"s-aec1","slug":"flick-where-see-answer","hash":"sha256:4af563d40182d44803ece321f1714a8ea74df5cf0ed9c160c52d88577267c5f9","expiresAt":"2026-11-08T16:08:22Z"}
 {"type":"sprout","by":"agent:claude-opus-5-5","at":"2026-10-09T16:08:22Z","node":"s-54a2","slug":"time-tracking-needs-no","hash":"sha256:35eaa57dee54748ad148ad2c59747fa1596924548bf7bd316e316f82ef556804","expiresAt":"2026-11-08T16:08:22Z"}
+{"type":"flow.start","by":"human:jaymin-west","at":"2026-10-09T16:11:06Z","flow":"fl-b288"}

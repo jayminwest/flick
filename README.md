@@ -35,7 +35,7 @@ Raycast, Rectangle, and AltTab each own one hotkey and one background process. F
 ## What Flick does
 
 - **Launcher.** Fuzzy search over apps and commands. Acronyms match (`vsc` finds Visual Studio Code). Results you pick often rank higher, with a 14-day half-life.
-- **Window management.** Halves, quarters, thirds, two-thirds, maximize, almost maximize, center, minimize, next and previous display. Bind any of them to a global hotkey. Repeating a half cycles its size, as Rectangle does.
+- **Window management.** Halves, quarters, thirds, two-thirds, maximize, almost maximize, center, minimize, hide, next and previous display. Bind any of them to a global hotkey. Repeating a half cycles its size, as Rectangle does.
 - **Window switcher.** Fuzzy search over open windows by title and app. The first result is the previous window, so the hotkey and ↵ jump back. Apps on other desktops show as one entry that switches desktops.
 - **Desktop toggle.** One hotkey jumps to the most recent app on another desktop. Built for a full-screen terminal on one desktop and everything else on another.
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
@@ -105,7 +105,7 @@ desktop_toggle = "cmd+Backquote"   # most recent app on another desktop
 left-half = "cmd+KeyH"
 right-half = "cmd+KeyL"
 maximize = "cmd+KeyK"
-minimize = "cmd+KeyJ"
+hide = "cmd+KeyJ"
 next-display = "cmd+shift+KeyK"
 previous-display = "cmd+shift+KeyJ"
 
@@ -122,7 +122,7 @@ url = "~/Projects"
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
 > [!WARNING]
-> A global hotkey overrides that shortcut in every app. `cmd+KeyH` replaces Hide and `cmd+KeyL` replaces the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
+> A global hotkey overrides that shortcut in every app. `cmd+KeyH` replaces Hide (bind the `hide` action to another key to keep it) and `cmd+KeyL` replaces the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
 
 ### Import Raycast quicklinks
 
