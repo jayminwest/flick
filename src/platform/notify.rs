@@ -4,7 +4,6 @@
 //! `UNUserNotificationCenter` raises an Objective-C exception in a process without a bundle
 //! (`cargo run`, the tests), so every call here checks for a `.app` bundle with an identifier
 //! first and returns `Err` without touching the center when there is none.
-#![cfg_attr(not(test), expect(dead_code, reason = "wired in flick-3cc9 step 5 (flick-adda)"))]
 
 use std::cell::OnceCell;
 use std::sync::OnceLock;

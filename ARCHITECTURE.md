@@ -9,7 +9,7 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `clock` (local UTC offset). Every function runs on the main thread, except `keytap`'s (any thread). |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `clock` (local UTC offset), `notify` (`UNUserNotificationCenter`). Every function runs on the main thread, except `keytap`'s (any thread). |
 | core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`), the span clock (`core::track`: idle backdating, pause/resume, title normalization, flicker merge, local-day split). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
@@ -162,6 +162,14 @@ Sources:
   enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 - The key tap thread posts `Chord` (see below).
+- `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
+  main thread. One handler per process (the first `on_click` wins); `herdr` sets it at
+  `Started`, queues the id and posts `ModuleChanged`. `notify::post` and
+  `request_permission` return `Err` without a `.app` bundle id (`cargo run`, tests), because
+  `UNUserNotificationCenter` raises there.
+- `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
+  `activity` (the status item's Stop Recording), `herdr` (its I/O threads and notification
+  clicks).
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
 `control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
@@ -197,6 +205,22 @@ and every hotkey.
   check runs at most once per 30 s).
 - Give every child process a time budget. A command that must answer at once may run a
   short bounded call on the main thread (`flick flick version`: git with a 2 s budget).
+
+Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
+follows an external server.
+
+- One thread per stream blocks in `read` with no timeout (the local herdr subscription), so
+  idle costs no CPU. On EOF it marks its state and ends; the module starts it again on the
+  next `LauncherOpened`, view open or `Wake`, never in a retry loop. An epoch counter in the
+  shared state retires an old thread after a reload instead of joining it.
+- Polled sources (remote `herdr --machine`) run one round on a thread when due, one child
+  per machine in parallel, each with a time budget. A visible launcher keeps polling by
+  having the round sleep and post once more; an opt-in timer thread sleeps between posts.
+- Hooks (`io::Hooks`, plain `fn` pointers for posting, the clock, the panel and
+  notifications) let tests swap in no-ops, so no test reaches the real server or posts a
+  real notification.
+- State changes that need the main thread (notifications) queue in the shared state and are
+  drained in `on_event(ModuleChanged)`.
 
 ### Key tap
 

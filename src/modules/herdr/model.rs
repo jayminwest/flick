@@ -358,7 +358,6 @@ impl Fleet {
     }
 
     /// Transitions since the last call, oldest first.
-    #[cfg_attr(not(test), expect(dead_code, reason = "notifications call it (flick-adda)"))]
     pub fn take_transitions(&mut self) -> Vec<Transition> {
         std::mem::take(&mut self.pending)
     }
