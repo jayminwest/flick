@@ -1,15 +1,18 @@
 //! The control socket: other programs drive Flick with `["<module>","<verb>",args...]`
 //! requests (protocol in `crate::core::control`) and subscribe to its events. Requests run
-//! on the main thread, where every module lives; the socket threads only wait.
+//! on the main thread, where every module lives; the socket threads only wait. `net` serves
+//! the same protocol over TCP to allowed tailnet peers, when the remote module turns it on.
 
+pub mod net;
 pub mod server;
+pub mod tailscale;
 
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 use crate::config;
 use crate::core::Event;
-use crate::core::control::{Reply, split_flags};
+use crate::core::control::{Flags, Reply, split_flags};
 use crate::platform::events;
 use server::Hub;
 
@@ -38,6 +41,11 @@ pub fn publish(event: Event) {
 /// `--remote` words are taken off and set `Cx::json` and `Cx::remote`.
 fn on_main(words: Vec<String>) -> Reply {
     let (words, flags) = split_flags(words);
+    run(words, flags)
+}
+
+/// Run request `words` with `flags` on the main thread and wait for its reply.
+fn run(words: Vec<String>, flags: Flags) -> Reply {
     let (tx, rx) = mpsc::channel();
     events::on_main(move || {
         let _ = tx.send(crate::app::control(&words, flags));

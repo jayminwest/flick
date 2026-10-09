@@ -340,6 +340,21 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
 - Threads: one accept thread, one thread per connection, plus a writer thread per event
   subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
+- Network transport (`src/control/net.rs`): the same protocol over TCP, off until the remote
+  module calls `control::net::HOOKS.apply`. `apply` returns at once and starts or stops on a
+  background thread (the latest overlapping apply wins); `status` reads cached state and
+  never blocks, so both are safe on the main thread. Both transports share `server::connection`
+  through the `server::Stream` trait; `server::Limits` holds what differs (line cap, idle
+  timeout, whether `["events"]` is allowed). It binds one listener per address `tailscale ip`
+  reports that `core::control::is_tailnet` accepts, never a wildcard; loopback is admitted
+  only by the test constructor `Net::loopback`. Before reading a request it requires a
+  Tailscale peer address and a `tailscale whois` name in `peers`; any failure closes the
+  connection and is kept as `NetStatus::last`. Each request is `split_flags`, then forced
+  `remote = true`, then checked by `net_policy`. Limits: 64 KiB lines, 30 s idle, 10 s writes,
+  16 open connections. Stop: a flag, a self-connect to wake each `accept`, then shutdown of
+  every open network connection. `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
+  (Homebrew or the app binary) under a 2 s budget, whois cached per address (60 s, errors
+  5 s). Tests use fakes and never run the CLI.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) sends `--json` as the last request word and
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With
