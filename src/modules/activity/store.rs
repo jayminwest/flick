@@ -7,12 +7,15 @@ use crate::core::track::{Span, Subject};
 use crate::core::store::Store;
 
 /// Step 1 holds the `task` column for the tasks plan (flick-86be), so that plan needs no
-/// migration on this table. Append only.
-pub const MIGRATIONS: &[&str] = &["CREATE TABLE activity_spans (
+/// migration on this table. Step 2 adds the front tab `url` (`urls = true`). Append only.
+pub const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE activity_spans (
         id INTEGER PRIMARY KEY, start INTEGER NOT NULL, end INTEGER NOT NULL,
         app TEXT NOT NULL, name TEXT NOT NULL, title TEXT, task INTEGER);
     CREATE INDEX activity_spans_start ON activity_spans (start);
-    CREATE TABLE activity_state (key TEXT PRIMARY KEY, value TEXT);"];
+    CREATE TABLE activity_state (key TEXT PRIMARY KEY, value TEXT);",
+    "ALTER TABLE activity_spans ADD COLUMN url TEXT;",
+];
 
 /// `activity_state` key of the recording flag ("1" on; anything else or missing is off).
 const RECORDING: &str = "recording";
@@ -60,9 +63,9 @@ impl Spans for Store {
     fn span_open(&self, s: &Subject, at: i64) -> Option<i64> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO activity_spans (start, end, app, name, title, task)
-             VALUES (?1, ?1, ?2, ?3, ?4, ?5)",
-            params![at, s.app, s.name, s.title, s.task],
+            "INSERT INTO activity_spans (start, end, app, name, title, task, url)
+             VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?6)",
+            params![at, s.app, s.name, s.title, s.task, s.url],
         )
         .ok()?;
         Some(conn.last_insert_rowid())
@@ -80,7 +83,7 @@ impl Spans for Store {
 
     fn spans(&self, from: i64, to: i64) -> Vec<Span<Subject>> {
         let Ok(mut stmt) = self.conn().prepare(
-            "SELECT start, end, app, name, title, task FROM activity_spans
+            "SELECT start, end, app, name, title, task, url FROM activity_spans
              WHERE end > ?1 AND start < ?2 ORDER BY start, id",
         ) else {
             return vec![];
@@ -94,6 +97,7 @@ impl Spans for Store {
                     name: r.get(3)?,
                     title: r.get(4)?,
                     task: r.get(5)?,
+                    url: r.get(6)?,
                 },
             })
         })
@@ -193,7 +197,7 @@ mod tests {
     #[test]
     fn spans_round_trip_and_overlap() {
         let s = store();
-        let a = Subject::new("com.a", "A", Some("doc"), Some(7));
+        let a = Subject::new("com.a", "A", Some("doc"), Some(7)).with_url(Some("https://a.dev/"));
         let id = s.span_open(&a, 100).unwrap();
         s.span_end(id, 160);
         let b = s.span_open(&Subject::new("com.b", "B", None, None), 200).unwrap();
@@ -201,11 +205,21 @@ mod tests {
         let rows = s.spans(150, 210);
         assert_eq!(rows.iter().map(|r| (r.start, r.end)).collect::<Vec<_>>(), [(100, 160), (200, 260)]);
         assert_eq!(rows[0].subject, a);
+        assert_eq!((rows[0].subject.url.as_deref(), rows[1].subject.url.as_deref()), (Some("https://a.dev/"), None));
         assert!(s.spans(260, 300).is_empty() && s.spans(0, 100).is_empty());
         s.span_end(id, 50); // never before its start
         assert_eq!(s.spans(0, 1000)[0].end, 100);
         s.span_delete(id);
         assert_eq!(s.spans(0, 1000).len(), 1);
+    }
+
+    #[test]
+    fn step_two_adds_a_null_url_to_old_rows() {
+        let s = Store::in_memory();
+        s.migrate("activity", &MIGRATIONS[..1]).unwrap();
+        s.conn().execute("INSERT INTO activity_spans (start, end, app, name) VALUES (1, 5, 'a', 'A')", []).unwrap();
+        s.migrate("activity", MIGRATIONS).unwrap();
+        assert_eq!(s.spans(0, 9)[0].subject, Subject::new("a", "A", None, None));
     }
 
     #[test]

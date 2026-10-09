@@ -16,7 +16,11 @@ use platform::app as macos;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match cli::parse(&args, std::env::var_os("FLICK_REMOTE").as_deref()) {
+    match cli::parse(
+        &args,
+        std::env::var_os("FLICK_REMOTE").as_deref(),
+        std::env::var_os("FLICK_HOST").as_deref(),
+    ) {
         cli::Command::Launch => launch(),
         command => match cli::run(command) {
             0 => {}

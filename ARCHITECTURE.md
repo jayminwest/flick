@@ -152,8 +152,11 @@ Sources:
   The timer compares the pasteboard change count, and every 10th tick (5 s) checks idle time
   against 60 s. Nothing else polls.
 - `platform::axwatch::follow(pid, on_change)` installs one AX observer on an app; the
-  `activity` module follows the front app only while recording with `titles = true` and posts
-  `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
+  `activity` module follows the front app only while recording with `titles` or `urls` on and
+  posts `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
+- `platform::browser::front_tab_url(bundle)` runs `osascript` and blocks on the browser (and
+  on its Automation prompt), so `activity` calls it only from its one URL worker thread,
+  which leaves the answer in the module's inbox and posts `ModuleChanged`.
 - `platform::status_item::show(symbol, tooltip, menu)` puts one `NSStatusItem` in the menu
   bar (the `activity` recording dot); `hide` removes it. A menu entry is a plain `fn()` that
   runs inside `AppKit`'s event handling, so it only posts an event (the module reads a flag
@@ -169,9 +172,9 @@ Sources:
   `request_permission` return `Err` without a `.app` bundle id (`cargo run`, tests), because
   `UNUserNotificationCenter` raises there.
 - `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
-  `activity` (the status item's Stop Recording), `herdr` (its I/O threads and notification
-  clicks), `capture` (its shutter thread, and the annotation editor's `on_done` when it
-  closes).
+  `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
+  threads and notification clicks), `capture` (its shutter thread, and the annotation
+  editor's `on_done` when it closes).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -362,6 +365,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   events` ignores it). Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
   `flick snapshot` and `flick import-raycast` do not use the socket.
+- `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
+  when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
+  (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
+  to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
+  5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
+  runs in this process (launcher, help, snapshot, import-raycast) is a usage error;
+  `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 
 ## Build stamp, install and rebuild
 

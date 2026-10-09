@@ -13,6 +13,8 @@ thread_local! {
     static TRUSTED: Cell<bool> = const { Cell::new(true) };
     /// System calls made through `Env`, in order.
     static SYS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// URL reads asked for and not answered yet (`tests::urls`).
+    static ASKS: RefCell<Vec<super::urls::Ask>> = const { RefCell::new(Vec::new()) };
 }
 
 fn sys(call: String) {
@@ -40,6 +42,8 @@ fn identity(pid: i32) -> Option<(Option<String>, String)> {
         2 => (Some("com.apple.mail"), "Mail"),
         3 => (Some("com.1password.1password"), "1Password"),
         5 => (None, "NoBundle"),
+        6 => (Some("com.brave.Browser"), "Brave Browser"),
+        7 => (Some("com.google.Chrome"), "Google Chrome"),
         _ => return None,
     };
     Some((id.map(String::from), name.into()))
@@ -60,6 +64,10 @@ fn activity(table: &str) -> Activity {
             follow: |pid| sys(format!("follow {pid}")),
             unfollow: || sys("unfollow".into()),
             trusted: || TRUSTED.with(Cell::get),
+            ask_url: |ask| {
+                sys(format!("ask_url {} {}", ask.pid, ask.bundle));
+                ASKS.with(|a| a.borrow_mut().push(ask));
+            },
             indicator: |on| sys(format!("indicator {on}")),
             on_quit: |_| sys("on_quit".into()),
         },
@@ -76,6 +84,7 @@ fn with_cx(f: impl FnOnce(&mut Cx)) {
     title(None);
     TRUSTED.with(|t| t.set(true));
     calls();
+    ASKS.with(RefCell::take);
     test_cx("", |cx| {
         cx.store.migrate("activity", MIGRATIONS).unwrap();
         f(cx);
@@ -96,6 +105,7 @@ const T: i64 = 1_000_000;
 
 mod remote;
 mod tasks;
+mod urls;
 
 #[test]
 fn nothing_is_recorded_until_recording_is_on() {
@@ -104,7 +114,7 @@ fn nothing_is_recorded_until_recording_is_on() {
         assert!(!a.on_event(Event::Started, cx));
         assert!(!a.on_event(Event::AppActivated { pid: 2 }, cx));
         assert!(rows(cx).is_empty());
-        assert_eq!(run(&mut a, cx, "status").unwrap(), "recording: off\ntitles: off\nopen span: none");
+        assert_eq!(run(&mut a, cx, "status").unwrap(), "recording: off\ntitles: off\nurls: off\nopen span: none");
     });
 }
 
