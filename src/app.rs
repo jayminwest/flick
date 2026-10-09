@@ -182,7 +182,7 @@ pub fn command(key: Key) -> bool {
 }
 
 /// A platform event: every module handles it, and a visible view they report stale
-/// refreshes. One that arrives while the controller is busy (a notification posted inside a
+/// refreshes. `DisplaysChanged` re-places a visible panel. One that arrives while the controller is busy (a notification posted inside a
 /// call) is posted back to the main queue instead of re-entering.
 pub fn on_event(event: Event) {
     let busy = STATE.with(|s| {
@@ -192,6 +192,10 @@ pub fn on_event(event: Event) {
             control::publish(event);
             if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
                 s.refresh();
+            }
+            // A screen the open panel was on may have moved or gone.
+            if event == Event::DisplaysChanged && ui::is_visible() {
+                ui::place();
             }
         }
         false
@@ -218,12 +222,13 @@ impl State {
     /// `Err` is a load, configure, or binding error.
     fn reload(&mut self) -> Result<String, String> {
         let config = config::load()?;
-        modules::reload(&mut self.registry, &config)
+        let started = modules::reload(&mut self.registry, &config)
             .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
         self.env.config = config;
         if let Err(e) = self.registry.migrate(&self.env.store) {
             eprintln!("flick: store migration failed: {e}");
         }
+        self.registry.dispatch_to(&started, Event::Started, &mut self.env.cx(""));
         let bound = self.bind();
         self.enter(None);
         bound.map(|()| "Config reloaded".into())

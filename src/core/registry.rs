@@ -67,8 +67,17 @@ impl Registry {
     /// Send `event` to every module in order. Returns the ids of modules whose views went
     /// stale. A module that panics is logged and skipped, so the others still get the event.
     pub fn dispatch(&mut self, event: Event, cx: &mut Cx) -> Vec<&'static str> {
+        self.send(event, cx, |_| true)
+    }
+
+    /// `dispatch` to modules `ids` only, e.g. `Started` to the modules a reload enabled.
+    pub fn dispatch_to(&mut self, ids: &[&str], event: Event, cx: &mut Cx) -> Vec<&'static str> {
+        self.send(event, cx, |id| ids.contains(&id))
+    }
+
+    fn send(&mut self, event: Event, cx: &mut Cx, to: impl Fn(&str) -> bool) -> Vec<&'static str> {
         let mut stale = vec![];
-        for m in &mut self.modules {
+        for m in self.modules.iter_mut().filter(|m| to(m.id())) {
             match panic::catch_unwind(AssertUnwindSafe(|| m.on_event(event, cx))) {
                 Ok(true) => stale.push(m.id()),
                 Ok(false) => {}
@@ -276,6 +285,8 @@ mod tests {
             let mut r = registry();
             assert!(r.dispatch(Event::Started, cx).is_empty());
             assert_eq!(r.dispatch(Event::PasteboardChanged, cx), ["a", "b"]);
+            assert_eq!(r.dispatch_to(&["b", "nobody"], Event::PasteboardChanged, cx), ["b"]);
+            assert!(r.dispatch_to(&[], Event::PasteboardChanged, cx).is_empty());
         });
         assert_eq!(toy.events, 1);
     }

@@ -258,6 +258,15 @@ pub fn is_visible() -> bool {
 
 /// Show on the screen under the mouse, upper-middle like Spotlight.
 pub fn show() {
+    place();
+    with_ui(|ui| {
+        ui.panel.makeKeyAndOrderFront(None);
+        ui.panel.makeFirstResponder(Some(&ui.field));
+    });
+}
+
+/// Move the panel to the upper middle of the screen under the mouse (else the main screen).
+pub fn place() {
     let mtm = super::mtm();
     with_ui(|ui| {
         let mouse = NSEvent::mouseLocation();
@@ -270,14 +279,17 @@ pub fn show() {
                 && mouse.y < f.origin.y + f.size.height
         });
         if let Some(screen) = screen.or_else(|| NSScreen::mainScreen(mtm)) {
-            let v = screen.visibleFrame();
-            let x = v.origin.x + (v.size.width - W) / 2.0;
-            let top = v.origin.y + v.size.height * 0.8;
-            ui.panel.setFrameOrigin(NSPoint::new(x, (top - H).max(v.origin.y)));
+            ui.panel.setFrameOrigin(origin(screen.visibleFrame()));
         }
-        ui.panel.makeKeyAndOrderFront(None);
-        ui.panel.makeFirstResponder(Some(&ui.field));
     });
+}
+
+/// The panel's origin in screen area `v`: centered, its top at 80% of the height, and its
+/// bottom no lower than the area's.
+fn origin(v: NSRect) -> NSPoint {
+    let x = v.origin.x + (v.size.width - W) / 2.0;
+    let top = v.origin.y + v.size.height * 0.8;
+    NSPoint::new(x, (top - H).max(v.origin.y))
 }
 
 pub fn hide() {
@@ -293,4 +305,19 @@ pub fn set_query(text: &str, placeholder: &str) {
         ui.field.setStringValue(&ns(text));
         ui.field.setPlaceholderString(Some(&ns(placeholder)));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_panel_sits_upper_middle_and_stays_on_screen() {
+        let area = |x, y, w, h| NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let p = origin(area(-1920.0, 100.0, 1920.0, 1000.0));
+        assert!(near(p.x, -1920.0 + (1920.0 - W) / 2.0) && near(p.y, 900.0 - H), "{p:?}");
+        // Too short for the 80% line: the bottom edge holds.
+        assert!(near(origin(area(0.0, 25.0, 800.0, 500.0)).y, 25.0));
+    }
 }

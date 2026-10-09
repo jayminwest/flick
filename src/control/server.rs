@@ -1,11 +1,15 @@
 //! The socket server, plain std: a thread blocks in `accept`, and each connection gets a
-//! thread that reads request lines and writes reply lines, or streams events. Nothing polls.
+//! thread that reads request lines and writes reply lines. An event subscriber gets a second
+//! thread that writes the events while the first blocks in `read` to see the hang-up at once.
+//! Nothing polls.
 
 use std::fs::{self, Permissions};
 use std::io::{self, BufRead, BufReader, Write};
+use std::net::Shutdown;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Mutex, PoisonError};
 use std::thread;
@@ -18,14 +22,15 @@ pub type Handler = fn(Vec<String>) -> Reply;
 /// Event lines a subscriber may fall behind by before it is disconnected.
 const BACKLOG: usize = 256;
 
-/// Event subscribers: one channel per streaming connection.
+/// Event subscribers: one channel per streaming connection, keyed by a subscription id.
 pub struct Hub {
-    subscribers: Mutex<Vec<SyncSender<String>>>,
+    subscribers: Mutex<Vec<(u64, SyncSender<String>)>>,
+    next: AtomicU64,
 }
 
 impl Hub {
     pub const fn new() -> Hub {
-        Hub { subscribers: Mutex::new(Vec::new()) }
+        Hub { subscribers: Mutex::new(Vec::new()), next: AtomicU64::new(0) }
     }
 
     /// Send `line()` to every subscriber; `line` runs only when there is one. Drops a
@@ -36,13 +41,20 @@ impl Hub {
             return;
         }
         let line = line();
-        subscribers.retain(|tx| tx.try_send(line.clone()).is_ok());
+        subscribers.retain(|(_, tx)| tx.try_send(line.clone()).is_ok());
     }
 
-    fn subscribe(&self) -> Receiver<String> {
+    /// A new subscription: its id, for `unsubscribe`, and its event lines.
+    fn subscribe(&self) -> (u64, Receiver<String>) {
         let (tx, rx) = sync_channel(BACKLOG);
-        self.subscribers.lock().unwrap_or_else(PoisonError::into_inner).push(tx);
-        rx
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        self.subscribers.lock().unwrap_or_else(PoisonError::into_inner).push((id, tx));
+        (id, rx)
+    }
+
+    /// End subscription `id`, if the hub still has it; its receiver then runs dry.
+    fn unsubscribe(&self, id: u64) {
+        self.subscribers.lock().unwrap_or_else(PoisonError::into_inner).retain(|(i, _)| *i != id);
     }
 
     #[cfg(test)]
@@ -97,33 +109,55 @@ pub fn spawn(listener: UnixListener, handler: Handler, hub: &'static Hub) -> io:
 /// `["events"]` request, event lines until it hangs up.
 fn connection(stream: UnixStream, handler: Handler, hub: &Hub) -> io::Result<()> {
     let mut out = stream.try_clone()?;
-    for line in BufReader::new(stream).lines() {
-        let line = line?;
+    let mut input = BufReader::new(stream);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if input.read_line(&mut line)? == 0 {
+            return Ok(());
+        }
         if line.trim().is_empty() {
             continue;
         }
         let reply = match parse_request(&line) {
-            Ok(words) if words == [EVENTS] => return stream_events(&mut out, hub),
+            Ok(words) if words == [EVENTS] => return stream_events(out, input, hub),
             Ok(words) => handler(words),
             Err(e) => Reply::Error(e),
         };
         writeln!(out, "{}", reply.to_line())?;
     }
-    Ok(())
 }
 
-/// Write each published event line to `out`. Ends when the client hangs up (noticed at the
-/// next write) or the hub drops this subscriber.
-fn stream_events(out: &mut UnixStream, hub: &Hub) -> io::Result<()> {
-    for line in hub.subscribe() {
-        writeln!(out, "{line}")?;
-    }
-    Ok(())
+/// Write each published event line to `out` on a writer thread, while this thread blocks
+/// reading `input` until the client hangs up (or closes its write side). Either end stops
+/// the other: a hang-up ends the subscription, so the writer runs dry; a failed write or a
+/// hub drop (backlog) shuts the socket down, so the read returns.
+fn stream_events(
+    mut out: UnixStream,
+    mut input: BufReader<UnixStream>,
+    hub: &Hub,
+) -> io::Result<()> {
+    let (id, rx) = hub.subscribe();
+    let writer = thread::Builder::new().name("flick-events".into()).spawn(move || {
+        for line in rx {
+            if writeln!(out, "{line}").is_err() {
+                break;
+            }
+        }
+        let _ = out.shutdown(Shutdown::Both);
+    });
+    let writer = writer.inspect_err(|_| hub.unsubscribe(id))?;
+    // A subscriber sends nothing more; anything it does send is ignored.
+    let read = io::copy(&mut input, &mut io::sink());
+    hub.unsubscribe(id);
+    let _ = writer.join();
+    read.map(|_| ())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
     use std::os::unix::fs::FileTypeExt;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -224,11 +258,9 @@ mod tests {
             assert_eq!(line, "{\"event\":\"wake\"}\n");
         }
         drop(a);
-        // The hang-up shows at the next write; the one after finds the channel closed.
-        wait_for("the hung-up subscriber to go", || {
-            HUB.publish(|| r#"{"event":"active"}"#.into());
-            HUB.len() == 1
-        });
+        // The hang-up shows at once, without another event to write.
+        wait_for("the hung-up subscriber to go", || HUB.len() == 1);
+        HUB.publish(|| r#"{"event":"active"}"#.into());
         let mut line = String::new();
         b.read_line(&mut line).unwrap();
         assert_eq!(line, "{\"event\":\"active\"}\n");
@@ -237,11 +269,42 @@ mod tests {
     #[test]
     fn a_subscriber_that_falls_behind_is_dropped() {
         let hub = Hub::new();
-        let rx = hub.subscribe();
+        let (id, rx) = hub.subscribe();
+        let (_, kept) = hub.subscribe();
         for _ in 0..=BACKLOG {
             hub.publish(|| "x".into());
         }
         assert_eq!(hub.len(), 0);
         assert_eq!(rx.iter().count(), BACKLOG);
+        hub.unsubscribe(id);
+        drop(kept);
+    }
+
+    #[test]
+    fn unsubscribing_ends_only_that_subscription() {
+        let hub = Hub::new();
+        let (a, a_rx) = hub.subscribe();
+        let (_, b_rx) = hub.subscribe();
+        hub.unsubscribe(a);
+        hub.unsubscribe(a);
+        hub.publish(|| "x".into());
+        assert_eq!(a_rx.iter().count(), 0);
+        assert_eq!(b_rx.try_recv().unwrap(), "x");
+        assert_eq!(hub.len(), 1);
+    }
+
+    #[test]
+    fn a_subscriber_that_closes_its_side_is_dropped_at_once() {
+        static HUB: Hub = Hub::new();
+        let path = socket_path("halfclose");
+        start(&path, &HUB);
+        let mut a = connect(&path);
+        writeln!(a.get_mut(), "[\"events\"]").unwrap();
+        wait_for("a subscriber", || HUB.len() == 1);
+        a.get_mut().shutdown(Shutdown::Write).unwrap();
+        wait_for("the subscriber to go", || HUB.len() == 0);
+        // The server closes the stream as the writer ends.
+        let mut rest = String::new();
+        assert_eq!(a.read_to_string(&mut rest).unwrap(), 0);
     }
 }

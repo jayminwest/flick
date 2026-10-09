@@ -104,11 +104,14 @@ Sources:
 - `platform::events::start` registers `NSWorkspace`/`NSNotificationCenter` observers
   (activation, wake, screen parameters) and one 0.5 s timer. The timer compares the pasteboard
   change count, and every 10th tick (5 s) checks idle time against 60 s. Nothing else polls.
-- `app::init` dispatches `Started` to modules. It is not published to the socket.
+- `app::init` dispatches `Started` to modules, and a config reload to the modules it
+  enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
-`control::publish` → refresh of a visible stale view.
+`control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller
+also re-places a visible panel (`ui::place`). The `app` module rescans installed apps on
+`LauncherOpened` and `Wake`.
 
 Main-thread rules:
 
@@ -158,8 +161,8 @@ writes a commented default.
 - Startup: a bad file or a bad module table means the whole default config, with a log line.
 - Reload (`Reload Flick Config`, `flick reload`): `modules::reload` builds a fresh registry to
   validate the file. On error nothing changes. Modules still enabled keep their instance and
-  get `configure` again. Newly enabled modules start fresh and do not get `Started`.
-  Migrations run again, then hotkeys rebind.
+  get `configure` again. Newly enabled modules start fresh. Migrations run again, the fresh
+  modules get `Started`, then hotkeys rebind.
 
 ## Control socket and CLI
 
@@ -173,9 +176,11 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
 - `["reload"]` is handled by the controller. Every other request goes to
   `Registry::command`, which matches the first word against module ids.
 - `["events"]` turns the connection into an event stream, one JSON object per line. A
-  subscriber that falls 256 lines behind, or hangs up, is dropped. Publishing costs nothing
-  when there are no subscribers.
-- Threads: one accept thread, one thread per connection. A request runs on the main thread
+  subscriber that falls 256 lines behind is dropped and its socket shut down. One that hangs
+  up (or closes its write side) is dropped at once, not at the next event. Publishing costs
+  nothing when there are no subscribers.
+- Threads: one accept thread, one thread per connection, plus a writer thread per event
+  subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) prints the raw reply line. Exit 0 for `ok`, 1 for
