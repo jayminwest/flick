@@ -1,0 +1,298 @@
+//! Module `task`: a minimal task list (title, project, status) and a timer for the one
+//! running task, on this machine only. Event driven: no timer, no polling. The timer is a
+//! `core::track::Clock` whose subject is the running task: idle ends the task's time row
+//! when input stopped, input reopens it; sleep and screen lock pause it, wake and unlock
+//! resume it. The open row's `end` advances on every event, so a crash loses at most the
+//! time since the last event; quit ends it. The running task survives reload and restart
+//! (`task_state`); the time Flick was down is not counted.
+//! Every change of the running task posts `Event::TaskChanged`, also at `Started`, so other
+//! modules (activity) learn it without reading this module's tables.
+//! Verbs only for now (`flick task ...`); no items, views or config keys.
+
+mod cli;
+mod store;
+#[cfg(test)]
+mod tests;
+mod wire;
+
+use serde::Serialize;
+
+use crate::core::track::{Clock, Input, Op};
+use crate::core::{Cx, Event, Module};
+use crate::store::Store;
+use cli::{Listing, Range, Report, Verb};
+use store::{MIGRATIONS, Status, Task, TaskStore};
+use wire::Env;
+
+#[derive(Default)]
+pub struct Tasks {
+    env: Env,
+    /// Runs while a task runs; its subject is the task id.
+    clock: Clock<i64>,
+    /// Row id of the open `task_time` row.
+    open: Option<i64>,
+    /// The running task's id.
+    running: Option<i64>,
+    away: Away,
+}
+
+/// Why the machine is not in use; the running task's time pauses while either holds.
+#[derive(Clone, Copy, Debug, Default)]
+struct Away {
+    /// The screen is locked: paused until `Unlocked`.
+    locked: bool,
+    /// The machine sleeps: paused until `Wake`.
+    asleep: bool,
+}
+
+impl Away {
+    fn any(self) -> bool {
+        self.locked || self.asleep
+    }
+}
+
+/// What a verb that changes tasks did: its status line and the task it is about.
+type Changed = Result<(String, Option<i64>), String>;
+
+/// The JSON answer of a verb that changes tasks.
+#[derive(Serialize)]
+struct Answer<'a> {
+    message: &'a str,
+    task: Option<Task>,
+    running: Option<i64>,
+}
+
+impl Tasks {
+    /// Persist the clock's ops.
+    fn apply(&mut self, input: Input<i64>, store: &Store, now: i64) {
+        for op in self.clock.observe(input, now) {
+            match op {
+                Op::Open { subject, at } => {
+                    // A flicker's replacement starts in the past: its end is now.
+                    self.open = store.time_open(subject, at);
+                    store.set_open_row(self.open);
+                    self.touch(store, now);
+                }
+                Op::Close { at } => {
+                    if let Some(id) = self.open.take() {
+                        store.time_end(id, at);
+                        store.set_open_row(None);
+                    }
+                }
+                Op::Extend { at } => self.touch(store, at),
+                Op::Discard => {
+                    if let Some(id) = self.open.take() {
+                        store.time_delete(id);
+                        store.set_open_row(None);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Advance the open row to `now`.
+    fn touch(&self, store: &Store, now: i64) {
+        if let Some(id) = self.open {
+            store.time_end(id, now);
+        }
+    }
+
+    /// Take over the stored state after a start or restart: a row left open ends at its last
+    /// event (the time down is not counted), and the running task opens a new one.
+    fn start_up(&mut self, store: &Store, now: i64) {
+        self.clock = Clock::default();
+        self.open = None;
+        self.away = Away::default();
+        if let Some(id) = store.open_row() {
+            match store.time_row(id) {
+                Some(row) => {
+                    self.clock.restore(row.subject, row.start);
+                    self.open = Some(id);
+                    self.apply(Input::Pause, store, row.end);
+                }
+                None => store.set_open_row(None),
+            }
+        }
+        self.running = store.running().filter(|&id| store.task_get(id).is_some());
+        if let Some(task) = self.running {
+            self.apply(Input::Resume(task), store, now);
+            (self.env.on_quit)(store);
+            (self.env.post)(Event::TaskChanged { task: Some(task) });
+        }
+    }
+
+    /// Count the running task again, unless the machine is still away.
+    fn resume(&mut self, store: &Store, now: i64) {
+        if let Some(task) = self.running.filter(|_| !self.away.any()) {
+            self.apply(Input::Resume(task), store, now);
+        }
+    }
+
+    /// Run task `task`, switching from the running one; the status line.
+    fn start(&mut self, task: &Task, store: &Store, now: i64) -> String {
+        if self.running == Some(task.id) {
+            return format!("Already running: {}", cli::label(task));
+        }
+        let switched = self.running.replace(task.id).is_some();
+        store.task_set_status(task.id, Status::Doing, now);
+        store.set_running(Some(task.id));
+        // Stopped: count again now. Away: the clock waits for wake or unlock.
+        let input = if self.clock.is_paused() && !self.away.any() {
+            Input::Resume(task.id)
+        } else {
+            Input::Focus(task.id)
+        };
+        self.apply(input, store, now);
+        (self.env.on_quit)(store);
+        (self.env.post)(Event::TaskChanged { task: Some(task.id) });
+        format!("{} {}", if switched { "Switched to" } else { "Started" }, cli::label(task))
+    }
+
+    /// Stop the running task; its id.
+    fn stop(&mut self, store: &Store, now: i64) -> Option<i64> {
+        let task = self.running.take()?;
+        self.apply(Input::Pause, store, now);
+        store.set_running(None);
+        (self.env.post)(Event::TaskChanged { task: None });
+        Some(task)
+    }
+
+    /// `start <target>`: a target that matches nothing becomes a new task.
+    fn start_target(&mut self, target: &str, project: Option<&str>, store: &Store, now: i64) -> Changed {
+        let id = match cli::resolve(target, &store.task_list(true), project)? {
+            Some(id) => id,
+            None => store.task_add(target, project, now)?,
+        };
+        let task = store.task_get(id).ok_or("task: the task is gone")?;
+        Ok((self.start(&task, store, now), Some(id)))
+    }
+
+    fn done(&mut self, target: &str, store: &Store, now: i64) -> Changed {
+        let id = cli::resolve(target, &store.task_list(true), None)?
+            .ok_or_else(|| format!("task: no task matches \"{target}\""))?;
+        if self.running == Some(id) {
+            self.stop(store, now);
+        }
+        store.task_set_status(id, Status::Done, now);
+        Ok(("Done".into(), Some(id)))
+    }
+
+    /// Answer a verb that changed task `id`: the status line (with the task's label after
+    /// "Added" and "Done"), or with `json` the JSON document.
+    fn answer(&self, changed: Changed, json: bool, store: &Store) -> Result<String, String> {
+        let (message, id) = changed?;
+        let task = id.and_then(|id| store.task_get(id));
+        if json {
+            return self::json(&Answer { message: &message, task, running: self.running });
+        }
+        Ok(match task {
+            Some(t) if ["Added", "Done"].contains(&message.as_str()) => {
+                format!("{message} {}: {}", t.id, cli::label(&t))
+            }
+            _ => message,
+        })
+    }
+
+    fn ls(&self, all: bool, project: Option<&str>, store: &Store, now: i64) -> Listing {
+        let offset = (self.env.utc_offset)(now);
+        let today = cli::parse_range("today", now, offset).map(|days| Range::new("today", days, offset));
+        let spans = today.map(|r| cli::clip(store.times(r.from, r.to), r.from, r.to)).unwrap_or_default();
+        let tasks: Vec<Task> = store
+            .task_list(all)
+            .into_iter()
+            .filter(|t| project.is_none_or(|p| t.project.as_deref() == Some(p)))
+            .collect();
+        let running = self.running.and_then(|id| store.task_get(id));
+        let since = self.clock.open().map(|(_, start)| start);
+        Listing::new(&tasks, &spans, running.as_ref().map(|t| (t, since)))
+    }
+
+    fn report(&self, range: &str, project: Option<&str>, store: &Store, now: i64) -> Result<Report, String> {
+        let offset = (self.env.utc_offset)(now);
+        let days = cli::parse_range(range, now, offset).ok_or_else(|| {
+            format!("task: bad range \"{range}\" (today, week, YYYY-MM-DD or YYYY-MM-DD..YYYY-MM-DD)")
+        })?;
+        let range = Range::new(range, days, offset);
+        let spans = cli::clip(store.times(range.from, range.to), range.from, range.to);
+        Ok(Report::new(range, &spans, &store.task_list(true), project))
+    }
+}
+
+fn json(value: &impl Serialize) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|e| format!("task: {e}"))
+}
+
+impl Module for Tasks {
+    fn id(&self) -> &'static str {
+        "task"
+    }
+
+    fn migrations(&self) -> &'static [&'static str] {
+        MIGRATIONS
+    }
+
+    fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
+        let (store, now) = (cx.store, (self.env.now)());
+        match event {
+            Event::Started => self.start_up(store, now),
+            Event::Sleep | Event::Locked => {
+                self.away.asleep |= event == Event::Sleep;
+                self.away.locked |= event == Event::Locked;
+                self.apply(Input::Pause, store, now);
+            }
+            Event::Wake => {
+                self.away.asleep = false;
+                self.resume(store, now);
+            }
+            Event::Unlocked if self.away.locked => {
+                self.away.locked = false;
+                self.resume(store, now);
+            }
+            Event::Idle { secs } => self.apply(Input::Idle { secs }, store, now),
+            Event::Active => self.apply(Input::Active, store, now),
+            _ => self.touch(store, now),
+        }
+        false
+    }
+
+    fn verbs(&self) -> &'static str {
+        "task start|switch <id|title> [--project P] | task stop | task ls [--all] [--project P] | task add <title> [--project P] | task done <id|title> | task report [today|week|<date>[..<date>]] [--project P]"
+    }
+
+    /// `--json` (`cx.json`) makes every verb answer with JSON.
+    fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
+        let verb = cli::parse(args)?;
+        let (store, now) = (cx.store, (self.env.now)());
+        self.touch(store, now);
+        match verb {
+            Verb::Ls { all, project } => {
+                let listing = self.ls(all, project.as_deref(), store, now);
+                if cx.json { json(&listing) } else { Ok(listing.text()) }
+            }
+            Verb::Report { range, project } => {
+                let report = self.report(&range, project.as_deref(), store, now)?;
+                if cx.json { json(&report) } else { Ok(report.text()) }
+            }
+            Verb::Start { target, project } => {
+                let changed = self.start_target(&target, project.as_deref(), store, now);
+                self.answer(changed, cx.json, store)
+            }
+            Verb::Stop => {
+                let task = self.stop(store, now).and_then(|id| store.task_get(id));
+                let changed = match task {
+                    Some(t) => (format!("Stopped {}", cli::label(&t)), Some(t.id)),
+                    None => ("No task running".into(), None),
+                };
+                self.answer(Ok(changed), cx.json, store)
+            }
+            Verb::Add { title, project } => {
+                let id = store.task_add(&title, project.as_deref(), now)?;
+                self.answer(Ok(("Added".into(), Some(id))), cx.json, store)
+            }
+            Verb::Done { target } => {
+                let changed = self.done(&target, store, now);
+                self.answer(changed, cx.json, store)
+            }
+        }
+    }
+}
