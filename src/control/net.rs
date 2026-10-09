@@ -29,10 +29,6 @@ use crate::core::control::{
 };
 
 /// How the remote module drives this process's network transport.
-#[expect(
-    dead_code,
-    reason = "first caller: modules/mod.rs registers the remote module, flick-3537"
-)]
 pub const HOOKS: NetHooks = NetHooks { apply, status };
 
 /// The longest request line a network caller may send, newline included.
@@ -65,7 +61,7 @@ fn net_on_main(words: Vec<String>) -> Reply {
 
 /// Run a network request through `run`: always as a remote caller, and only if
 /// `net_policy` allows it.
-fn gate(words: Vec<String>, run: fn(Vec<String>, Flags) -> Reply) -> Reply {
+pub fn gate(words: Vec<String>, run: fn(Vec<String>, Flags) -> Reply) -> Reply {
     let (words, flags) = split_flags(words);
     let flags = Flags { remote: true, ..flags };
     match net_policy(&words) {

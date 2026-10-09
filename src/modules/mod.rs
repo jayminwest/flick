@@ -49,13 +49,12 @@ modules! {
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
         mod feedback => "feedback", feedback::Feedback::default;
+        mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
     }
 }
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
-// Not registered yet: its `modules!` line, with `control::net::HOOKS`, lands in flick-3537.
-mod remote;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;

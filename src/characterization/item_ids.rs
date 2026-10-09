@@ -200,3 +200,12 @@ fn activity_ids_are_fixed_keys() {
         ids(&items).into_iter().filter(|id| id.starts_with("activity:")).collect();
     assert_eq!(activity, ["activity:record", "activity:today", "activity:remote"]);
 }
+
+#[test]
+fn remote_ids_are_fixed_keys() {
+    // While network access is off; turning it on changes the title, not the id.
+    let items = root_items(&[], &[]);
+    let remote: Vec<&str> =
+        ids(&items).into_iter().filter(|id| id.starts_with("remote:")).collect();
+    assert_eq!(remote, ["remote:network"]);
+}

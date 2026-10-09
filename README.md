@@ -156,7 +156,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `activity`, `task`, `keys`, `capture`, `flick`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `activity`, `herdr`, `task`, `keys`, `capture`, `feedback`, `flick`, `remote`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
@@ -388,6 +388,28 @@ keyword = "fb"                 # "<keyword> <text>" saves in one step
 hotkey = "cmd+ctrl+alt+shift+KeyF"  # opens a feedback field; unbound by default
 ```
 
+### Remote access
+
+The `remote` module lets other Macs in your [Tailscale](https://tailscale.com) tailnet send Flick commands: `flick --host <this Mac> task ls` on another machine answers as `flick task ls` would here. It is off by default. It needs `peers` in `[remote]` and the switch on: run `flick remote on` or **Turn On Network Access** in the launcher. **Turn Off Network Access** or `flick remote off` closes the listener and every open connection. Only a local caller can turn it on or off.
+
+```toml
+[remote]
+peers = ["mbp-server"]   # Tailscale machine names allowed to connect; [] means no listener
+port = 7419              # default 7419
+events = false           # true lets peers stream `flick --host <mac> events`
+```
+
+```bash
+flick remote status            # on/off, listening addresses, peers, last connection and error
+flick --json remote status | jq .ok.last
+```
+
+- **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything or `feedback add`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, windows, app list and open, clipboard) answers.
+- **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
+
+[docs/remote.md](docs/remote.md) has setup steps and a manual test checklist.
+
 ### Rebuild settings
 
 ```toml
@@ -433,6 +455,14 @@ flick events | jq .            # app_activated, pasteboard_changed, wake, idle, 
 
 The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. An error reply exits with status 1.
 
+To ask the Flick on another Mac in your tailnet, put `--host <name[:port]>` first (MagicDNS name or Tailscale IP; port default 7419), or set `FLICK_HOST`; `--host` wins. That Mac must have [network access](#remote-access) on with this Mac in its `peers`.
+
+```bash
+flick --host mac-studio task ls
+FLICK_HOST=mac-studio:7419 flick --json herdr ls
+flick --host mac-studio events # only with [remote] events = true there
+```
+
 ## Keys
 
 | Key | Action |
@@ -457,7 +487,7 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 | [`core/store.rs`](src/core/store.rs) | SQLite: one connection, per-module migrations, usage counts |
 | [`config.rs`](src/config.rs) | TOML config: per-module tables, legacy keys |
 | [`raycast.rs`](src/raycast.rs) | Raycast quicklink import |
-| [`control/`](src/control), [`cli/`](src/cli) | Control socket server, and the command-line client |
+| [`control/`](src/control), [`cli/`](src/cli) | Control socket server, the network transport over Tailscale, and the command-line client |
 
 [ARCHITECTURE.md](ARCHITECTURE.md) has the layer rules, the module contract, and how to add a module.
 
@@ -467,7 +497,7 @@ macOS has no public API for Spaces. Flick switches desktops by activating an app
 
 `flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the screenshots hold no personal data.
 
-Flick keeps usage, clipboard and activity data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions.
+Flick keeps usage, clipboard and activity data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions. It listens on the network only when you turn on [remote access](#remote-access), and then only on Tailscale addresses for the peers you name.
 
 ## Roadmap
 

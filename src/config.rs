@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, activity, keys, herdr, task, capture, flick.
+# builtin, clip, activity, keys, herdr, task, capture, feedback, flick, remote.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -135,6 +135,14 @@ hotkey = "alt+shift+Space"
 # file = "~/Projects/flick/feedback.jsonl"
 # keyword = "fb"
 # hotkey = "cmd+ctrl+alt+shift+KeyF"
+
+# Remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale addresses
+# only. Off until "flick remote on" or "Turn On Network Access". Peers may not reload, rebuild,
+# capture, fire keys or edit config; events = true lets them stream events. docs/remote.md
+# [remote]
+# peers = ["mbp-server"]
+# port = 7419
+# events = false
 
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
@@ -431,6 +439,14 @@ mod tests {
         assert_eq!(capture.get("halo_color").and_then(Value::as_str), Some("#ffcc00"));
         assert_eq!(capture.keys().filter(|k| k.ends_with("_hotkey")).count(), 6);
         assert!(!DEFAULT_CONFIG.contains("\n[capture]"), "the default leaves [capture] commented");
+    }
+
+    #[test]
+    fn default_config_remote_example_parses_uncommented() {
+        let example = uncommented("# [remote]");
+        let r: Table = parse(&example).unwrap().section("remote").unwrap().unwrap().get().unwrap();
+        assert_eq!(r.get("port").and_then(Value::as_integer), Some(7419));
+        assert!(!DEFAULT_CONFIG.contains("\n[remote]"), "the default leaves [remote] commented");
     }
 
     #[test]
