@@ -26,10 +26,6 @@ pub struct Cx<'a> {
     pub json: bool,
     /// The control request came from a session that may send its output to a remote model
     /// (`--remote`). False for events, hotkeys and the launcher.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the activity remote grant, flick-eed3")
-    )]
     pub remote: bool,
 }
 
