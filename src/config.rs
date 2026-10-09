@@ -10,14 +10,14 @@ use toml::{Table, Value};
 
 pub mod edit;
 
-const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Flick Config" from Flick.
+const DEFAULT_CONFIG: &str = r##"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 
 # Modifiers: cmd, alt, ctrl, shift. Keys: Space, KeyA..KeyZ, Digit0..Digit9, F1..F12, ArrowLeft, ...
 hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, activity, keys, herdr, flick.
+# builtin, clip, activity, keys, herdr, capture, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -87,6 +87,34 @@ hotkey = "alt+shift+Space"
 # preview_lines = 6
 # notify = ["blocked", "done"]
 
+# Capture: screenshots of an area, a window or a screen as PNG files in dir, copied to
+# the clipboard; "Recent Captures" lists them. Needs Screen Recording (System Settings >
+# Privacy & Security). save = false keeps only the clipboard copy (in a temp file); save
+# and copy cannot both be off. name: {date}, {time} and {kind}. history trims rows, never
+# files. colors (1 to 5, "#rrggbb" or "#rrggbbaa", keys 1-5) and width are the pens of the
+# annotation editor and Draw on Screen; fade_secs > 0 fades shapes drawn on the screen.
+# Hotkeys: area, window, screen, annotate, draw and cursor, all unbound by default.
+# [capture]
+# dir = "~/Pictures/Flick"
+# name = "Flick {date} at {time}.png"
+# copy = true
+# save = true
+# sound = true
+# cursor = false
+# shadow = true
+# history = 200
+# colors = ["#ff3b30", "#ffcc00", "#34c759", "#0a84ff", "#ffffff"]
+# width = 4.0
+# fade_secs = 0.0
+# halo_color = "#ffcc00"
+# halo_radius = 28.0
+# area_hotkey = "cmd+ctrl+alt+shift+Digit4"
+# window_hotkey = "cmd+ctrl+alt+shift+Digit5"
+# screen_hotkey = "cmd+ctrl+alt+shift+Digit3"
+# annotate_hotkey = "cmd+ctrl+alt+shift+Digit6"
+# draw_hotkey = "cmd+ctrl+alt+shift+KeyD"
+# cursor_hotkey = "cmd+ctrl+alt+shift+KeyC"
+
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
 # it for newer commits when the launcher opens. gates: run scripts/check-all.sh first.
@@ -116,7 +144,7 @@ url = "https://www.youtube.com/results?search_query={query}"
 [[quicklink.links]]
 name = "Projects"
 url = "~/Projects"
-"#;
+"##;
 
 /// The flat top-level keys Flick read before per-module tables, and the `[module] key` each
 /// now means. The only place that knows the old layout; old files keep working.
@@ -345,6 +373,18 @@ mod tests {
         assert_eq!(herdr.get("remote_refresh_secs").and_then(Value::as_integer), Some(60));
         assert_eq!(herdr.get("notify").and_then(Value::as_array).map(Vec::len), Some(2));
         assert!(!DEFAULT_CONFIG.contains("\n[herdr]"), "the default leaves [herdr] commented");
+    }
+
+    #[test]
+    fn default_config_capture_example_parses_uncommented() {
+        let example = uncommented("# [capture]");
+        let capture: Table =
+            parse(&example).unwrap().section("capture").unwrap().unwrap().get().unwrap();
+        assert_eq!(capture.get("dir").and_then(Value::as_str), Some("~/Pictures/Flick"));
+        assert_eq!(capture.get("colors").and_then(Value::as_array).map(Vec::len), Some(5));
+        assert_eq!(capture.get("halo_color").and_then(Value::as_str), Some("#ffcc00"));
+        assert_eq!(capture.keys().filter(|k| k.ends_with("_hotkey")).count(), 6);
+        assert!(!DEFAULT_CONFIG.contains("\n[capture]"), "the default leaves [capture] commented");
     }
 
     #[test]
