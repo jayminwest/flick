@@ -12,6 +12,7 @@ Start with the root [README](../README.md) for what Flick is, then pick the page
 
 Each page has the module's settings and commands, then a manual test checklist.
 
+- [`scripts.md`](scripts.md): shell commands in root search, with a `{query}` argument.
 - [`keys.md`](keys.md): Hyper key and key chords; moving from Hyperkey and Hammerspoon.
 - [`activity.md`](activity.md): opt-in time tracking per app, and its privacy rules.
 - [`tasks.md`](tasks.md): task list with one running timer.
