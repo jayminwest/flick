@@ -6,6 +6,14 @@
 //! from a session that may send its output to a remote model (`Cx::remote`). The request
 //! `["events"]` instead turns the connection into a stream of events, one JSON object per
 //! line.
+//!
+//! The same protocol also runs over TCP for peers in the user's tailnet. The pure rules for
+//! that transport live here: which addresses are Tailscale addresses (`is_tailnet`), which
+//! peers may connect (`peer_matches`), which requests a network caller may send
+//! (`net_policy`), and the contract between the remote module and the transport
+//! (`NetSettings`, `NetStatus`, `NetHooks`).
+
+use std::net::{IpAddr, SocketAddr};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -93,6 +101,132 @@ pub fn request_line(words: &[String]) -> String {
     serde_json::to_string(words).unwrap_or_default()
 }
 
+/// The TCP port the network transport listens on when `[remote] port` is not set.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: remote module, flick-dc30"))]
+pub const DEFAULT_PORT: u16 = 7419;
+
+/// Whether `ip` is a Tailscale address: IPv4 100.64.0.0/10 (CGNAT) or IPv6
+/// `fd7a:115c:a1e0::/48`. An IPv4-mapped IPv6 address is not one: the transport binds and
+/// sees only plain Tailscale addresses.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+pub fn is_tailnet(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            a == 100 && b & 0xc0 == 64
+        }
+        IpAddr::V6(v6) => v6.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0],
+    }
+}
+
+/// Whether a peer that `tailscale whois` knows by `names` (its `ComputedName`,
+/// Hostinfo.Hostname and Node.Name) is one of the allowed `peers`. Case-insensitive; a name
+/// also matches by its first DNS label, so `mbp-server.tail1.ts.net.` matches peer
+/// `mbp-server`. Empty names and peers match nothing.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
+    let candidates = names.iter().flat_map(|n| {
+        let full = n.trim_end_matches('.');
+        [full, full.split('.').next().unwrap_or(full)]
+    });
+    candidates
+        .filter(|c| !c.is_empty())
+        .any(|c| peers.iter().any(|p| p.trim_end_matches('.').eq_ignore_ascii_case(c)))
+}
+
+/// Requests a network caller may not send: `(module, verbs)`, where no verbs means every
+/// request to that module (or the bare word, for `reload`). These change config, run code,
+/// read the screen or write files. Review this table when a module gains a verb with side
+/// effects. `remote` is handled apart: only `remote status` is allowed.
+const NET_DENIED: &[(&str, &[&str])] = &[
+    ("reload", &[]),
+    ("flick", &["rebuild", "cancel"]),
+    ("keys", &["fire"]),
+    ("app", &["uninstall"]),
+    ("quicklink", &["add", "remove"]),
+    ("capture", &[]),
+    ("feedback", &["add"]),
+];
+
+/// The module whose network-access toggle a network caller may only read.
+const REMOTE_MODULE: &str = "remote";
+
+/// Whether a network caller may send `words` (a request after `split_flags`). `Err` is the
+/// refusal to send back. Everything not denied here is allowed; modules still apply their
+/// own remote guards, since every network request has `Cx::remote` set.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+pub fn net_policy(words: &[String]) -> Result<(), String> {
+    let (module, verb) = match words {
+        [] => return Ok(()),
+        [module, rest @ ..] => (module.as_str(), rest.first().map(String::as_str)),
+    };
+    let denied = if module == REMOTE_MODULE {
+        verb != Some("status")
+    } else {
+        NET_DENIED.iter().any(|(m, verbs)| {
+            *m == module && (verbs.is_empty() || verb.is_some_and(|v| verbs.contains(&v)))
+        })
+    };
+    if !denied {
+        return Ok(());
+    }
+    let what = verb.map_or_else(|| module.to_string(), |v| format!("{module} {v}"));
+    Err(format!("{what}: not allowed over the network"))
+}
+
+/// What the network transport should serve: built by the remote module from `[remote]`.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: remote module, flick-dc30"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetSettings {
+    /// Tailscale peer names allowed to connect (see `peer_matches`).
+    pub peers: Vec<String>,
+    /// The TCP port to listen on.
+    pub port: u16,
+    /// Whether network callers may subscribe to `["events"]`.
+    pub events: bool,
+}
+
+/// The last network connection the transport saw.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LastConn {
+    /// The peer's name from `tailscale whois`, `None` when whois failed.
+    pub name: Option<String>,
+    /// The peer's address.
+    pub ip: IpAddr,
+    /// When it connected, in unix seconds.
+    pub at: i64,
+    /// Whether it was let in.
+    pub allowed: bool,
+    /// Why it was refused, `None` when allowed.
+    pub reason: Option<String>,
+}
+
+/// The transport's state, for `remote status`. The default is "not listening".
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct NetStatus {
+    /// The addresses it listens on; empty when stopped.
+    pub listening: Vec<SocketAddr>,
+    /// The allowed peers it serves.
+    pub peers: Vec<String>,
+    /// The last connection, allowed or refused.
+    pub last: Option<LastConn>,
+    /// Why it is not listening (no Tailscale, bind failure), if it tried.
+    pub error: Option<String>,
+}
+
+/// How the remote module drives the transport without importing it: `modules/mod.rs`
+/// passes the control layer's hooks to the module's constructor; tests pass fakes.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller: remote module, flick-dc30"))]
+#[derive(Clone, Copy, Debug)]
+pub struct NetHooks {
+    /// Stop any running listener, then for `Some` start one with these settings.
+    pub apply: fn(Option<NetSettings>) -> Result<NetStatus, String>,
+    /// The transport's current state.
+    pub status: fn() -> NetStatus,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +297,143 @@ mod tests {
         for (input, rest, want) in cases {
             assert_eq!(split_flags(words(input)), (words(rest), want), "{input:?}");
         }
+    }
+
+    #[test]
+    fn only_tailscale_ranges_are_tailnet() {
+        let tailnet = [
+            "100.64.0.0",
+            "100.100.100.100",
+            "100.127.255.255",
+            "fd7a:115c:a1e0::1",
+            "fd7a:115c:a1e0:ab12::5",
+        ];
+        let other = [
+            "0.0.0.0",
+            "127.0.0.1",
+            "192.168.1.10",
+            "10.0.0.1",
+            "100.63.255.255",
+            "100.128.0.0",
+            "101.64.0.1",
+            "::",
+            "::1",
+            "fd7a:115c:a1e1::1",
+            "fd7a:115c::1",
+            "::ffff:100.64.0.1",
+            "fe80::1",
+        ];
+        for ip in tailnet {
+            assert!(is_tailnet(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in other {
+            assert!(!is_tailnet(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    #[test]
+    fn peers_match_any_name_case_insensitively() {
+        let peers = words(&["mbp-server", "Studio.tail1.ts.net"]);
+        let yes: [&[&str]; 5] = [
+            &["mbp-server"],
+            &["MBP-Server"],
+            &["other", "mbp-server.tail1.ts.net."],
+            &["studio.TAIL1.ts.net."],
+            &["", "x", "mbp-server"],
+        ];
+        for names in yes {
+            assert!(peer_matches(&words(names), &peers), "{names:?}");
+        }
+        // A suffixed ComputedName, another tailnet's label or a prefix do not match.
+        let no: [&[&str]; 5] = [&[], &[""], &["mbp-server-1"], &["studio"], &["mbp"]];
+        for names in no {
+            assert!(!peer_matches(&words(names), &peers), "{names:?}");
+        }
+        assert!(!peer_matches(&words(&["mbp-server"]), &[]));
+        assert!(!peer_matches(&words(&["", "."]), &words(&[""])));
+    }
+
+    #[test]
+    fn network_policy_refuses_side_effects() {
+        let refused: [&[&str]; 13] = [
+            &["reload"],
+            &["flick", "rebuild"],
+            &["flick", "cancel"],
+            &["remote"],
+            &["remote", "on"],
+            &["remote", "off"],
+            &["keys", "fire", "hyper", "down"],
+            &["app", "uninstall", "Safari"],
+            &["quicklink", "add", "X", "https://x"],
+            &["quicklink", "remove", "X"],
+            &["capture"],
+            &["capture", "screen", "--out", "/tmp/x.png"],
+            &["feedback", "add", "hi"],
+        ];
+        for req in refused {
+            let err = net_policy(&words(req)).unwrap_err();
+            assert!(err.ends_with(": not allowed over the network"), "{req:?}: {err}");
+        }
+        assert_eq!(
+            net_policy(&words(&["flick", "rebuild", "HEAD"])).unwrap_err(),
+            "flick rebuild: not allowed over the network"
+        );
+        assert_eq!(
+            net_policy(&words(&["capture"])).unwrap_err(),
+            "capture: not allowed over the network"
+        );
+        let allowed: [&[&str]; 11] = [
+            &[],
+            &["task", "ls"],
+            &["herdr", "ls"],
+            &["window", "list"],
+            &["app", "list"],
+            &["app", "open", "Safari"],
+            &["clip", "list"],
+            &["activity", "status"],
+            &["remote", "status"],
+            &["flick", "version"],
+            &["keys", "list"],
+        ];
+        for req in allowed {
+            assert_eq!(net_policy(&words(req)), Ok(()), "{req:?}");
+        }
+    }
+
+    #[test]
+    fn net_status_serializes_for_remote_status() {
+        assert_eq!(
+            serde_json::to_string(&NetStatus::default()).unwrap(),
+            r#"{"listening":[],"peers":[],"last":null,"error":null}"#
+        );
+        let last = LastConn {
+            name: Some("mbp-server".into()),
+            ip: "100.64.0.2".parse().unwrap(),
+            at: 7,
+            allowed: false,
+            reason: Some("not a peer".into()),
+        };
+        let status = NetStatus {
+            listening: vec!["100.64.0.1:7419".parse().unwrap()],
+            peers: words(&["x"]),
+            last: Some(last),
+            error: None,
+        };
+        let want = r#"{"listening":["100.64.0.1:7419"],"peers":["x"],"last":{"name":"mbp-server","ip":"100.64.0.2","at":7,"allowed":false,"reason":"not a peer"},"error":null}"#;
+        assert_eq!(serde_json::to_string(&status).unwrap(), want);
+        assert_eq!(DEFAULT_PORT, 7419);
+    }
+
+    #[test]
+    fn net_hooks_are_plain_fn_pointers() {
+        fn apply(settings: Option<NetSettings>) -> Result<NetStatus, String> {
+            let s = settings.ok_or("off")?;
+            Ok(NetStatus { peers: s.peers, ..NetStatus::default() })
+        }
+        let hooks = NetHooks { apply, status: NetStatus::default };
+        let on = NetSettings { peers: words(&["a"]), port: DEFAULT_PORT, events: false };
+        assert_eq!((hooks.apply)(Some(on.clone())).unwrap().peers, on.peers);
+        assert_eq!((hooks.apply)(None).unwrap_err(), "off");
+        assert_eq!((hooks.status)(), NetStatus::default());
     }
 }
