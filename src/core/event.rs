@@ -27,6 +27,10 @@ pub enum Event {
     /// Background work of module `module` progressed: its visible view refreshes, whatever
     /// its `on_event` returns. Posted from the module's own thread with `events::post`.
     ModuleChanged { module: &'static str },
+    /// Key chord `index` (into the `keys` module's chords) went down or up. Posted from the
+    /// key tap thread with `events::post`.
+    #[cfg_attr(not(test), expect(dead_code, reason = "posted by the key tap, flick-df71"))]
+    Chord { index: u16, down: bool },
 }
 
 /// Pids of activated apps, most recent first, at most `RECENT_MAX`.
@@ -79,6 +83,7 @@ mod tests {
                 Event::ModuleChanged { module: "flick" },
                 r#"{"event":"module_changed","module":"flick"}"#,
             ),
+            (Event::Chord { index: 0, down: true }, r#"{"event":"chord","index":0,"down":true}"#),
         ];
         for (event, json) in cases {
             assert_eq!(serde_json::to_string(&event).unwrap(), json);

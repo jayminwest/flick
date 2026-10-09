@@ -165,7 +165,9 @@ mod tests {
     fn echo(words: Vec<String>) -> Reply {
         match words.first().map(String::as_str) {
             Some("fail") => Reply::Error("failed".into()),
-            _ => Reply::Ok(words.into_iter().reduce(|a, b| a + " " + &b).unwrap_or_default()),
+            _ => {
+                Reply::Ok(words.into_iter().reduce(|a, b| a + " " + &b).unwrap_or_default().into())
+            }
         }
     }
 
