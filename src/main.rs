@@ -32,8 +32,12 @@ fn main() {
 #[expect(clippy::panic, reason = "startup invariant: no launcher without the database")]
 fn launch() {
     macos::require_main_thread();
-    if macos::already_running() {
-        eprintln!("flick: already running");
+    // The bundle check misses a copy run through a symlink (`~/.local/bin/flick`), which has
+    // no bundle; the control socket answers whatever the binary's path.
+    if macos::already_running() || control::running() {
+        eprintln!(
+            "flick: already running; open it with its hotkey, or run `flick help` for commands"
+        );
         return;
     }
     // No Dock icon or menu bar.
