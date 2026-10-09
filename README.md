@@ -3,7 +3,8 @@
 A small, fast launcher for macOS. Rust + AppKit (objc2), no web views, no runtime.
 
 - **Apps**: fuzzy search; ranking learns from use
-- **Window management**: halves, quarters, thirds, maximize, center, next display
+- **Window management**: halves, quarters, thirds, maximize, center, displays; global hotkeys
+  via `[window_keys]` in the config, and repeating a half cycles 1/2 → 2/3 → 1/3
 - **Clipboard history**: text only, last 500 clips; skips password-manager content
 - **Quicklinks**: URLs or paths, `{query}` arguments, `<keyword> <text>` from the root
 

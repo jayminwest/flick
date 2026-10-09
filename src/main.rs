@@ -40,7 +40,7 @@ fn main() {
     let db = config::data_dir().join("flick.db");
     let store = store::Store::open(&db).unwrap_or_else(|e| panic!("flick: can't open {}: {e}", db.display()));
 
-    if let Err(e) = hotkey::init().and_then(|()| hotkey::register(&config.hotkey)) {
+    if let Err(e) = hotkey::init().and_then(|()| hotkey::register(&config)) {
         eprintln!("flick: {e}");
     }
     eprintln!("flick: press {} to open", config.hotkey);
