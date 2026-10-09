@@ -276,3 +276,8 @@ fn gates_are_off_unless_configured() {
     assert!(!req.gates && !req.restart && req.open_log);
     assert!(Rebuild::default().restart, "the real module restarts Flick after install");
 }
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("flick");
+}

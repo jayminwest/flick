@@ -1,0 +1,214 @@
+# Flick: every config.toml option, with its default.
+#
+# Print this file with "flick config example". Flick reads ~/.config/flick/config.toml
+# (or $FLICK_CONFIG); run "Reload Flick Config" or "flick reload" after an edit.
+#
+# Lines that start with "#" and a letter or "[" are settings: delete the "#" to use one.
+# Lines that start with "# " are notes. Every value below is the default, except where a
+# note says "unset by default" or "example": then it is a sample value.
+#
+# Each module reads its own [<module>] table. In any table, "enabled = false" turns that
+# module off: no items, no views, no hotkeys. A test checks that this file lists every key
+# that each module reads.
+#
+# Hotkeys: modifiers cmd, alt, ctrl, shift joined with "+", then one key: Space, Enter,
+# Escape, KeyA..KeyZ, Digit0..Digit9, F1..F20, ArrowLeft, Backquote, ...
+# "cmd+ctrl+alt+shift" is Hyper (see [keys] hyper); it does not clash with app shortcuts.
+
+# The launcher hotkey.
+#hotkey = "alt+shift+Space"
+
+# --- app: installed apps in root search. No settings.
+#[app]
+#enabled = true
+
+# --- desktop: switch to the most recently used app on another desktop.
+#[desktop]
+# The toggle hotkey; unset by default. "cmd+Backquote" replaces macOS's cycle-windows key.
+#hotkey = "cmd+Backquote"
+
+# --- switcher: fuzzy-search open windows; the first result is the previous window.
+#[switcher]
+# Opens the switcher; unset by default.
+#hotkey = "cmd+Space"
+
+# --- window: window layouts. Each command is also a global hotkey: <action> = "<hotkey>".
+# Actions ("flick window list"): left-half, right-half, top-half, bottom-half,
+# top-left-quarter, top-right-quarter, bottom-left-quarter, bottom-right-quarter,
+# first-third, center-third, last-third, first-two-thirds, last-two-thirds, maximize,
+# almost-maximize, center, next-display, previous-display, minimize, hide.
+# Repeating a half cycles 1/2 -> 2/3 -> 1/3. No keys are bound by default; examples:
+#[window.keys]
+#left-half = "ctrl+alt+ArrowLeft"
+#right-half = "ctrl+alt+ArrowRight"
+#maximize = "ctrl+alt+Enter"
+
+# --- quicklink: open a URL or a path. "{query}" in url makes the link take an argument;
+# "<keyword> <text>" in root search runs it at once. Repeat the table for each link.
+# "Create Quicklink" and "flick quicklink add" write these for you. Example:
+#[[quicklink.links]]
+# Shown in search; also the link's id (renaming it loses its usage history).
+#name = "Google"
+# A URL, or a path starting with "/" or "~/".
+#url = "https://www.google.com/search?q={query}"
+# Optional: the word that runs the link from root search.
+#keyword = "g"
+# Optional: the app that opens it (a name, .app path or bundle id); default: the system's.
+#app = "Safari"
+
+# --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
+#[builtin]
+#enabled = true
+
+# --- clip: clipboard history ("Clipboard History"), the last 500 text clips. No settings.
+#[clip]
+#enabled = true
+
+# --- activity: records which app is in front as time spans in flick.db, on this Mac
+# only. Off until "Start Activity Recording" or "flick activity on"; a menu bar dot shows
+# while it records.
+#[activity]
+# Also store window titles (needs Accessibility).
+#titles = false
+# Also store the front tab URL of Brave, Chrome, Edge or Chromium, never from a private
+# window (each browser asks once for Automation permission).
+#urls = false
+# Agent sessions (--remote) see titles only with this on.
+#remote_titles = false
+# Agent sessions see URLs and domains only with this on.
+#remote_urls = false
+# Bundle ids or app names never recorded. Setting it replaces this list.
+#exclude = ["com.agilebits.onepassword7", "com.1password.1password", "com.apple.keychainaccess"]
+# Starts and stops recording; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyR"
+# Spans of one app closer than this many seconds join into one.
+#merge_secs = 2
+
+# Report rules: name a project and a category for spans when a report runs (never stored,
+# so an edit recategorizes history). app and title are case-insensitive regexes; the first
+# rule that matches wins. Repeat the table for each rule; none by default. Example:
+#[[activity.rules]]
+# Matches the bundle id or the app name.
+#app = "wezterm|zed"
+# Matches the window title (a span without a title never matches).
+#title = "flick"
+#project = "flick"
+#category = "code"
+
+# --- herdr: coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones
+# waiting on you first ("Herdr Agents"). Read-only: Flick never sends input to an agent.
+#[herdr]
+# The herdr CLI: a name on PATH (then /opt/homebrew/bin) or a path.
+#herdr = "herdr"
+# The local herdr server's socket.
+#socket = "~/.config/herdr/herdr.sock"
+# Machines to show; "local" is this Mac. [] means local plus every enabled
+# "herdr machine list" profile.
+#machines = []
+# 0: remote machines refresh only while the launcher is open. At least 15: also poll in
+# the background every this many seconds.
+#remote_refresh_secs = 0
+# The app brought to the front when you jump to an agent's pane.
+#terminal = "WezTerm"
+# Opens the agents view; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyA"
+# Output lines shown for one agent (1 to the read limit).
+#preview_lines = 6
+# Statuses that post a notification when an agent enters them: "blocked", "done"; [] for none.
+#notify = ["blocked"]
+
+# --- task: a task list and a timer for the one running task, in flick.db. "Start Task"
+# or "flick task start <title>"; a trailing #word sets the project. Idle, sleep and
+# screen lock pause the timer.
+#[task]
+# Opens the task picker; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyT"
+
+# --- keys: key triggers. Off until set: no [keys] table means no key tap and no Caps Lock
+# remap. Needs Accessibility.
+#[keys]
+# The key that acts as Hyper; "" (off) by default. "caps_lock" remaps Caps Lock (it sends
+# F18 until Flick quits). Example:
+#hyper = "caps_lock"
+# The modifiers that every key held with the hyper key gets.
+#hyper_mods = "cmd+ctrl+alt+shift"
+# The key a quick tap of the hyper key sends ("" for nothing).
+#hyper_tap = "Escape"
+# A press shorter than this (milliseconds) with no other key is a tap.
+#hyper_tap_ms = 300
+
+# Chords: on_down runs when all keys are held, on_up when one is released. An action is
+# { http = "POST http://host:port/path" } (http:// only) or { shell = "command" }; both are
+# optional. Keys: cmd, alt, ctrl, shift, fn, right_cmd, left_alt, ... plus one key such as
+# KeyA. Repeat the table for each chord; none by default. Example (push-to-talk):
+#[[keys.chord]]
+#name = "ptt"
+#keys = ["right_cmd", "right_alt"]
+#on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
+#on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+
+# --- flick: rebuild Flick from its local checkout (no git fetch or pull; cargo --offline).
+#[flick]
+# The checkout; unset by default: the one this app was built from.
+#source = "~/Projects/flick"
+# Check the checkout for newer commits when the launcher opens.
+#check_on_open = true
+# Run scripts/check-all.sh before a rebuild.
+#gates = false
+
+# --- capture: screenshots of an area, a window or a screen as PNG files, copied to the
+# clipboard; "Recent Captures" lists them. Needs Screen Recording permission.
+#[capture]
+# Where files go; created on the first save.
+#dir = "~/Pictures/Flick"
+# File name template: {date}, {time} and {kind}.
+#name = "Flick {date} at {time}.png"
+# Copy each capture to the clipboard.
+#copy = true
+# Save a file. false keeps only the clipboard copy; copy and save cannot both be false.
+#save = true
+# Play the shutter sound.
+#sound = true
+# Include the mouse pointer.
+#cursor = false
+# Keep the window shadow in window captures.
+#shadow = true
+# Rows kept in Recent Captures (at least 1). Trimming never deletes files.
+#history = 200
+# Pens of the annotation editor and Draw on Screen: 1 to 5 "#rrggbb" or "#rrggbbaa"
+# colors (keys 1-5), and the pen width.
+#colors = ["#ff3b30", "#ffcc00", "#34c759", "#0a84ff", "#ffffff"]
+#width = 4.0
+# Above 0: shapes drawn on the screen fade after this many seconds.
+#fade_secs = 0.0
+# The cursor highlight.
+#halo_color = "#ffcc00"
+#halo_radius = 28.0
+# Hotkeys, all unset by default. Examples:
+#area_hotkey = "cmd+ctrl+alt+shift+Digit4"
+#window_hotkey = "cmd+ctrl+alt+shift+Digit5"
+#screen_hotkey = "cmd+ctrl+alt+shift+Digit3"
+#annotate_hotkey = "cmd+ctrl+alt+shift+Digit6"
+#draw_hotkey = "cmd+ctrl+alt+shift+KeyD"
+#cursor_hotkey = "cmd+ctrl+alt+shift+KeyC"
+
+# --- feedback: "Add Feedback…", "fb <text>" or "flick feedback add <text>" appends one
+# JSON line (time, text, build, front app, query) to a file.
+#[feedback]
+# The file; "" (default) is feedback.jsonl in the checkout this Flick was built from.
+#file = "~/Projects/flick/feedback.jsonl"
+# The word before the text in root search.
+#keyword = "fb"
+# Opens a feedback field; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyF"
+
+# --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
+# addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not
+# reload, rebuild, capture, fire keys or edit config. See docs/remote.md.
+#[remote]
+# Tailscale machine names allowed to connect; none by default. Example:
+#peers = ["mbp-server"]
+# The TCP port.
+#port = 7419
+# Let peers stream events ("flick --host <mac> events").
+#events = false
