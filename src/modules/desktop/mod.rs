@@ -124,4 +124,9 @@ mod tests {
         let section = config.section("desktop").unwrap().unwrap();
         assert!(Desktop::default().configure(&section).is_err());
     }
+
+    #[test]
+    fn the_example_config_lists_every_key() {
+        crate::config::example::assert_documents::<Settings>("desktop");
+    }
 }
