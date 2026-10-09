@@ -47,12 +47,12 @@ the main thread.
 | `items(&mut Cx) -> Vec<Item>` | each root refresh | Root search items. Ranked by fuzzy score plus frecency. |
 | `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink `<keyword> <text>`). |
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
-| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). |
-| `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab`) | Run an item this module created. |
+| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font (it shows what fits, so keep the tail). |
+| `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab` is `Tab::Activate`) | Run an item this module created. |
 | `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
 | `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. |
 | `actions(&ItemId, &mut Cx) -> Vec<Action>` | each render of a list, ⌘K | The item's action menu, in display order. Asked again each time, so keep it cheap and current (e.g. "Quit" only while running). Empty: no menu, and no "Actions ⌘K" hint. |
-| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
+| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu; Tab on a list item whose `tab` is `Tab::Act(key)` | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
 | `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
 | `on_event(Event, &mut Cx) -> bool` | each event | `true`: this module's views show stale data. A visible view of that module then refreshes. |
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
@@ -111,6 +111,9 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
 - `List(ListView)`: a module's view. There is no `Pop`: Escape and Backspace in an empty field
   go back to root search; a view with `escape_hides = true` hides the launcher on Escape
   instead. A pushed view replaces the current one: one level of views, not a stack.
+  Tab on a selected item of `Root` or `List` does what its `Item::tab` says: `None` nothing,
+  `Activate` the same as Enter (a quicklink's argument), `Act(key)` runs `act(id, key)` as the
+  action menu would, with the list's search text. The module names the Tab key in its footer.
 - `Actions { target, actions, back }`: ⌘K on a selected item of `Root` or `List` whose
   module returns a non-empty `actions(id)`. The footer of those lists shows
   `Actions  ⌘K` beside the Enter verb when the selected item has actions. In the menu, typing

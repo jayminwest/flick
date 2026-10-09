@@ -35,6 +35,9 @@ pub struct ListView {
     /// Shown when `items` is empty.
     pub empty: String,
     pub items: Vec<Item>,
+    /// Read-only text under the items, wrapped, in a fixed-width font (e.g. an agent's
+    /// reply). Empty: none. The panel shows what fits; keep it short or keep its tail.
+    pub text: String,
     /// Activating an item counts toward its frecency.
     pub record_use: bool,
     /// Escape hides the launcher instead of going back to root search.
@@ -51,6 +54,7 @@ impl ListView {
             footer: String::new(),
             empty: "No Results".into(),
             items: vec![],
+            text: String::new(),
             record_use: false,
             escape_hides: false,
         }
@@ -72,6 +76,6 @@ mod tests {
         assert!(v.is("clip", "history"));
         assert!(!v.is("clip", "other") && !v.is("switcher", "history"));
         assert_eq!(v.empty, "No Results");
-        assert!(v.items.is_empty() && !v.record_use && !v.escape_hides);
+        assert!(v.items.is_empty() && v.text.is_empty() && !v.record_use && !v.escape_hides);
     }
 }

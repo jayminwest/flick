@@ -27,7 +27,7 @@ use objc2_foundation::{
 pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
 pub use rows::{Frame, Icon, Row, render};
-use rows::{RowViews, label, make_row, ns, separator, top_rect};
+use rows::{RowViews, label, make_row, make_text, ns, separator, top_rect};
 
 const W: f64 = 750.0;
 const H: f64 = 474.0;
@@ -239,6 +239,7 @@ struct Ui {
     field: Retained<NSTextField>,
     rows: Vec<RowViews>,
     empty: Retained<NSTextField>,
+    text: Retained<NSTextField>,
     footer_left: Retained<NSTextField>,
     footer_action: Retained<NSTextField>,
     form: FormViews,
@@ -315,6 +316,8 @@ pub fn init(handlers: Handlers) {
     empty.setAlignment(NSTextAlignment::Center);
     empty.setFrame(top_rect(H, 0.0, f64::midpoint(H - FOOTER_H, SEARCH_H) - 10.0, W, 20.0));
     root.addSubview(&empty);
+    let text = make_text(mtm);
+    root.addSubview(&text);
 
     root.addSubview(&separator(mtm, top_rect(H, 0.0, H - FOOTER_H, W, 1.0)));
     let footer_left = label(mtm, 12.0, &NSColor::secondaryLabelColor());
@@ -336,6 +339,7 @@ pub fn init(handlers: Handlers) {
         field,
         rows,
         empty,
+        text,
         footer_left,
         footer_action,
         form,

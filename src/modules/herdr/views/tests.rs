@@ -40,6 +40,7 @@ fn keys_parse_and_round_trip() {
     assert_eq!(Key::parse("agent/hub"), None);
     assert_eq!(Key::parse("machine/off"), Some(Key::Machine("off")));
     assert_eq!(Key::parse("line/3"), Some(Key::Line));
+    assert_eq!(Key::parse("reply"), Some(Key::Reply));
     assert_eq!(Key::parse("other"), None);
 }
 
@@ -115,22 +116,30 @@ fn icons_follow_the_status() {
 }
 
 #[test]
-fn the_detail_view_puts_jump_first_then_the_preview() {
+fn the_detail_view_puts_jump_first_then_the_reply() {
     let fleet = fleet();
     let a = fleet.agent("hub", "w1:p1");
-    assert!(detail_items(None, None, 0).is_empty());
-    let titles = |preview: Option<&Preview>| -> Vec<String> {
-        detail_items(a, preview, 1_000).into_iter().map(|i| i.title).collect()
+    let (none, text) = detail(None, None, 0);
+    assert!(none.is_empty() && text.is_empty());
+    let shown = |preview: Option<&Preview>| -> (Vec<String>, String) {
+        let (items, text) = detail(a, preview, 1_000);
+        (items.into_iter().map(|i| i.title).collect(), text)
     };
+    let titles = |preview: Option<&Preview>| shown(preview).0;
     assert_eq!(titles(None), ["Jump to claude", "Loading output…"]);
-    let p = |lines| Preview { machine: "hub".into(), pane_id: "w1:p1".into(), lines };
+    let p = |reply| Preview { machine: "hub".into(), pane_id: "w1:p1".into(), reply };
     assert_eq!(titles(Some(&p(Some(Err("hub: timed out".into()))))), ["Jump to claude", "hub: timed out"]);
-    assert_eq!(titles(Some(&p(Some(Ok(vec![]))))), ["Jump to claude", "No output"]);
-    let lines = Some(Ok(vec!["a".to_string(), "b".to_string()]));
-    let items = detail_items(a, Some(&p(lines)), 1_000);
+    assert_eq!(shown(Some(&p(Some(Ok(String::new()))))), (vec!["Jump to claude".into(), "No reply".into()], String::new()));
+    let (items, text) = detail(a, Some(&p(Some(Ok("a\nb".into())))), 1_000);
     let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-    assert_eq!(ids, ["herdr:agent/hub/w1:p1", "herdr:line/0", "herdr:line/1"]);
+    assert_eq!(ids, ["herdr:agent/hub/w1:p1", "herdr:reply"]);
+    assert_eq!((items[1].subtitle.as_str(), text.as_str()), ("2 lines", "a\nb"));
+    // Jump has no Tab; an agent row in the list does.
+    assert_eq!((items[0].tab, agent_item(a.unwrap(), 0).tab), (Tab::None, Tab::Act("output")));
+    let one = detail(a, Some(&p(Some(Ok("a".into())))), 1_000).0;
+    assert_eq!(one[1].subtitle, "1 line");
     // Another agent's preview is not this one's.
-    let other = Preview { pane_id: "w9:p9".into(), ..p(Some(Ok(vec!["x".into()]))) };
+    let other = Preview { pane_id: "w9:p9".into(), ..p(Some(Ok("x".into()))) };
     assert_eq!(titles(Some(&other)), ["Jump to claude", "Loading output…"]);
+    assert_eq!(loaded_reply(a.unwrap(), Some(&other)), None);
 }
