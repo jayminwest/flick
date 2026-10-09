@@ -87,9 +87,27 @@ pub fn window_pids(current_space_only: bool) -> HashSet<i32> {
         .collect()
 }
 
-/// Pick the most recent app (other than `current`) with windows, none of them on this Space.
-fn pick(recent: &[i32], current: Option<i32>, here: &HashSet<i32>, anywhere: &HashSet<i32>) -> Option<i32> {
-    recent.iter().copied().find(|pid| Some(*pid) != current && anywhere.contains(pid) && !here.contains(pid))
+/// Pick the app (other than `current`) with windows, none of them on this Space: the most recent
+/// one in `recent`, else the first in `fallback` (history is empty right after Flick starts).
+fn pick(
+    recent: &[i32],
+    fallback: &[i32],
+    current: Option<i32>,
+    here: &HashSet<i32>,
+    anywhere: &HashSet<i32>,
+) -> Option<i32> {
+    recent
+        .iter()
+        .chain(fallback)
+        .copied()
+        .find(|pid| Some(*pid) != current && anywhere.contains(pid) && !here.contains(pid))
+}
+
+/// Activate `app` the way a Dock click does, which also switches to its Space.
+/// Needs no Accessibility permission.
+pub fn open_app(app: &NSRunningApplication) -> bool {
+    let Some(url) = app.bundleURL() else { return false };
+    NSWorkspace::sharedWorkspace().openURL(&url)
 }
 
 pub fn toggle() -> Result<(), &'static str> {
@@ -99,16 +117,18 @@ pub fn toggle() -> Result<(), &'static str> {
             .is_some_and(|a| a.activationPolicy() == NSApplicationActivationPolicy::Regular)
     };
     let recent: Vec<i32> = RECENT.with(|r| r.borrow().iter().copied().filter(regular).collect());
-    let pid = pick(&recent, frontmost_pid(), &window_pids(true), &window_pids(false))
-        .ok_or("No recent app on another desktop")?;
+    let fallback: Vec<i32> = NSWorkspace::sharedWorkspace()
+        .runningApplications()
+        .iter()
+        .filter(|a| !a.isHidden())
+        .map(|a| a.processIdentifier())
+        .filter(regular)
+        .collect();
+    let pid = pick(&recent, &fallback, frontmost_pid(), &window_pids(true), &window_pids(false))
+        .ok_or("No app on another desktop")?;
     let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid).ok_or("App quit")?;
-    if app.isHidden() {
-        return Err("App is hidden");
-    }
-    // Opening a running app's bundle activates it like a Dock click, which switches Spaces.
-    if !crate::windows::make_frontmost(pid) {
-        let url = app.bundleURL().ok_or("App has no bundle")?;
-        NSWorkspace::sharedWorkspace().openURL(&url);
+    if !open_app(&app) {
+        return Err("App has no bundle");
     }
     Ok(())
 }
@@ -122,7 +142,9 @@ mod tests {
         let here: HashSet<i32> = [1, 2].into();
         let anywhere: HashSet<i32> = [1, 2, 3, 4].into();
         // 2 is on this Space, 5 has no windows, so 3 wins over the older 4.
-        assert_eq!(pick(&[1, 2, 5, 3, 4], Some(1), &here, &anywhere), Some(3));
-        assert_eq!(pick(&[1, 2], Some(1), &here, &anywhere), None);
+        assert_eq!(pick(&[1, 2, 5, 3, 4], &[], Some(1), &here, &anywhere), Some(3));
+        assert_eq!(pick(&[1, 2], &[], Some(1), &here, &anywhere), None);
+        // Empty history falls back to any app on another Space.
+        assert_eq!(pick(&[1], &[2, 4], Some(1), &here, &anywhere), Some(4));
     }
 }

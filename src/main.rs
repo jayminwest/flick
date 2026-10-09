@@ -49,7 +49,11 @@ fn main() {
     if let Err(e) = hotkey::init().and_then(|()| hotkey::register(&config)) {
         eprintln!("flick: {e}");
     }
-    eprintln!("flick: press {} to open", config.hotkey);
+    eprintln!(
+        "flick: press {} to open (Accessibility: {})",
+        config.hotkey,
+        if windows::is_trusted(false) { "granted" } else { "NOT granted" }
+    );
 
     spaces::init();
     ui::init(mtm);
