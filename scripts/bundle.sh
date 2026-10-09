@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 cargo build --release
 app=target/Flick.app
+version="$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp target/release/flick "$app/Contents/MacOS/Flick"
@@ -17,7 +18,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.jayminwest.flick</string>
   <key>CFBundleExecutable</key><string>Flick</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$version</string>
+  <key>CFBundleVersion</key><string>$version</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
 </dict>
