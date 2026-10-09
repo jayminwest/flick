@@ -250,7 +250,7 @@ pub fn ensure_trusted() -> bool {
 }
 
 /// Whether Flick may control other apps. With `prompt`, macOS shows its permission dialog.
-fn is_trusted(prompt: bool) -> bool {
+pub fn is_trusted(prompt: bool) -> bool {
     let key = NSString::from_str("AXTrustedCheckOptionPrompt");
     let value = NSNumber::new_bool(prompt);
     let options = NSDictionary::from_retained_objects(&[&*key], &[value]);
@@ -458,25 +458,23 @@ pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
 
 /// Raise `w` and activate its app (switching desktops if needed).
 pub fn focus(w: &AppWindow) {
-    if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid)
-        && app.isHidden()
-    {
+    let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid) else { return };
+    if app.isHidden() {
         app.unhide();
     }
-    if let Some(el) = &w.element {
-        let el = Retained::as_ptr(el) as CFTypeRef;
-        if w.minimized {
-            set_bool_attr(el, "AXMinimized", false);
-        }
-        let raise = NSString::from_str("AXRaise");
-        unsafe { AXUIElementPerformAction(el, cfstr(&raise)) };
-        set_bool_attr(el, "AXMain", true);
+    let Some(el) = &w.element else {
+        crate::spaces::open_app(&app);
+        return;
+    };
+    let el = Retained::as_ptr(el) as CFTypeRef;
+    if w.minimized {
+        set_bool_attr(el, "AXMinimized", false);
     }
-    if !make_frontmost(w.pid)
-        && let Some(path) = &w.bundle
-    {
-        let url = objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
-        NSWorkspace::sharedWorkspace().openURL(&url);
+    let raise = NSString::from_str("AXRaise");
+    unsafe { AXUIElementPerformAction(el, cfstr(&raise)) };
+    set_bool_attr(el, "AXMain", true);
+    if !make_frontmost(w.pid) {
+        crate::spaces::open_app(&app);
     }
 }
 
