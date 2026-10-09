@@ -176,9 +176,11 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
 - `["reload"]` is handled by the controller. Every other request goes to
   `Registry::command`, which matches the first word against module ids.
 - `["events"]` turns the connection into an event stream, one JSON object per line. A
-  subscriber that falls 256 lines behind, or hangs up, is dropped. Publishing costs nothing
-  when there are no subscribers.
-- Threads: one accept thread, one thread per connection. A request runs on the main thread
+  subscriber that falls 256 lines behind is dropped and its socket shut down. One that hangs
+  up (or closes its write side) is dropped at once, not at the next event. Publishing costs
+  nothing when there are no subscribers.
+- Threads: one accept thread, one thread per connection, plus a writer thread per event
+  subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) prints the raw reply line. Exit 0 for `ok`, 1 for
