@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-use crate::store::Store;
+use crate::modules::{AppStore as Store, Clips};
 
 /// A database file in the temp dir, deleted on drop.
 struct TempDb(PathBuf);
@@ -42,6 +42,10 @@ fn schema_is_usage_and_clips() {
             (
                 "clips".to_string(),
                 "CREATE TABLE clips (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL UNIQUE, ts INTEGER NOT NULL)".to_string()
+            ),
+            (
+                "schema_versions".to_string(),
+                "CREATE TABLE schema_versions (owner TEXT PRIMARY KEY, version INTEGER NOT NULL)".to_string()
             ),
             ("sqlite_sequence".to_string(), "CREATE TABLE sqlite_sequence(name,seq)".to_string()),
             (
