@@ -1,19 +1,11 @@
 //! Controller: launcher state, modes, and actions. All calls happen on the main thread.
 
-#![expect(
-    clippy::undocumented_unsafe_blocks,
-    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
-)]
-
 use std::cell::RefCell;
-
-use objc2::runtime::Sel;
-use objc2::{MainThreadMarker, sel};
-use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeString, NSWorkspace};
-use objc2_foundation::{NSString, NSURL};
 
 use crate::apps::{self, App};
 use crate::config::{self, Config};
+use crate::platform::panel::Key;
+use crate::platform::{app as platform_app, pasteboard, timer, workspace};
 use crate::root::{rank_root, root_items};
 use crate::search::{Action, Icon, Item, Ranker};
 use crate::store::{self, Store};
@@ -51,13 +43,8 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     STATE.with(|s| s.borrow_mut().as_mut().map(f))
 }
 
-#[expect(clippy::expect_used, reason = "AppKit callbacks only ever run on the main thread")]
-fn mtm() -> MainThreadMarker {
-    MainThreadMarker::new().expect("Flick UI runs on the main thread")
-}
-
 pub fn init(config: Config, store: Store) {
-    let pasteboard_count = NSPasteboard::generalPasteboard().changeCount();
+    let pasteboard_count = pasteboard::change_count();
     let state = State {
         mode: Mode::Root,
         config,
@@ -98,13 +85,13 @@ fn open_in(mode: Mode) {
         s.enter(mode);
     });
     if !visible {
-        ui::show(mtm());
+        ui::show();
     }
 }
 
 /// A window action from a global hotkey, without the panel.
 pub fn window_action(action: WindowAction) {
-    if let Err(e) = windows::apply(action, mtm()) {
+    if let Err(e) = windows::apply(action) {
         eprintln!("flick: {}: {e}", action.title());
     }
 }
@@ -126,15 +113,15 @@ pub fn query_changed() {
 }
 
 /// Keyboard commands from the search field. Returns true when handled.
-pub fn command(sel: Sel) -> bool {
+pub fn command(key: Key) -> bool {
     with_state(|s| {
-        if sel == sel!(moveUp:) {
+        if key == Key::Up {
             s.move_selection(-1);
-        } else if sel == sel!(moveDown:) {
+        } else if key == Key::Down {
             s.move_selection(1);
-        } else if sel == sel!(insertNewline:) {
+        } else if key == Key::Enter {
             s.activate();
-        } else if sel == sel!(insertTab:) {
+        } else if key == Key::Tab {
             // Tab fills in a quicklink's argument, like Raycast.
             if matches!(
                 s.results.get(s.selected).map(|i| &i.action),
@@ -142,13 +129,13 @@ pub fn command(sel: Sel) -> bool {
             ) {
                 s.activate();
             }
-        } else if sel == sel!(cancelOperation:) {
+        } else if key == Key::Escape {
             if matches!(s.mode, Mode::Root | Mode::Windows) {
                 ui::hide();
             } else {
                 s.enter(Mode::Root);
             }
-        } else if sel == sel!(deleteBackward:) && s.mode != Mode::Root && ui::query().is_empty() {
+        } else if key == Key::Backspace && s.mode != Mode::Root && ui::query().is_empty() {
             s.enter(Mode::Root);
         } else {
             return false;
@@ -161,34 +148,18 @@ pub fn command(sel: Sel) -> bool {
 /// Record new clipboard text. Skips content that password managers mark as concealed or transient.
 pub fn poll_clipboard() {
     with_state(|s| {
-        let pb = NSPasteboard::generalPasteboard();
-        let count = pb.changeCount();
+        let count = pasteboard::change_count();
         if count == s.pasteboard_count {
             return;
         }
         s.pasteboard_count = count;
-        let skip = pb.types().is_some_and(|types| {
-            types.iter().any(|t| {
-                let t = t.to_string();
-                t == "org.nspasteboard.ConcealedType" || t == "org.nspasteboard.TransientType"
-            })
-        });
-        if skip {
-            return;
-        }
-        if let Some(text) = pb.stringForType(unsafe { NSPasteboardTypeString }) {
-            s.store.add_clip(&text.to_string());
+        if let Some(text) = pasteboard::copied_text() {
+            s.store.add_clip(&text);
             if s.mode == Mode::Clipboard && ui::is_visible() {
                 s.refresh();
             }
         }
     });
-}
-
-fn open_url(url: &str) {
-    if let Some(url) = NSURL::URLWithString(&NSString::from_str(url)) {
-        NSWorkspace::sharedWorkspace().openURL(&url);
-    }
 }
 
 fn relative_time(ts: i64) -> String {
@@ -358,13 +329,11 @@ impl State {
         match item.action {
             Action::LaunchApp(path) => {
                 ui::hide();
-                NSWorkspace::sharedWorkspace().openURL(&NSURL::fileURLWithPath(
-                    &NSString::from_str(&path.display().to_string()),
-                ));
+                workspace::open_file(&path);
             }
             Action::Window(action) => {
                 ui::hide();
-                if let Err(e) = windows::apply(action, mtm()) {
+                if let Err(e) = windows::apply(action) {
                     eprintln!("flick: {}: {e}", action.title());
                 }
             }
@@ -383,17 +352,15 @@ impl State {
                     return;
                 }
                 ui::hide();
-                open_url(&link.expand(query.trim()));
+                workspace::open_url(&link.expand(query.trim()));
             }
             Action::PasteClip(id) => {
                 let Some(text) = self.store.clip_text(id) else { return };
-                let pb = NSPasteboard::generalPasteboard();
-                pb.clearContents();
-                pb.setString_forType(&NSString::from_str(&text), unsafe { NSPasteboardTypeString });
+                pasteboard::set_text(&text);
                 ui::hide();
                 // Give focus a moment to return to the previous app, then paste there.
                 if windows::ensure_trusted() {
-                    ui::after(0.08, windows::send_paste);
+                    timer::after(0.08, windows::send_paste);
                 }
             }
             Action::OpenConfig => {
@@ -413,7 +380,7 @@ impl State {
                 }
                 Err(e) => self.set_status(e),
             },
-            Action::Quit => NSApplication::sharedApplication(mtm()).terminate(None),
+            Action::Quit => platform_app::quit(),
         }
     }
 }

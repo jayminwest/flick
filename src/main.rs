@@ -4,6 +4,7 @@ mod apps;
 mod characterization;
 mod config;
 mod hotkey;
+mod platform;
 mod raycast;
 mod root;
 mod search;
@@ -12,15 +13,9 @@ mod store;
 mod ui;
 mod windows;
 
-use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSRunningApplication};
-use objc2_foundation::NSBundle;
+use platform::app as macos;
 
-#[expect(
-    clippy::expect_used,
-    clippy::panic,
-    reason = "startup invariants: no UI without the main thread or the database"
-)]
+#[expect(clippy::panic, reason = "startup invariant: no launcher without the database")]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("snapshot") {
@@ -42,14 +37,13 @@ fn main() {
         return;
     }
 
-    let mtm = MainThreadMarker::new().expect("must start on the main thread");
-    if already_running() {
+    macos::require_main_thread();
+    if macos::already_running() {
         eprintln!("flick: already running");
         return;
     }
-    let ns_app = NSApplication::sharedApplication(mtm);
     // No Dock icon or menu bar.
-    ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    macos::set_accessory();
 
     let config = config::load().unwrap_or_else(|e| {
         eprintln!("flick: {e}; using defaults");
@@ -69,33 +63,22 @@ fn main() {
     );
 
     spaces::init();
-    ui::init(mtm);
+    ui::init();
     app::init(config, store);
-    ui::every(0.5, app::poll_clipboard);
+    platform::timer::every(0.5, app::poll_clipboard);
 
-    ns_app.run();
-}
-
-/// Another Flick.app is running (e.g. opened by hand next to the login agent's copy).
-fn already_running() -> bool {
-    let Some(id) = NSBundle::mainBundle().bundleIdentifier() else { return false };
-    // Compare pids: a process launchd starts directly may not be registered yet itself.
-    let me = std::process::id() as i32;
-    NSRunningApplication::runningApplicationsWithBundleIdentifier(&id)
-        .iter()
-        .any(|app| app.processIdentifier() != me)
+    macos::run();
 }
 
 /// `flick snapshot <out.png> [query]`: draw the launcher to a PNG without showing it.
 /// Uses the default config and an empty database, so no personal data appears.
-#[expect(clippy::expect_used, reason = "the CLI entry point always runs on the main thread")]
 fn snapshot(args: &[String]) {
     let Some(out) = args.first() else {
         eprintln!("usage: flick snapshot <out.png> [query]");
         std::process::exit(2);
     };
-    let mtm = MainThreadMarker::new().expect("must start on the main thread");
-    ui::init(mtm);
+    macos::require_main_thread();
+    ui::init();
     app::init(config::Config::default(), store::Store::in_memory());
     app::set_root_query(args.get(1).map_or("", String::as_str));
     if let Err(e) = ui::snapshot(out) {
