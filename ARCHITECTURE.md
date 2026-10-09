@@ -10,10 +10,10 @@ this file in the same commit.
 | Layer | Path | Role |
 |---|---|---|
 | platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard`, `ax`, `spaces`, `screens`, `hotkeys`, `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`. Every function runs on the main thread. |
-| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
+| core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
-| ui | `src/ui.rs` | Turns `Item`s into the rows that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
-| controller | `src/app.rs`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the view stack and the selection, and applies `Outcome`s. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
+| ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
+| controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server. Runs requests on the main thread. Streams events. |
 | cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
@@ -49,6 +49,11 @@ the main thread.
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
 | `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab`) | Run an item this module created. |
+| `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
+| `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. |
+| `actions(&ItemId, &mut Cx) -> Vec<Action>` | each render of a list, ⌘K | The item's action menu, in display order. Asked again each time, so keep it cheap and current (e.g. "Quit" only while running). Empty: no menu, and no "Actions ⌘K" hint. |
+| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
+| `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
 | `on_event(Event, &mut Cx) -> bool` | each event | `true`: this module's views show stale data. A visible view of that module then refreshes. |
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
 | `hotkey(key, &mut Cx) -> Option<ListView>` | a bound hotkey press | `Some(view)` toggles the launcher on that view. `None` leaves the launcher alone. |
@@ -61,7 +66,7 @@ frontmost (open, focus, paste), then return `Outcome::Hide`.
 
 Panic isolation: `Registry::dispatch` (events) and `Registry::command` catch panics per module.
 A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open`, `refresh`,
-`activate` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
+`activate`, `form`, `submit`, `actions`, `act`, `confirmed` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
 `Err(text)`; do not panic.
 
 Registration order (the `modules!` list in `src/modules/mod.rs`) is significant. It sets root order for
@@ -87,11 +92,45 @@ with `record_use = true`.
 - `Push(ListView)`: a request for a view by `module` and `name`. The registry asks the owning
   module's `open`, so any module can push another module's view by name (`builtin` pushes
   `clip/history`). That is the only way modules refer to each other.
+- `Form { module, name }`: a request for form `name` of `module`, by name like `Push`. The
+  registry asks that module's `form`, so `builtin` can open the quicklink form without
+  importing it.
+- `Confirm(Confirm)`: ask before acting. On confirm the registry calls
+  `confirmed(token)` on `Confirm::module`; its `Outcome` is applied in turn.
 - `ReloadConfig`: reload config.toml, rebind hotkeys, go back to root search.
 
-There is no `Pop`. In a view, Escape and Backspace in an empty field go back to root search; a
-view with `escape_hides = true` hides the launcher on Escape instead. A pushed view replaces the
-current one: there is one level of views, not a stack.
+An `Outcome` from `act` or `confirmed` applies to the list the menu or question came from:
+`Stay` returns there (refreshed, same search text and selection) and shows its status;
+`Push`, `Form` and `Confirm` replace it; `Hide` hides the launcher.
+
+## Screens
+
+`app::State::screen` (`src/app/screen.rs`) is one of:
+
+- `Root`: root search.
+- `List(ListView)`: a module's view. There is no `Pop`: Escape and Backspace in an empty field
+  go back to root search; a view with `escape_hides = true` hides the launcher on Escape
+  instead. A pushed view replaces the current one: one level of views, not a stack.
+- `Actions { target, actions, back }`: ⌘K on a selected item of `Root` or `List` whose
+  module returns a non-empty `actions(id)`. The footer of those lists shows
+  `Actions  ⌘K` beside the Enter verb when the selected item has actions. In the menu, typing
+  filters the actions (fuzzy; module order while the field is empty), Enter runs `act`,
+  Escape, ⌘K or Backspace in an empty field go back to `back`: the same screen, search text
+  and selection. The action keybinding hints (`Action::shortcut_hint`) are display only.
+- `Confirm { confirm, back }`: from `Outcome::Confirm`. `Confirm::title` replaces the search
+  field (read-only); `Confirm::rows` are read-only rows (Up/Down scroll). Non-destructive:
+  Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
+  `Press ⌘↵ to <label>`. Escape cancels back to `back` and the module hears nothing.
+- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled fields (`FORM_FIELDS` in the panel),
+  focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵ submits,
+  Escape goes back to root search. A blank required field is an inline
+  `<Label> is required` error, and `submit` is not called.
+
+`Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it. Module
+contract for a confirmable action (e.g. Delete, Uninstall): return
+`Outcome::Confirm(Confirm { token: "<verb>/<key>", label: "<Verb>", destructive, rows, .. })`
+from `act`, then do the work in `confirmed(token)` and return `Stay(Some(status))` (back to
+the list, refreshed) or `Hide`.
 
 ## Events and the main thread
 
