@@ -95,10 +95,6 @@ thread_local! {
 /// `src`). `on_done` runs once when the editor closes, on the main thread while `AppKit` is
 /// mid-event: it must only post an event (mx-fcbc43). False when `src` is not an image, or
 /// when an editor is already open (that one comes to the front instead).
-#[expect(
-    dead_code,
-    reason = "wired in flick-abc0 step 6 (flick-2759); needs the main thread, so no test calls it"
-)]
 pub fn edit(src: &Path, dest: &Path, opts: EditOpts, on_done: fn(Done)) -> bool {
     let mtm = crate::platform::mtm();
     if let Some(window) = EDITOR.with_borrow(|e| e.as_ref().map(|e| e.window.clone())) {

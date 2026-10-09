@@ -17,7 +17,8 @@ pub const MIGRATIONS: &[&str] = &[
 pub struct Row {
     pub id: i64,
     pub path: String,
-    /// What was captured: `area`, `window`, `screen`, `display` or `rect`.
+    /// What was captured: `area`, `window`, `screen`, `display` or `rect`; `annotated` for an
+    /// edited copy.
     pub kind: String,
     pub width: u32,
     pub height: u32,

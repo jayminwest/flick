@@ -16,8 +16,9 @@ const RECENT_MAX: u32 = 200;
 /// Key prefix of a recorded shot: `capture:shot/<row id>`.
 const SHOT: &str = "shot/";
 
-/// Capture Area, Capture Window, Capture Screen and Recent Captures.
-pub fn root_items(dir: &Path) -> Vec<Item> {
+/// Capture Area, Capture Window, Capture Screen, then `ink` (annotation and drawing), then
+/// Recent Captures.
+pub fn root_items(dir: &Path, ink: Vec<Item>) -> Vec<Item> {
     let dir = tilde(dir);
     let rows = [
         ("area", "Capture Area", "rectangle.dashed", "Drag to select; Space picks a window"),
@@ -33,6 +34,7 @@ pub fn root_items(dir: &Path) -> Vec<Item> {
             ..Item::new(ItemId::new("capture", key), title, "Capture", Icon::Symbol(symbol))
         })
         .collect();
+    items.extend(ink);
     items.push(Item {
         accessory: "Capture".into(),
         keywords: vec!["screenshots history".into()],
@@ -91,6 +93,7 @@ pub fn shot_id(key: &str) -> Option<i64> {
 pub fn actions() -> Vec<Action> {
     vec![
         Action::new("copy-image", "Copy Image", Icon::Symbol("doc.on.doc")),
+        Action::new("annotate", "Annotate", Icon::Symbol("pencil.and.outline")),
         Action::new("reveal", "Show in Finder", Icon::Symbol("folder")),
         Action::new("copy-path", "Copy Path", Icon::Symbol("link")),
         Action::new("trash", "Move to Trash", Icon::Symbol("trash")),

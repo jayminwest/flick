@@ -193,6 +193,11 @@ impl FlickInkView {
         self.setNeedsDisplay(true);
     }
 
+    /// New shapes use `tool` (the keys can still change it).
+    pub fn set_tool(&self, tool: Tool) {
+        self.ivars().tool.set(tool);
+    }
+
     /// Call `f` after each finished shape. It runs while `AppKit` is mid-event.
     pub fn set_on_stroke(&self, f: Option<fn()>) {
         self.ivars().on_stroke.set(f);
