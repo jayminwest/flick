@@ -3,7 +3,9 @@
   "floors": {
     "src/config.rs": 84.3,
     "src/config/edit.rs": 97.3,
-    "src/control/server.rs": 95.9,
+    "src/control/net.rs": 90.0,
+    "src/control/server.rs": 96.5,
+    "src/control/tailscale.rs": 95.0,
     "src/core/": 100.0,
     "src/modules/activity/mod.rs": 99.1,
     "src/modules/activity/remote.rs": 98.8,
