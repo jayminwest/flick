@@ -11,11 +11,15 @@
 //! - Request lines are capped, an idle connection is closed, and the number of open
 //!   connections is capped.
 //!
-//! Stopping sets a flag, wakes each blocked `accept` with a connection to itself, and shuts
-//! down every open network connection.
+//! Stopping sets a flag, wakes each accept thread through a local socket pair (never a
+//! connection to the listener: on macOS one to this machine's own Tailscale IPv6 address
+//! times out), joins it so its listener is closed, and shuts down every open network
+//! connection.
 
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -27,6 +31,9 @@ use crate::core::control::{
     Flags, LastConn, NetHooks, NetSettings, NetStatus, Reply, is_tailnet, net_policy, peer_matches,
     split_flags,
 };
+use crate::platform::poll;
+
+mod bind;
 
 /// How the remote module drives this process's network transport.
 pub const HOOKS: NetHooks = NetHooks { apply, status };
@@ -39,8 +46,8 @@ const IDLE: Duration = Duration::from_secs(30);
 const WRITE: Duration = Duration::from_secs(10);
 /// Open network connections at most; more are closed at once.
 const MAX_CONNS: usize = 16;
-/// How long stopping waits to wake one blocked `accept`.
-const WAKE: Duration = Duration::from_millis(500);
+/// How long an accept thread pauses after `poll` fails, so a lasting error cannot spin.
+const POLL_RETRY: Duration = Duration::from_millis(100);
 
 /// This process's transport: the `tailscale` CLI, the real controller and event hub.
 static NET: LazyLock<Net> =
@@ -99,10 +106,12 @@ pub struct Net {
     next: AtomicU64,
 }
 
-/// Running listeners: the stop flag their threads check and each accept thread.
+/// Running listeners: the stop flag their threads check, the write end of the socket pair
+/// that wakes them, and each accept thread.
 struct Run {
     stop: Arc<AtomicBool>,
-    accepts: Vec<(SocketAddr, JoinHandle<()>)>,
+    wake: UnixStream,
+    accepts: Vec<JoinHandle<()>>,
 }
 
 impl Net {
@@ -175,14 +184,13 @@ impl Net {
         status.error.clone().filter(|_| status.listening.is_empty()).map_or(Ok(status), Err)
     }
 
+    /// Stop `run`: when this returns, its listeners are closed and their ports free.
     fn stop(&self, run: Run) {
         run.stop.store(true, Ordering::SeqCst);
-        for (addr, accept) in run.accepts {
-            // A thread whose address no longer answers is left blocked; it sees the flag
-            // and closes whatever it accepts next.
-            if TcpStream::connect_timeout(&addr, WAKE).is_ok() {
-                let _ = accept.join();
-            }
+        // End of file on the read end wakes every accept thread's `poll`.
+        let _ = run.wake.shutdown(Shutdown::Write);
+        for accept in run.accepts {
+            let _ = accept.join();
         }
         for (_, stream) in lock(&self.conns).drain() {
             let _ = stream.shutdown(Shutdown::Both);
@@ -194,21 +202,42 @@ impl Net {
             return Err("no peers allowed: set [remote] peers".into());
         }
         let (listeners, error) = self.bind(&self.tailnet.ips()?, settings.port)?;
-        let stop = Arc::new(AtomicBool::new(false));
+        let (wake, woken) = UnixStream::pair().map_err(|e| format!("network control: {e}"))?;
+        let mut run = Run { stop: Arc::new(AtomicBool::new(false)), wake, accepts: Vec::new() };
         let settings = Arc::new(settings);
-        let mut accepts = Vec::new();
+        let mut listening = Vec::new();
         for listener in listeners {
-            let addr = listener.local_addr().map_err(|e| e.to_string())?;
-            let (stop, settings) = (Arc::clone(&stop), Arc::clone(&settings));
-            let accept = thread::Builder::new()
-                .name("flick-net".into())
-                .spawn(move || self.accept(&listener, &settings, &stop))
-                .map_err(|e| e.to_string())?;
-            accepts.push((addr, accept));
+            match self.spawn_accept(listener, &woken, &settings, &run.stop) {
+                Ok((addr, accept)) => {
+                    listening.push(addr);
+                    run.accepts.push(accept);
+                }
+                Err(e) => {
+                    self.stop(run);
+                    return Err(format!("network control: {e}"));
+                }
+            }
         }
-        let listening = accepts.iter().map(|(addr, _)| *addr).collect();
         let status = NetStatus { listening, peers: settings.peers.clone(), last: None, error };
-        Ok((Run { stop, accepts }, status))
+        Ok((run, status))
+    }
+
+    /// Start the accept thread of `listener`, which `woken` wakes to stop.
+    fn spawn_accept(
+        &'static self,
+        listener: TcpListener,
+        woken: &UnixStream,
+        settings: &Arc<NetSettings>,
+        stop: &Arc<AtomicBool>,
+    ) -> std::io::Result<(SocketAddr, JoinHandle<()>)> {
+        let addr = listener.local_addr()?;
+        listener.set_nonblocking(true)?;
+        let woken = woken.try_clone()?;
+        let (stop, settings) = (Arc::clone(stop), Arc::clone(settings));
+        let accept = thread::Builder::new()
+            .name("flick-net".into())
+            .spawn(move || self.accept(&listener, &woken, &settings, &stop))?;
+        Ok((addr, accept))
     }
 
     /// One listener per permitted address in `ips` on `port`. `Err` when none binds; else
@@ -219,17 +248,16 @@ impl Net {
         port: u16,
     ) -> Result<(Vec<TcpListener>, Option<String>), String> {
         let ips: Vec<IpAddr> =
-            ips.iter().copied().filter(|ip| permitted(*ip, self.loopback)).collect();
+            bind::dedupe(ips).into_iter().filter(|ip| permitted(*ip, self.loopback)).collect();
         if ips.is_empty() {
             return Err("no Tailscale address to listen on (is Tailscale up?)".into());
         }
         let mut listeners = Vec::new();
         let mut errors = Vec::new();
         for ip in ips {
-            let addr = SocketAddr::new(ip, port);
-            match TcpListener::bind(addr) {
+            match bind::listen(SocketAddr::new(ip, port)) {
                 Ok(listener) => listeners.push(listener),
-                Err(e) => errors.push(format!("{addr}: {e}")),
+                Err(e) => errors.push(e),
             }
         }
         let errors = (!errors.is_empty()).then(|| errors.join("; "));
@@ -239,18 +267,31 @@ impl Net {
         Ok((listeners, errors))
     }
 
+    /// Accept on `listener` (non-blocking) until `woken` is readable or `stop` is set.
     fn accept(
         &'static self,
         listener: &TcpListener,
+        woken: &UnixStream,
         settings: &Arc<NetSettings>,
         stop: &Arc<AtomicBool>,
     ) {
-        for stream in listener.incoming() {
-            if stop.load(Ordering::SeqCst) {
-                return;
+        while !stop.load(Ordering::SeqCst) {
+            match poll::readable(&[listener, woken], None) {
+                Ok(ready) if ready[1] => return,
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("flick: network control: {e}");
+                    thread::sleep(POLL_RETRY);
+                    continue;
+                }
             }
-            match stream {
-                Ok(stream) => self.admit(stream, settings, stop),
+            match listener.accept() {
+                // An accepted socket inherits the listener's non-blocking mode.
+                Ok((stream, _)) if stream.set_nonblocking(false).is_ok() => {
+                    self.admit(stream, settings, stop);
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => eprintln!("flick: network control: {e}"),
             }
         }

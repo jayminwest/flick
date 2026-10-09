@@ -101,3 +101,24 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
    `remote status` shows it listening without a restart.
 10. **Restart keeps the switch.** With access on, quit and start Flick. It listens again
     without `flick remote on`. With access off, it stays off.
+11. **Restarts free the port.** With access on, run `flick remote off` and `flick remote on`
+    three times, then change `peers` and reload. Each time `remote status` lists both
+    Tailscale addresses (IPv4 and IPv6) with no error, and `lsof -nP -iTCP:7419
+    -sTCP:LISTEN` shows one Flick listener per address.
+
+### Address already in use
+
+`remote status` names each address that did not bind, for example
+`error: [fd7a:115c:a1e0::1]:7419: port 7419 is in use by Flick (pid 123): another Flick is
+running`. Flick asks `lsof` what holds the port and says one of:
+
+- `another Flick is running`: quit the other Flick (`pgrep -fl Flick`), then run `flick
+  remote off` and `flick remote on`.
+- `this Flick ...: an earlier listener did not close`: a bug; file it with the output of
+  `lsof -nP -iTCP:7419`.
+- another program's name: change `[remote] port`, or stop that program.
+- `another process (another Flick running?)`: `lsof` could not tell; run
+  `lsof -nP -iTCP:7419` yourself.
+
+Flick retries a bind that finds the port in use for about half a second, so a Flick that is
+quitting does not cause this error.
