@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(
             lines,
             [
-                "app list | app open <name>",
+                "app list | app open <name> | app running",
                 "window list | window <action>, e.g. window left-half",
                 "clip list | clip get <id>",
             ]
