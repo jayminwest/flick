@@ -1,15 +1,19 @@
 mod app;
 mod apps;
+mod builtins;
 #[cfg(test)]
 mod characterization;
+mod clipboard;
 mod config;
+mod core;
 mod hotkey;
 mod platform;
+mod quicklinks;
 mod raycast;
 mod root;
-mod search;
 mod spaces;
 mod store;
+mod switcher;
 mod ui;
 mod windows;
 

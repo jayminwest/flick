@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use crate::core::{Cx, Icon, Item, ItemId, Module, Outcome};
 pub use crate::platform::Rect;
 use crate::platform::{ax, screens, workspace};
 
@@ -229,6 +230,48 @@ pub fn apply(action: WindowAction) -> Result<(), &'static str> {
     let target = frame_for(action, current, &screens::visible_areas())?;
     win.set_frame(target);
     Ok(())
+}
+
+/// `apply`, logging a failure (there is no panel to show it in).
+pub fn run(action: WindowAction) {
+    if let Err(e) = apply(action) {
+        eprintln!("flick: {}: {e}", action.title());
+    }
+}
+
+/// Module `window`: the window commands in root search; ids are `window:<title>`.
+pub struct Commands;
+
+impl Module for Commands {
+    fn id(&self) -> &'static str {
+        "window"
+    }
+
+    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
+        WindowAction::ALL
+            .iter()
+            .map(|&w| Item {
+                subtitle: "Window Management".into(),
+                accessory: "Command".into(),
+                keywords: vec!["window".into()],
+                ..Item::new(
+                    ItemId::new("window", w.title()),
+                    w.title(),
+                    "Move Window",
+                    Icon::Symbol(w.symbol()),
+                )
+            })
+            .collect()
+    }
+
+    fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        let Some(action) = WindowAction::ALL.into_iter().find(|w| w.title() == id.key()) else {
+            return Outcome::Stay(None);
+        };
+        cx.hide();
+        run(action);
+        Outcome::Hide
+    }
 }
 
 // --- Window switcher ---
