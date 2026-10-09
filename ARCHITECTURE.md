@@ -45,7 +45,7 @@ the main thread.
 | `migrations() -> &'static [&'static str]` | startup, reload | Store migrations for tables this module owns. Append only. |
 | `configure(&Section) -> Result<(), String>` | registration, reload | Read the `[<id>]` table. Keep state such as history across calls. |
 | `items(&mut Cx) -> Vec<Item>` | each root refresh | Root search items. Ranked by fuzzy score plus frecency. |
-| `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink `<keyword> <text>`). |
+| `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink and script `<keyword> <text>`). |
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
 | `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab`) | Run an item this module created. |
@@ -78,7 +78,7 @@ switcher, window. When two bindings use the same spec, the later one fails with 
 `ItemId::new(module, key)` serializes as `<module>:<key>`. That string is the key of the `usage`
 table. Do not change how a module builds keys: existing frecency history would split.
 `src/characterization/item_ids.rs` pins the current formats: `app:<path>`, `window:<title>`,
-`quicklink:<name>`, `builtin:<title>`. `with_arg` attaches data (a quicklink's typed query)
+`quicklink:<name>`, `script:<name>`, `builtin:<title>`. `with_arg` attaches data (a quicklink's typed query)
 that `activate` reads with `id.arg()`. It is not part of the serialized id.
 
 `Registry::activate` routes by `id.module()`. An unknown module returns `Stay(None)`. Before it
