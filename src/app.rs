@@ -102,6 +102,15 @@ pub fn window_action(action: WindowAction) {
     }
 }
 
+/// Show `query` in the root search (for `flick snapshot`).
+pub fn set_root_query(query: &str) {
+    with_state(|s| {
+        s.enter(Mode::Root);
+        ui::set_query(query, "Search for apps and commands…");
+        s.refresh();
+    });
+}
+
 pub fn query_changed() {
     with_state(|s| {
         s.status = None;

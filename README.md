@@ -14,6 +14,10 @@
 
 Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The whole app is about 2,300 lines of Rust and a 3.4 MB binary.
 
+<p align="center">
+  <img src="docs/screenshots/launcher.png" alt="The Flick launcher: a search field with the query &quot;s&quot; and a list of matching applications" width="750">
+</p>
+
 ## Why
 
 Raycast, Rectangle, and AltTab each own one hotkey and one background process. Flick puts the parts you use every day behind one config file that you can keep in your dotfiles:
@@ -36,6 +40,13 @@ Raycast, Rectangle, and AltTab each own one hotkey and one background process. F
 - **Desktop toggle.** One hotkey jumps to the most recent app on another desktop. Built for a full-screen terminal on one desktop and everything else on another.
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
 - **Quicklinks.** URLs and paths with an optional `{query}` argument. Type `<keyword> <text>` to run one from the root search. Import your Raycast quicklinks with one command.
+
+## See it
+
+| | |
+|---|---|
+| ![Window commands](docs/screenshots/window-commands.png) | ![Quicklink](docs/screenshots/quicklink.png) |
+| *Window commands: type a few letters, or bind them to hotkeys* | *Quicklinks: `gh flick` searches GitHub from the root* |
 
 ## Quickstart
 
@@ -151,6 +162,8 @@ Flick changes `{argument}` placeholders to `{query}` and skips links with the sa
 The panel is a non-activating `NSPanel`, so the app you came from stays active while Flick has keyboard focus. That is why window commands and paste act on the right app.
 
 macOS has no public API for Spaces. Flick switches desktops by activating an app the way a Dock click does, and macOS follows the app to its desktop. The Accessibility API returns window titles only for the current desktop, so the switcher shows one entry per app on other desktops.
+
+`flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the README screenshots hold no personal data.
 
 Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network.
 

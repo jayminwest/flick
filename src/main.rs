@@ -15,6 +15,10 @@ use objc2_foundation::NSBundle;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("snapshot") {
+        snapshot(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("import-raycast") {
         let Some(path) = args.get(2) else {
             eprintln!("usage: flick import-raycast <Quicklinks.json>");
@@ -67,4 +71,21 @@ fn main() {
 fn already_running() -> bool {
     let Some(id) = NSBundle::mainBundle().bundleIdentifier() else { return false };
     NSRunningApplication::runningApplicationsWithBundleIdentifier(&id).count() > 1
+}
+
+/// `flick snapshot <out.png> [query]`: draw the launcher to a PNG without showing it.
+/// Uses the default config and an empty database, so no personal data appears.
+fn snapshot(args: &[String]) {
+    let Some(out) = args.first() else {
+        eprintln!("usage: flick snapshot <out.png> [query]");
+        std::process::exit(2);
+    };
+    let mtm = MainThreadMarker::new().expect("must start on the main thread");
+    ui::init(mtm);
+    app::init(config::Config::default(), store::Store::in_memory());
+    app::set_root_query(args.get(1).map_or("", String::as_str));
+    if let Err(e) = ui::snapshot(out) {
+        eprintln!("flick: {e}");
+        std::process::exit(1);
+    }
 }
