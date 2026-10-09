@@ -7,10 +7,13 @@ use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use std::path::PathBuf;
+
 use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSScreen, NSWorkspace};
-use objc2_foundation::{NSDictionary, NSNumber, NSPoint, NSRect, NSSize, NSString};
+use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSScreen, NSWorkspace};
+use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSPoint, NSRect, NSSize, NSString};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
@@ -212,6 +215,8 @@ unsafe extern "C" {
     fn AXValueCreate(kind: u32, value: *const c_void) -> CFTypeRef;
     fn AXValueGetValue(v: CFTypeRef, kind: u32, out: *mut c_void) -> bool;
     fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
+    fn AXUIElementSetMessagingTimeout(el: AXUIElementRef, seconds: f32) -> i32;
+    fn AXUIElementPerformAction(el: AXUIElementRef, action: CFTypeRef) -> i32;
     fn CGEventCreateKeyboardEvent(source: CFTypeRef, key: u16, down: bool) -> *mut c_void;
     fn CGEventSetFlags(event: *mut c_void, flags: u64);
     fn CGEventPost(tap: u32, event: *mut c_void);
@@ -354,6 +359,125 @@ pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static
     };
     set_window_frame(&win, target);
     Ok(())
+}
+
+// --- Window switcher ---
+
+/// A window to switch to. `element` is None for an app whose windows are on another
+/// desktop: Accessibility only lists windows on the current one.
+pub struct AppWindow {
+    pub pid: i32,
+    pub title: String,
+    pub app: String,
+    pub bundle: Option<PathBuf>,
+    pub minimized: bool,
+    element: Option<Retained<AnyObject>>,
+}
+
+impl AppWindow {
+    pub fn on_other_desktop(&self) -> bool {
+        self.element.is_none()
+    }
+}
+
+/// Copy an attribute as an Objective-C object (CF types are toll-free bridged).
+fn copy_attr(el: CFTypeRef, attr: &str) -> Option<Retained<AnyObject>> {
+    let attr = NSString::from_str(attr);
+    let mut value: CFTypeRef = ptr::null();
+    if unsafe { AXUIElementCopyAttributeValue(el, cfstr(&attr), &mut value) } != 0 {
+        return None;
+    }
+    // "Copy" returns +1, which Retained takes over.
+    unsafe { Retained::from_raw(value as *mut AnyObject) }
+}
+
+fn string_attr(el: CFTypeRef, attr: &str) -> Option<String> {
+    copy_attr(el, attr)?.downcast::<NSString>().ok().map(|s| s.to_string())
+}
+
+fn bool_attr(el: CFTypeRef, attr: &str) -> bool {
+    copy_attr(el, attr).and_then(|v| v.downcast::<NSNumber>().ok()).is_some_and(|n| n.boolValue())
+}
+
+fn set_bool_attr(el: CFTypeRef, attr: &str, value: bool) {
+    let attr = NSString::from_str(attr);
+    let value = NSNumber::new_bool(value);
+    unsafe { AXUIElementSetAttributeValue(el, cfstr(&attr), Retained::as_ptr(&value) as CFTypeRef) };
+}
+
+/// Standard windows of every regular app, apps in `recent` order (most recent first).
+/// The frontmost window goes last, so the first entry is the previous window.
+pub fn list_windows(recent: &[i32], frontmost: Option<i32>) -> Vec<AppWindow> {
+    if !ensure_trusted() {
+        return vec![];
+    }
+    let me = std::process::id() as i32;
+    let elsewhere = crate::spaces::window_pids(false);
+    let mut out = Vec::new();
+    for app in NSWorkspace::sharedWorkspace().runningApplications().iter() {
+        let pid = app.processIdentifier();
+        if pid == me || app.activationPolicy() != NSApplicationActivationPolicy::Regular {
+            continue;
+        }
+        let name = app.localizedName().map(|n| n.to_string()).unwrap_or_default();
+        let bundle = app.bundleURL().and_then(|u| u.path()).map(|p| PathBuf::from(p.to_string()));
+        let app_el = Cf(unsafe { AXUIElementCreateApplication(pid) });
+        // A hung app must not stall the switcher.
+        unsafe { AXUIElementSetMessagingTimeout(app_el.0, 0.25) };
+
+        let before = out.len();
+        let windows = copy_attr(app_el.0, "AXWindows").and_then(|w| w.downcast::<NSArray>().ok());
+        for win in windows.iter().flat_map(|w| w.iter()) {
+            let el = Retained::as_ptr(&win) as CFTypeRef;
+            if string_attr(el, "AXSubrole").as_deref() != Some("AXStandardWindow") {
+                continue;
+            }
+            let title = string_attr(el, "AXTitle").filter(|t| !t.is_empty()).unwrap_or_else(|| name.clone());
+            out.push(AppWindow {
+                pid,
+                title,
+                app: name.clone(),
+                bundle: bundle.clone(),
+                minimized: bool_attr(el, "AXMinimized"),
+                element: Some(win),
+            });
+        }
+        if out.len() == before && elsewhere.contains(&pid) && !app.isHidden() {
+            out.push(AppWindow { pid, title: name.clone(), app: name, bundle, minimized: false, element: None });
+        }
+    }
+
+    let rank = |pid: i32| recent.iter().position(|&p| p == pid).unwrap_or(usize::MAX);
+    out.sort_by_key(|w| rank(w.pid)); // stable: keeps each app's front-to-back order
+    if let Some(i) = out.iter().position(|w| Some(w.pid) == frontmost) {
+        let current = out.remove(i);
+        out.push(current);
+    }
+    out
+}
+
+/// Raise `w` and activate its app (switching desktops if needed).
+pub fn focus(w: &AppWindow) {
+    if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(w.pid)
+        && app.isHidden()
+    {
+        app.unhide();
+    }
+    if let Some(el) = &w.element {
+        let el = Retained::as_ptr(el) as CFTypeRef;
+        if w.minimized {
+            set_bool_attr(el, "AXMinimized", false);
+        }
+        let raise = NSString::from_str("AXRaise");
+        unsafe { AXUIElementPerformAction(el, cfstr(&raise)) };
+        set_bool_attr(el, "AXMain", true);
+    }
+    if !make_frontmost(w.pid)
+        && let Some(path) = &w.bundle
+    {
+        let url = objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
+        NSWorkspace::sharedWorkspace().openURL(&url);
+    }
 }
 
 #[cfg(test)]

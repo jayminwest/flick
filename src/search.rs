@@ -19,6 +19,9 @@ pub enum Action {
     LaunchApp(PathBuf),
     Window(WindowAction),
     ClipboardHistory,
+    SwitchWindows,
+    /// Index into the window list captured when the switcher opened.
+    FocusWindow(usize),
     /// Open quicklink `index`; `query` is None when the link still needs an argument.
     Quicklink { index: usize, query: Option<String> },
     PasteClip(i64),
@@ -44,7 +47,8 @@ impl Action {
         match self {
             Action::LaunchApp(_) => "Open Application",
             Action::Window(_) => "Move Window",
-            Action::ClipboardHistory => "Open Command",
+            Action::ClipboardHistory | Action::SwitchWindows => "Open Command",
+            Action::FocusWindow(_) => "Switch to Window",
             Action::Quicklink { query: None, .. } => "Enter Argument",
             Action::Quicklink { .. } => "Open Quicklink",
             Action::PasteClip(_) => "Paste",

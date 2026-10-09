@@ -18,6 +18,7 @@ use crate::windows::{self, WindowAction};
 enum Mode {
     Root,
     Clipboard,
+    Windows,
     /// Typing the argument for quicklink `index`.
     Argument(usize),
 }
@@ -29,6 +30,7 @@ pub struct State {
     store: Store,
     ranker: Ranker,
     results: Vec<Item>,
+    windows: Vec<windows::AppWindow>,
     selected: usize,
     scroll: usize,
     status: Option<String>,
@@ -56,6 +58,7 @@ pub fn init(config: Config, store: Store) {
         store,
         ranker: Ranker::new(),
         results: vec![],
+        windows: vec![],
         selected: 0,
         scroll: 0,
         status: None,
@@ -65,16 +68,31 @@ pub fn init(config: Config, store: Store) {
 }
 
 pub fn toggle() {
-    if ui::is_visible() {
+    open_in(Mode::Root);
+}
+
+/// The window switcher hotkey.
+pub fn toggle_windows() {
+    open_in(Mode::Windows);
+}
+
+/// Show the panel in `mode`; hide it if it's already showing that mode.
+fn open_in(mode: Mode) {
+    let visible = ui::is_visible();
+    if visible && with_state(|s| s.mode == mode).unwrap_or(false) {
         ui::hide();
         return;
     }
     with_state(|s| {
-        s.apps = apps::scan();
+        if mode == Mode::Root {
+            s.apps = apps::scan();
+        }
         s.status = None;
-        s.enter(Mode::Root);
+        s.enter(mode);
     });
-    ui::show(mtm());
+    if !visible {
+        ui::show(mtm());
+    }
 }
 
 /// A window action from a global hotkey, without the panel.
@@ -106,7 +124,7 @@ pub fn command(sel: Sel) -> bool {
                 s.activate();
             }
         } else if sel == sel!(cancelOperation:) {
-            if s.mode == Mode::Root {
+            if matches!(s.mode, Mode::Root | Mode::Windows) {
                 ui::hide();
             } else {
                 s.enter(Mode::Root);
@@ -191,6 +209,7 @@ fn root_items(s: &State) -> Vec<Item> {
 
     let builtins = [
         ("Clipboard History", "doc.on.clipboard", Action::ClipboardHistory, "paste"),
+        ("Switch Windows", "macwindow.on.rectangle", Action::SwitchWindows, "focus alt tab"),
         ("Open Flick Config", "gearshape", Action::OpenConfig, "settings preferences"),
         ("Reload Flick Config", "arrow.clockwise", Action::ReloadConfig, "refresh"),
         ("Quit Flick", "power", Action::Quit, "exit"),
@@ -223,9 +242,13 @@ impl State {
         let placeholder = match mode {
             Mode::Root => "Search for apps and commands…".to_string(),
             Mode::Clipboard => "Search clipboard history…".to_string(),
+            Mode::Windows => "Search windows…".to_string(),
             Mode::Argument(i) => format!("{} query…", self.config.quicklinks[i].name),
         };
         ui::set_query("", &placeholder);
+        if mode == Mode::Windows {
+            self.windows = windows::list_windows(&crate::spaces::recent(), crate::spaces::frontmost_pid());
+        }
         self.refresh();
     }
 
@@ -234,6 +257,7 @@ impl State {
         self.results = match self.mode {
             Mode::Root => self.root_results(&query),
             Mode::Clipboard => self.clip_results(&query),
+            Mode::Windows => self.window_results(&query),
             Mode::Argument(index) => {
                 let q = &self.config.quicklinks[index];
                 let subtitle = if query.is_empty() { "Type a query".into() } else { q.expand(&query) };
@@ -279,6 +303,34 @@ impl State {
         results
     }
 
+    fn window_results(&mut self, query: &str) -> Vec<Item> {
+        let items = self
+            .windows
+            .iter()
+            .enumerate()
+            .map(|(i, w)| Item {
+                id: format!("window-item:{i}"),
+                title: w.title.clone(),
+                subtitle: if w.title == w.app { String::new() } else { w.app.clone() },
+                accessory: if w.on_other_desktop() {
+                    "Other Desktop".into()
+                } else if w.minimized {
+                    "Minimized".into()
+                } else {
+                    String::new()
+                },
+                icon: w.bundle.clone().map_or(Icon::Symbol("macwindow"), Icon::File),
+                action: Action::FocusWindow(i),
+                keywords: vec![w.app.clone()],
+            })
+            .collect();
+        // Bonus keeps most-recent-first order for equal scores.
+        self.ranker.rank(query, items, |item| match item.action {
+            Action::FocusWindow(i) => -(i as f64) * 1e-3,
+            _ => 0.0,
+        })
+    }
+
     fn clip_results(&mut self, query: &str) -> Vec<Item> {
         let clips = self.store.clips();
         let items = clips
@@ -311,10 +363,12 @@ impl State {
             (Some(status), _) => status.clone(),
             (None, Mode::Root) => "Flick".into(),
             (None, Mode::Clipboard) => "Clipboard History  ·  esc to go back".into(),
+            (None, Mode::Windows) => format!("{} windows", self.windows.len()),
             (None, Mode::Argument(i)) => format!("{}  ·  esc to go back", self.config.quicklinks[i].name),
         };
         let empty = match self.mode {
             Mode::Clipboard if ui::query().is_empty() => "Clipboard history is empty",
+            Mode::Windows if self.windows.is_empty() => "No windows (Flick needs Accessibility permission)",
             _ => "No Results",
         };
         ui::render(&View { items: &self.results, selected: self.selected, scroll: self.scroll, footer: &footer, empty });
@@ -341,7 +395,7 @@ impl State {
 
     fn activate(&mut self) {
         let Some(item) = self.results.get(self.selected).cloned() else { return };
-        if !matches!(item.action, Action::PasteClip(_)) {
+        if !matches!(item.action, Action::PasteClip(_) | Action::FocusWindow(_)) {
             self.store.record_use(&item.id);
         }
         match item.action {
@@ -358,6 +412,13 @@ impl State {
                 }
             }
             Action::ClipboardHistory => self.enter(Mode::Clipboard),
+            Action::SwitchWindows => self.enter(Mode::Windows),
+            Action::FocusWindow(i) => {
+                ui::hide();
+                if let Some(w) = self.windows.get(i) {
+                    windows::focus(w);
+                }
+            }
             Action::Quicklink { index, query: None } => self.enter(Mode::Argument(index)),
             Action::Quicklink { index, query: Some(query) } => {
                 let link = &self.config.quicklinks[index];

@@ -5,6 +5,8 @@ A small, fast launcher for macOS. Rust + AppKit (objc2), no web views, no runtim
 - **Apps**: fuzzy search; ranking learns from use
 - **Window management**: halves, quarters, thirds, maximize, center, displays; global hotkeys
   via `[window_keys]` in the config, and repeating a half cycles 1/2 → 2/3 → 1/3
+- **Window switcher**: `windows_hotkey` fuzzy-searches open windows by title and app;
+  apps on other desktops show as one entry that jumps there
 - **Desktop toggle**: `desktop_toggle` hotkey jumps to the most recent app on another desktop
 - **Clipboard history**: text only, last 500 clips; skips password-manager content
 - **Quicklinks**: URLs or paths, `{query}` arguments, `<keyword> <text>` from the root
