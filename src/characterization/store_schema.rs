@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-use crate::modules::{AppStore as Store, Clips};
+use crate::modules::{AppStore as Store, Clips, IDS};
 
 /// A database file in the temp dir, deleted on drop.
 struct TempDb(PathBuf);
@@ -36,8 +36,17 @@ fn table_sql(path: &PathBuf) -> Vec<(String, String)> {
 fn schema_is_usage_and_clips() {
     let db = TempDb::new("schema");
     drop(Store::open(&db.0).unwrap());
+    let known = ["clips", "schema_versions", "sqlite_sequence", "usage"];
+    let (pinned, rest): (Vec<_>, Vec<_>) =
+        table_sql(&db.0).into_iter().partition(|(name, _)| known.contains(&name.as_str()));
+    // Any other table belongs to a module not pinned here, named after its id.
+    let pinned_ids = ["app", "desktop", "switcher", "window", "quicklink", "builtin", "clip"];
+    let new_ids: Vec<&str> = IDS.iter().copied().filter(|id| !pinned_ids.contains(id)).collect();
+    for (name, _) in &rest {
+        assert!(new_ids.iter().any(|id| name.starts_with(id)), "unexpected table {name}");
+    }
     assert_eq!(
-        table_sql(&db.0),
+        pinned,
         [
             (
                 "clips".to_string(),

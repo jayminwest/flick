@@ -95,6 +95,10 @@ impl Module for Apps {
         false
     }
 
+    fn verbs(&self) -> &'static str {
+        "app list | app open <name>"
+    }
+
     /// `list`: `<name>\t<path>` per app. `open <name>`: open the app with that name, any case.
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {

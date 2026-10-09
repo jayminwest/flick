@@ -89,6 +89,10 @@ impl Module for Clipboard {
         true
     }
 
+    fn verbs(&self) -> &'static str {
+        "clip list | clip get <id>"
+    }
+
     /// `list`: `<id>\t<first line>`, newest first. `get <id>`: that clip's full text.
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
         match args {

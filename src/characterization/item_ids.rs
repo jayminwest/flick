@@ -106,9 +106,12 @@ fn root_items_are_apps_then_windows_then_quicklinks_then_builtins() {
     let apps = [app("Zed", "/Applications/Zed.app")];
     let links = [Quicklink { name: "Docs".into(), url: "https://docs.rs".into(), keyword: None }];
     let items = root_items(&apps, &links);
-    assert_eq!(items.len(), 1 + 20 + 1 + 5);
-    let prefixes: Vec<&str> = items.iter().filter_map(|i| i.id.split(':').next()).collect();
+    // Only these modules' items; a new module's root items are its own to pin.
+    let known = ["app", "window", "quicklink", "builtin"];
+    let prefixes: Vec<&str> =
+        items.iter().filter_map(|i| i.id.split(':').next()).filter(|p| known.contains(p)).collect();
+    assert_eq!(prefixes.len(), 1 + 20 + 1 + 5);
     let mut runs = prefixes.clone();
     runs.dedup();
-    assert_eq!(runs, ["app", "window", "quicklink", "builtin"]);
+    assert_eq!(runs, known);
 }
