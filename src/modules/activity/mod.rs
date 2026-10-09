@@ -9,8 +9,11 @@
 //! lock pause recording; wake and unlock resume it. Quit closes the open span.
 //! Spans carry the running task's id, learned from `Event::TaskChanged` (activity never
 //! reads the task module's tables); a task change splits the open span.
-//! Ids are `activity:record`, `activity:today` and `activity:row/<kind>/<name>` (view rows).
+//! Agent sessions (`Cx::remote`) read reports only with the user's grant (`remote`).
+//! Ids are `activity:record`, `activity:today`, `activity:remote` and
+//! `activity:row/<kind>/<name>` (view rows).
 
+mod remote;
 mod report;
 mod rules;
 mod store;
@@ -255,7 +258,10 @@ impl Activity {
         let json = |v: Result<String, serde_json::Error>| v.map_err(|e| format!("activity: {e}"));
         match args {
             [] => {
-                let r = self.report(range, cx.store);
+                let mut r = self.report(range, cx.store);
+                if self.hide_titles(cx) {
+                    r.top_titles.clear();
+                }
                 if cx.json { json(serde_json::to_string(&r)) } else { Ok(r.text()) }
             }
             [by, what] if by == "--by" && what == "task" => {
@@ -299,7 +305,12 @@ impl Activity {
             .ok_or_else(|| format!("activity: bad date \"{since}\" (today, week or YYYY-MM-DD)"))?;
         self.touch(cx.store, now);
         let spans = cx.store.spans(from, now + 1);
-        let list = span_list(&spans, &self.config);
+        let mut list = span_list(&spans, &self.config);
+        if self.hide_titles(cx) {
+            for s in &mut list {
+                s.title = None;
+            }
+        }
         if cx.json {
             return serde_json::to_string(&list).map_err(|e| format!("activity: {e}"));
         }
@@ -388,6 +399,7 @@ impl Module for Activity {
                 keywords: vec!["time tracking screen".into()],
                 ..Item::new(ItemId::new("activity", key), title, verb, Icon::Symbol(symbol))
             })
+            .chain([self.remote_item(cx.store)])
             .collect()
     }
 
@@ -419,6 +431,7 @@ impl Module for Activity {
         match id.key() {
             "record" => Outcome::Stay(Some(self.set_recording(!cx.store.recording(), cx.store))),
             "today" => Outcome::Push(ListView::new("activity", "today")),
+            "remote" => Outcome::Stay(Some(self.toggle_remote(cx.store))),
             _ => Outcome::Stay(None),
         }
     }
@@ -456,13 +469,14 @@ impl Module for Activity {
     }
 
     fn verbs(&self) -> &'static str {
-        "activity on|off|status | activity today|week [--by task] | activity spans [--since <date>] | activity forget today|all|app <id> --yes"
+        "activity on|off|status | activity today|week [--by task] | activity spans [--since <date>] | activity forget today|all|app <id> --yes | activity remote allow [<min>|always]|deny|status"
     }
 
     /// `--json` (`cx.json`) makes `today`, `week` and `spans` answer with JSON; spans carry
-    /// their task id.
+    /// their task id. Remote callers (`cx.remote`) pass `remote::gate` first.
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
-        match args {
+        let read = if cx.remote { remote::gate(args, cx.store, (self.env.now)())? } else { false };
+        let reply = match args {
             [v] if v == "on" => Ok(self.set_recording(true, cx.store)),
             [v] if v == "off" => Ok(self.set_recording(false, cx.store)),
             [v] if v == "status" => Ok(self.status(cx.store)),
@@ -471,7 +485,12 @@ impl Module for Activity {
             }
             [v, rest @ ..] if v == "spans" => self.spans(rest, cx),
             [v, rest @ ..] if v == "forget" => self.forget(rest, cx.store),
+            [v, rest @ ..] if v == "remote" => self.remote(rest, cx),
             _ => Err(unknown_verb("activity", args)),
+        };
+        if read && reply.is_ok() {
+            cx.store.set_remote_last((self.env.now)());
         }
+        reply
     }
 }

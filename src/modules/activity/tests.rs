@@ -94,6 +94,7 @@ fn rows(cx: &Cx) -> Vec<(i64, i64, String)> {
 
 const T: i64 = 1_000_000;
 
+mod remote;
 mod tasks;
 
 #[test]
@@ -263,7 +264,10 @@ fn root_items_view_and_hotkey() {
     with_cx(|cx| {
         let mut a = activity("");
         let titles = |a: &mut Activity, cx: &mut Cx| a.items(cx).into_iter().map(|i| i.title).collect::<Vec<_>>();
-        assert_eq!(titles(&mut a, cx), ["Start Activity Recording", "Activity Today"]);
+        assert_eq!(
+            titles(&mut a, cx),
+            ["Start Activity Recording", "Activity Today", "Allow Agents to Read Activity (1 h)"]
+        );
         let mut view = a.open("today", cx).unwrap();
         assert!(a.open("week", cx).is_none());
         a.refresh(&mut view, cx);

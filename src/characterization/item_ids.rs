@@ -190,3 +190,13 @@ fn feedback_ids_are_fixed_keys() {
         ids(&items).into_iter().filter(|id| id.starts_with("feedback:")).collect();
     assert_eq!(feedback, ["feedback:new", "feedback:list"]);
 }
+
+#[test]
+fn activity_ids_are_fixed_keys() {
+    // While recording is off and no agent grant is live; the titles change, the ids do not.
+    // Rows in `activity/today` are `activity:row/<kind>/<name>` and do not record use.
+    let items = root_items(&[], &[]);
+    let activity: Vec<&str> =
+        ids(&items).into_iter().filter(|id| id.starts_with("activity:")).collect();
+    assert_eq!(activity, ["activity:record", "activity:today", "activity:remote"]);
+}
