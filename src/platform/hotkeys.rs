@@ -27,6 +27,8 @@ impl Hotkey {
 
 thread_local! {
     static MANAGER: RefCell<Option<GlobalHotKeyManager>> = const { RefCell::new(None) };
+    /// What `register` registered, for `registered_keys`.
+    static REGISTERED: RefCell<Vec<HotKey>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Start listening; `on_press` gets the id of each pressed hotkey, on the main thread.
@@ -46,7 +48,9 @@ pub fn register(hotkey: Hotkey) -> Result<(), String> {
     MANAGER.with(|m| {
         let m = m.borrow();
         let m = m.as_ref().ok_or("Hotkey manager not initialized")?;
-        m.register(hotkey.0).map_err(|e| e.to_string())
+        m.register(hotkey.0).map_err(|e| e.to_string())?;
+        REGISTERED.with(|r| r.borrow_mut().push(hotkey.0));
+        Ok(())
     })
 }
 
@@ -56,6 +60,13 @@ pub fn unregister(hotkey: Hotkey) {
             let _ = m.unregister(hotkey.0);
         }
     });
+    REGISTERED.with(|r| r.borrow_mut().retain(|h| h.id() != hotkey.id()));
+}
+
+/// The key of each registered hotkey, as hotkey specs name it (`KeyH`, `F18`), modifiers
+/// left out.
+pub fn registered_keys() -> Vec<String> {
+    REGISTERED.with(|r| r.borrow().iter().map(|h| h.key.to_string()).collect())
 }
 
 pub fn is_initialized() -> bool {

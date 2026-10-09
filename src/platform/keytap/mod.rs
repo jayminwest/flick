@@ -12,7 +12,6 @@
 //!
 //! The handler and the hook run on the tap thread. Keep them short: input waits on them.
 //! Unlike the rest of `platform`, every function here may be called from any thread.
-#![cfg_attr(not(test), expect(dead_code, reason = "wired in flick-d717 step 5"))]
 
 mod tap;
 

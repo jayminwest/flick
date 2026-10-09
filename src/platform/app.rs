@@ -1,8 +1,10 @@
 //! The process as a macOS app: main thread, activation policy, run loop, single instance.
 
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::path::PathBuf;
 use std::ptr::NonNull;
+use std::sync::Once;
 
 use block2::RcBlock;
 use objc2::MainThreadMarker;
@@ -13,6 +15,31 @@ use objc2_app_kit::{
     NSRunningApplication,
 };
 use objc2_foundation::{NSBundle, NSNotification, NSNotificationCenter, NSObjectProtocol};
+
+#[repr(C)]
+struct SourceType {
+    _private: [u8; 0],
+}
+
+unsafe extern "C" {
+    /// `DISPATCH_SOURCE_TYPE_SIGNAL` is the address of this symbol.
+    static _dispatch_source_type_signal: SourceType;
+    fn dispatch_source_create(
+        kind: *const SourceType,
+        handle: usize,
+        mask: usize,
+        queue: *const c_void,
+    ) -> *mut c_void;
+    fn dispatch_source_set_event_handler_f(
+        source: *mut c_void,
+        handler: extern "C" fn(*mut c_void),
+    );
+    fn dispatch_resume(object: *mut c_void);
+    fn signal(sig: i32, handler: usize) -> usize;
+}
+
+const SIGTERM: i32 = 15;
+const SIG_IGN: usize = 1;
 
 thread_local! {
     /// `on_terminate` observers; dropping one ends its registration.
@@ -43,7 +70,6 @@ pub fn quit() {
 
 /// Run `hook` on the main thread when the app quits through `quit` (or Quit from any menu):
 /// `applicationWillTerminate`, just before exit. Not on a crash or a signal (launchd stop).
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-d717 step 5"))]
 pub fn on_terminate(hook: impl Fn() + 'static) {
     let block = RcBlock::new(move |_n: NonNull<NSNotification>| hook());
     // SAFETY: the name is an immutable framework constant; the block is 'static, takes the
@@ -58,6 +84,42 @@ pub fn on_terminate(hook: impl Fn() + 'static) {
         )
     };
     TERMINATE.with(|t| t.borrow_mut().push(observer));
+}
+
+/// Quit through `quit` on SIGTERM (launchd stop, `kill`, scripts/relaunch.sh), so the
+/// `on_terminate` hooks run then too. Installs once; later calls do nothing.
+pub fn quit_on_sigterm() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: a valid source type, signal number and mask; the main queue is static.
+        let source = unsafe {
+            dispatch_source_create(
+                &raw const _dispatch_source_type_signal,
+                SIGTERM as usize,
+                0,
+                super::events::main_queue(),
+            )
+        };
+        if source.is_null() {
+            eprintln!("flick: no SIGTERM handler; quit by signal skips cleanup");
+            return;
+        }
+        // SAFETY: `source` is live and not yet resumed; the handler is a plain function that
+        // ignores its (null) context. The source is never released: it lives as long as Flick.
+        unsafe { dispatch_source_set_event_handler_f(source, on_sigterm) };
+        // SAFETY: as above; a new source starts suspended and is resumed once.
+        unsafe { dispatch_resume(source) };
+        // SAFETY: SIG_IGN is a valid disposition. Without it TERM kills Flick before the
+        // source sees it; the source still receives an ignored signal.
+        unsafe { signal(SIGTERM, SIG_IGN) };
+    });
+}
+
+/// Main queue, on SIGTERM.
+extern "C" fn on_sigterm(_context: *mut c_void) {
+    quit();
+    // `terminate:` exits; if it did not, exit as TERM asks.
+    std::process::exit(0);
 }
 
 /// Another Flick.app is running (e.g. opened by hand next to the login agent's copy).

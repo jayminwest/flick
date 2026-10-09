@@ -9,7 +9,6 @@ pub mod control;
 mod event;
 mod form;
 mod item;
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-df71"))]
 pub mod keys;
 mod module;
 mod rank;
