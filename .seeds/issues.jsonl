@@ -105,3 +105,4 @@
 {"id":"flick-f4cb","title":"core: distinct Tab action (currently Tab == Enter in activate); herdr wants Tab for Show Output","status":"open","type":"task","priority":4,"createdAt":"2026-10-09T18:46:25.636Z","updatedAt":"2026-10-09T18:46:25.636Z"}
 {"id":"flick-dc95","title":"Move civil-date/duration helpers (duplicated in activity/report.rs and tasks/cli.rs) into core::track","status":"open","type":"task","priority":3,"createdAt":"2026-10-09T18:48:33.766Z","updatedAt":"2026-10-09T18:48:33.766Z"}
 {"id":"flick-6bf4","title":"herdr: notification click while launcher open jumps without hiding the panel","status":"open","type":"bug","priority":3,"createdAt":"2026-10-09T18:53:45.380Z","updatedAt":"2026-10-09T18:53:45.380Z"}
+{"id":"flick-5bb6","title":"README 'How it works' data sentence should mention capture paths and task data in flick.db","status":"open","type":"task","priority":4,"createdAt":"2026-10-09T19:11:46.536Z","updatedAt":"2026-10-09T19:11:46.536Z"}
