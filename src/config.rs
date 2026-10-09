@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Config" from Flick.
+const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 
 # Modifiers: cmd, alt, ctrl, shift. Keys: Space, KeyA..KeyZ, Digit0..Digit9, F1..F12, ...
 hotkey = "alt+shift+Space"
@@ -39,10 +39,11 @@ pub struct Config {
     pub quicklinks: Vec<Quicklink>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Quicklink {
     pub name: String,
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub keyword: Option<String>,
 }
 
@@ -56,7 +57,11 @@ impl Default for Config {
     }
 }
 
+/// `$FLICK_CONFIG`, else `~/.config/flick/config.toml`.
 pub fn config_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("FLICK_CONFIG") {
+        return path.into();
+    }
     dirs::home_dir().unwrap_or_default().join(".config/flick/config.toml")
 }
 

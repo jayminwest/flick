@@ -27,10 +27,19 @@ codesign --force --sign - "$app"
 echo "built $app"
 
 if [[ "${1:-}" == "--install" ]]; then
-  pkill -x Flick || true
+  # A launchd agent (e.g. home-manager's launchd.agents.flick) owns the process
+  # when present; restart through it so there is only ever one Flick.
+  agent="gui/$(id -u)/org.nix-community.home.flick"
+  launchd=false
+  launchctl print "$agent" >/dev/null 2>&1 && launchd=true
+  $launchd || pkill -x Flick || true
   rm -rf ~/Applications/Flick.app
   mkdir -p ~/Applications
   cp -R "$app" ~/Applications/
-  open ~/Applications/Flick.app
+  if $launchd; then
+    launchctl kickstart -k "$agent"
+  else
+    open ~/Applications/Flick.app
+  fi
   echo "installed ~/Applications/Flick.app"
 fi

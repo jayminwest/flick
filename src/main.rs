@@ -2,6 +2,7 @@ mod app;
 mod apps;
 mod config;
 mod hotkey;
+mod raycast;
 mod search;
 mod store;
 mod ui;
@@ -11,6 +12,22 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("import-raycast") {
+        let Some(path) = args.get(2) else {
+            eprintln!("usage: flick import-raycast <Quicklinks.json>");
+            std::process::exit(2);
+        };
+        match raycast::import_file(path.as_ref()) {
+            Ok(report) => println!("{report}"),
+            Err(e) => {
+                eprintln!("flick: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let mtm = MainThreadMarker::new().expect("must start on the main thread");
     let ns_app = NSApplication::sharedApplication(mtm);
     // No Dock icon or menu bar.
