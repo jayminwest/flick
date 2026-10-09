@@ -4,7 +4,7 @@ use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
 use crate::modules::herdr::model::Status;
-use testkit::{CLI, Cli, HOOKS, Server, info, wait};
+use testkit::{CLI, CLICKS, Cli, HOOKS, LISTENS, NOTES, Server, info, status_event, wait};
 
 fn configured(text: &str) -> Result<Herdr, String> {
     let mut h = Herdr::with_hooks(HOOKS);
@@ -43,6 +43,11 @@ fn settings_have_defaults_and_reject_bad_values() {
     assert_eq!(bad("[herdr]\nremote_refresh_secs = 5"), "[herdr]: remote_refresh_secs must be 0 or at least 15");
     assert_eq!(bad("[herdr]\nmachines = [\"a/b\"]"), "[herdr]: bad machine name \"a/b\"");
     assert!(bad("[herdr]\nnotify_typo = 1").starts_with("[herdr]: unknown field"));
+    assert_eq!(bad("[herdr]\nnotify = [\"working\"]"), "[herdr]: notify takes \"blocked\" and \"done\", not \"working\"");
+    // The commented example in DEFAULT_CONFIG (config.rs).
+    let example = "[herdr]\nmachines = [\"local\", \"mbp-server\"]\nremote_refresh_secs = 60\nterminal = \"WezTerm\"\n\
+                   hotkey = \"cmd+ctrl+alt+shift+KeyA\"\npreview_lines = 6\nnotify = [\"blocked\", \"done\"]";
+    assert_eq!(configured(example).unwrap().settings.notify, ["blocked", "done"]);
     let h = configured("[herdr]\nhotkey = \"cmd+shift+A\"").unwrap();
     assert_eq!(h.hotkeys(), [Binding { spec: "cmd+shift+A".into(), key: Ok("agents".into()) }]);
 }
@@ -222,4 +227,52 @@ fn a_fleet_without_local_runs_no_local_thread() {
     assert!(server.calls().is_empty());
     assert_eq!(lock(&h.shared.fleet).machine_names(), ["hub"]);
     assert!(unix_now() > 1_700_000_000);
+}
+
+#[test]
+fn an_agent_that_starts_to_wait_posts_one_notification_and_a_click_jumps() {
+    let server = Server::start("notes", vec![info("w1:p1", "working"), info("w1:p2", "blocked")]);
+    let cli = Cli::new("notes", CLI);
+    let mut h = started(&server, &cli, "[\"local\"]");
+    assert_eq!(LISTENS.take(), [true]);
+    wait("subscribed", || server.subscribers() == 1);
+    let changed = |h: &mut Herdr| test_cx("", |cx| h.on_event(Event::ModuleChanged { module: ID }, cx));
+    // The first list (p2 already blocked) and a repeat of a status post nothing.
+    changed(&mut h);
+    server.push(&status_event("w1:p2", "blocked"));
+    server.push(&status_event("w1:p1", "blocked"));
+    wait("blocked", || status(&h, "local", "w1:p1") == Some(Status::Blocked));
+    changed(&mut h);
+    changed(&mut h);
+    assert_eq!(NOTES.take(), ["herdr:agent/local/w1:p1 | n-w1:p1 is waiting | local · /Users/example/src/api"]);
+    // `done` is not asked for by default.
+    server.push(&status_event("w1:p1", "done"));
+    wait("done", || status(&h, "local", "w1:p1") == Some(Status::Done));
+    changed(&mut h);
+    assert!(NOTES.take().is_empty());
+
+    CLICKS.with_borrow_mut(|c| c.extend(["herdr:agents".into(), "herdr:agent/local/w1:p1".into()]));
+    changed(&mut h);
+    wait("click focus", || server.calls().contains(&"agent.focus w1:p1".to_string()));
+    test_cx("", |cx| {
+        let st = h.command(&args(&["status"]), cx).unwrap();
+        assert!(st.ends_with("\nnotifications: test (blocked)"), "{st}");
+        cx.json = true;
+        let st: serde_json::Value = serde_json::from_str(&h.command(&args(&["status"]), cx).unwrap()).unwrap();
+        assert_eq!(st["notifications"], "test (blocked)");
+    });
+
+    // notify = [] turns them off and asks for no permission.
+    let text = format!(
+        "[herdr]\nsocket = \"{}\"\nherdr = \"{}\"\nmachines = [\"local\"]\nnotify = []\n",
+        server.socket.display(),
+        cli.herdr.display()
+    );
+    h.configure(&parse(&text).unwrap().section("herdr").unwrap().unwrap()).unwrap();
+    assert_eq!(LISTENS.take(), [false]);
+    server.push(&status_event("w1:p1", "blocked"));
+    wait("blocked again", || status(&h, "local", "w1:p1") == Some(Status::Blocked));
+    changed(&mut h);
+    assert!(NOTES.take().is_empty());
+    test_cx("", |cx| assert!(h.command(&args(&["status"]), cx).unwrap().ends_with("notifications: off")));
 }
