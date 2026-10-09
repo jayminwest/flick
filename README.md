@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/icon/flick.svg" width="128" alt="Flick icon: three amber dots, each brighter than the last, moving up and to the right">
+
 [![CI](https://img.shields.io/github/actions/workflow/status/jayminwest/flick/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/jayminwest/flick/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/jayminwest/flick?style=for-the-badge&label=Release)](https://github.com/jayminwest/flick/releases)
 [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-blue.svg?style=for-the-badge)](LICENSE)
