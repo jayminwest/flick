@@ -25,6 +25,11 @@ pub fn socket_path() -> PathBuf {
         .map_or_else(|| config::data_dir().join("flick.sock"), PathBuf::from)
 }
 
+/// Another Flick serves the control socket, whatever binary or bundle it runs from.
+pub fn running() -> bool {
+    server::answering(&socket_path())
+}
+
 /// Serve the control socket on background threads.
 pub fn start() -> Result<(), String> {
     let path = socket_path();
