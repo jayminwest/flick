@@ -9,7 +9,11 @@ pub use crate::platform::panel::{
 };
 
 pub fn init() {
-    panel::init(Handlers { query_changed: crate::app::query_changed, key: crate::app::command });
+    panel::init(Handlers {
+        query_changed: crate::app::query_changed,
+        field_changed: |_| {},
+        key: crate::app::command,
+    });
 }
 
 pub struct View<'a> {
@@ -38,6 +42,7 @@ pub fn render(view: &View) {
         .collect();
     let action = view.items.get(view.selected).map(|i| format!("{}  ↵", i.verb));
     panel::render(&Frame {
+        title: None,
         rows: &rows,
         selected: view.selected.checked_sub(view.scroll),
         empty: if view.items.is_empty() { view.empty } else { "" },

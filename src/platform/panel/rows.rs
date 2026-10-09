@@ -25,8 +25,10 @@ pub struct Row<'a> {
     pub icon: Icon<'a>,
 }
 
-/// Everything the panel shows below the search field.
+/// Everything the panel shows for a list.
 pub struct Frame<'a> {
+    /// A read-only title in place of the search field, which then takes no typing.
+    pub title: Option<&'a str>,
     /// At most `VISIBLE_ROWS` rows, top to bottom.
     pub rows: &'a [Row<'a>],
     /// Index into `rows` of the highlighted row.
@@ -125,6 +127,7 @@ fn icon_image(ui: &Ui, icon: &Icon) -> Option<Retained<NSImage>> {
 
 pub fn render(frame: &Frame) {
     with_ui(|ui| {
+        super::form::list_mode(ui, frame.title);
         let visible = frame.rows.iter().enumerate().take(VISIBLE_ROWS);
         let mut shown = 0;
         for (row, (index, item)) in ui.rows.iter().zip(visible) {
