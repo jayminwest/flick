@@ -4,13 +4,23 @@
 
 use std::collections::HashSet;
 
-use crate::config::Config;
+use serde::Deserialize;
+
+use crate::config::Section;
 use crate::core::{Binding, Cx, Event, ListView, Module, RecentPids};
 use crate::platform::{spaces, workspace};
+
+/// Table `[desktop]`: `hotkey` (legacy: top-level `desktop_toggle`).
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Settings {
+    hotkey: Option<String>,
+}
 
 /// `recent`: apps by activation, most recent first.
 #[derive(Default)]
 pub struct Desktop {
+    hotkey: Option<String>,
     recent: RecentPids,
 }
 
@@ -19,10 +29,14 @@ impl Module for Desktop {
         "desktop"
     }
 
-    /// `desktop_toggle` binds key `toggle`.
-    fn hotkeys(&self, config: &Config) -> Vec<Binding> {
-        config
-            .desktop_toggle
+    fn configure(&mut self, table: &Section) -> Result<(), String> {
+        self.hotkey = table.get::<Settings>()?.hotkey;
+        Ok(())
+    }
+
+    /// `hotkey` binds key `toggle`.
+    fn hotkeys(&self) -> Vec<Binding> {
+        self.hotkey
             .iter()
             .map(|spec| Binding { spec: spec.clone(), key: Ok("toggle".into()) })
             .collect()
@@ -90,11 +104,24 @@ mod tests {
         assert_eq!(pick(&[1], &[2, 4], Some(1), &here, &anywhere), Some(4));
     }
 
+    fn desktop(text: &str) -> Desktop {
+        let config = crate::config::parse(text).unwrap();
+        let mut desktop = Desktop::default();
+        desktop.configure(&config.section("desktop").unwrap().unwrap()).unwrap();
+        desktop
+    }
+
     #[test]
     fn binds_desktop_toggle() {
-        let config = Config { desktop_toggle: Some("cmd+Backquote".into()), ..Config::default() };
         let want = Binding { spec: "cmd+Backquote".into(), key: Ok("toggle".into()) };
-        assert_eq!(Desktop::default().hotkeys(&config), [want]);
-        assert!(Desktop::default().hotkeys(&Config::default()).is_empty());
+        assert_eq!(
+            desktop("[desktop]\nhotkey = \"cmd+Backquote\"").hotkeys(),
+            std::slice::from_ref(&want)
+        );
+        assert_eq!(desktop("desktop_toggle = \"cmd+Backquote\"").hotkeys(), [want]);
+        assert!(desktop("").hotkeys().is_empty());
+        let config = crate::config::parse("[desktop]\nhotkey = 1").unwrap();
+        let section = config.section("desktop").unwrap().unwrap();
+        assert!(Desktop::default().configure(&section).is_err());
     }
 }

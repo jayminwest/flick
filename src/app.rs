@@ -24,13 +24,7 @@ struct Env {
 
 impl Env {
     fn cx<'a>(&'a mut self, query: &'a str) -> Cx<'a> {
-        Cx {
-            query,
-            config: &mut self.config,
-            store: &self.store,
-            ranker: &mut self.ranker,
-            hide: ui::hide,
-        }
+        Cx { query, store: &self.store, ranker: &mut self.ranker, hide: ui::hide }
     }
 }
 
@@ -53,10 +47,29 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     STATE.with(|s| s.borrow_mut().as_mut().map(f))
 }
 
+/// The modules `config` sets up; an error names the file and the bad table.
+fn registry(config: &Config) -> Result<Registry, String> {
+    modules::registry(config).map_err(|e| format!("{}: {e}", config::config_path().display()))
+}
+
+/// The modules `config` sets up. A bad module table means defaults, like a bad file.
+fn modules_for(config: Config) -> (Config, Registry) {
+    match registry(&config) {
+        Ok(registry) => (config, registry),
+        Err(e) => {
+            eprintln!("flick: {e}; using defaults");
+            let config = Config::default();
+            let registry = modules::registry(&config).unwrap_or_else(|_| Registry::new(vec![]));
+            (config, registry)
+        }
+    }
+}
+
 pub fn init(config: Config, store: Store) {
+    let (config, registry) = modules_for(config);
     let mut state = State {
         view: None,
-        registry: modules::registry(),
+        registry,
         env: Env { config, store, ranker: Ranker::new() },
         results: vec![],
         selected: 0,
@@ -72,7 +85,7 @@ pub fn init(config: Config, store: Store) {
 
 /// Bind the launcher hotkey and every module's hotkeys from the current config.
 pub fn bind_hotkeys() -> Result<(), String> {
-    with_state(|s| s.bind(&s.env.config)).unwrap_or(Ok(()))
+    with_state(|s| s.bind()).unwrap_or(Ok(()))
 }
 
 /// The launcher hotkey: show root search, or hide it if it's showing.
@@ -178,10 +191,10 @@ pub fn on_event(event: Event) {
 }
 
 impl State {
-    /// Bind the launcher hotkey, then every module's, under `config`.
-    fn bind(&self, config: &Config) -> Result<(), String> {
-        let mut wanted = vec![(config.hotkey.clone(), Ok(Target::Launcher))];
-        for (module, b) in self.registry.hotkeys(config) {
+    /// Bind the launcher hotkey, then every module's.
+    fn bind(&self) -> Result<(), String> {
+        let mut wanted = vec![(self.env.config.hotkey.clone(), Ok(Target::Launcher))];
+        for (module, b) in self.registry.hotkeys() {
             wanted.push((b.spec, b.key.map(|key| Target::Module(module, key))));
         }
         hotkey::register(wanted)
@@ -269,10 +282,17 @@ impl State {
                 }
             }
             Outcome::Push(view) => self.enter(Some(view)),
-            Outcome::ReloadConfig => match config::load() {
+            Outcome::ReloadConfig => match config::load().and_then(|c| {
+                modules::reload(&mut self.registry, &c)
+                    .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
+                Ok(c)
+            }) {
                 Ok(config) => {
-                    let bound = self.bind(&config);
                     self.env.config = config;
+                    if let Err(e) = self.registry.migrate(&self.env.store) {
+                        eprintln!("flick: store migration failed: {e}");
+                    }
+                    let bound = self.bind();
                     self.enter(None);
                     self.set_status(bound.map_or_else(|e| e, |()| "Config reloaded".into()));
                 }

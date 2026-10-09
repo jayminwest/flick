@@ -1,6 +1,6 @@
 //! Existing config.toml files must keep parsing with the same meaning.
 
-use crate::config::{Config, parse};
+use super::legacy_view::{Config, parse};
 use crate::modules::windows::action::WindowAction;
 
 /// Every key Flick has read so far, in the flat top-level layout.

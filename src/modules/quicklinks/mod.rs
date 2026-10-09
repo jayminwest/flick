@@ -1,11 +1,38 @@
 //! Module `quicklink`: configured links in root search, and the view that takes a link's
 //! argument. Ids are `quicklink:<name>`; the typed query rides in the id's `arg`.
 
-use crate::config::Quicklink;
+mod link;
+
+pub use link::Quicklink;
+use serde::Deserialize;
+
+use crate::config::{Config, Section};
 use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::workspace;
 
-pub struct Quicklinks;
+/// Table `[quicklink]`: `[[quicklink.links]]` (legacy: top-level `[[quicklinks]]`).
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Settings {
+    links: Vec<Quicklink>,
+}
+
+#[derive(Default)]
+pub struct Quicklinks {
+    links: Vec<Quicklink>,
+}
+
+impl Quicklinks {
+    fn find(&self, name: &str) -> Option<&Quicklink> {
+        self.links.iter().find(|q| q.name == name)
+    }
+}
+
+/// The links `config` sets up; none when the module is disabled.
+pub fn links(config: &Config) -> Result<Vec<Quicklink>, String> {
+    let Some(section) = config.section("quicklink")? else { return Ok(vec![]) };
+    Ok(section.get::<Settings>()?.links)
+}
 
 fn item(q: &Quicklink, arg: Option<String>) -> Item {
     let id = ItemId::new("quicklink", &q.name);
@@ -30,18 +57,18 @@ fn keyword_item(q: &Quicklink, text: &str) -> Item {
     Item { subtitle: format!("“{text}”"), ..item(q, Some(text.to_string())) }
 }
 
-fn find<'a>(cx: &'a Cx, name: &str) -> Option<&'a Quicklink> {
-    cx.config.quicklinks.iter().find(|q| q.name == name)
-}
-
 impl Module for Quicklinks {
     fn id(&self) -> &'static str {
         "quicklink"
     }
 
-    fn items(&mut self, cx: &mut Cx) -> Vec<Item> {
-        cx.config
-            .quicklinks
+    fn configure(&mut self, table: &Section) -> Result<(), String> {
+        self.links = table.get::<Settings>()?.links;
+        Ok(())
+    }
+
+    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
+        self.links
             .iter()
             .map(|q| Item {
                 subtitle: q.keyword.clone().unwrap_or_default(),
@@ -55,15 +82,15 @@ impl Module for Quicklinks {
     /// "<keyword> <text>" runs the first link with that keyword that takes a query.
     fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
         let Some((keyword, rest)) = cx.query.split_once(' ') else { return vec![] };
-        let link = cx.config.quicklinks.iter().find(|q| {
+        let link = self.links.iter().find(|q| {
             q.takes_query() && q.keyword.as_deref() == Some(keyword) && !rest.trim().is_empty()
         });
         link.map(|q| keyword_item(q, rest.trim())).into_iter().collect()
     }
 
     /// View `<name>`: type the argument for that link.
-    fn open(&mut self, view: &str, cx: &mut Cx) -> Option<ListView> {
-        let q = find(cx, view)?;
+    fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
+        let q = self.find(view)?;
         Some(ListView {
             placeholder: format!("{} query…", q.name),
             footer: format!("{}  ·  esc to go back", q.name),
@@ -73,7 +100,8 @@ impl Module for Quicklinks {
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
-        view.items = find(cx, &view.name)
+        view.items = self
+            .find(&view.name)
             .map(|q| Item {
                 subtitle: if cx.query.is_empty() {
                     "Type a query".into()
@@ -87,7 +115,7 @@ impl Module for Quicklinks {
     }
 
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
-        let Some(link) = find(cx, id.key()) else { return Outcome::Stay(None) };
+        let Some(link) = self.find(id.key()) else { return Outcome::Stay(None) };
         let Some(query) = id.arg() else {
             return Outcome::Push(ListView::new("quicklink", id.key()));
         };

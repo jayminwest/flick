@@ -3,7 +3,6 @@
 use std::panic::{self, AssertUnwindSafe};
 
 use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
-use crate::config::Config;
 use crate::store::Store;
 
 pub struct Registry {
@@ -18,6 +17,11 @@ impl Registry {
             "duplicate module id"
         );
         Registry { modules }
+    }
+
+    /// The modules in order, to build another registry from (on config reload).
+    pub fn into_modules(self) -> Vec<Box<dyn Module>> {
+        self.modules
     }
 
     /// Run every module's store migrations. Stops at the first failure, naming the module.
@@ -74,12 +78,9 @@ impl Registry {
         stale
     }
 
-    /// Every module's hotkeys under `config`, in registration order, with the owning module.
-    pub fn hotkeys(&self, config: &Config) -> Vec<(&'static str, Binding)> {
-        self.modules
-            .iter()
-            .flat_map(|m| m.hotkeys(config).into_iter().map(|b| (m.id(), b)))
-            .collect()
+    /// Every module's hotkeys, in registration order, with the owning module.
+    pub fn hotkeys(&self) -> Vec<(&'static str, Binding)> {
+        self.modules.iter().flat_map(|m| m.hotkeys().into_iter().map(|b| (m.id(), b))).collect()
     }
 
     /// Run module `module`'s hotkey `key`. An unknown module does nothing.
@@ -91,7 +92,6 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::core::{Icon, test_cx};
 
     /// Records calls; owns view "list".
@@ -142,8 +142,8 @@ mod tests {
             event == Event::PasteboardChanged
         }
 
-        fn hotkeys(&self, config: &Config) -> Vec<Binding> {
-            vec![Binding { spec: config.hotkey.clone(), key: Ok(format!("{}-key", self.id)) }]
+        fn hotkeys(&self) -> Vec<Binding> {
+            vec![Binding { spec: "cmd+K".into(), key: Ok(format!("{}-key", self.id)) }]
         }
 
         fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
@@ -186,7 +186,7 @@ mod tests {
     }
 
     fn with_cx<R>(query: &str, f: impl FnOnce(&mut Cx) -> R) -> R {
-        test_cx(query, Config::default(), |cx| {
+        test_cx(query, |cx| {
             cx.hide();
             f(cx)
         })
@@ -298,12 +298,11 @@ mod tests {
 
     #[test]
     fn hotkeys_carry_their_module_and_route_back() {
-        let config = Config::default();
-        let bindings = registry().hotkeys(&config);
+        let bindings = registry().hotkeys();
         let owners: Vec<&str> = bindings.iter().map(|(m, _)| *m).collect();
         assert_eq!(owners, ["a", "b"]);
-        assert_eq!(bindings[1].1, Binding { spec: config.hotkey.clone(), key: Ok("b-key".into()) });
-        assert!(Bare.hotkeys(&config).is_empty());
+        assert_eq!(bindings[1].1, Binding { spec: "cmd+K".into(), key: Ok("b-key".into()) });
+        assert!(Bare.hotkeys().is_empty());
         let mut r = registry();
         with_cx("", |cx| {
             assert!(r.hotkey("b", "show", cx).is_some_and(|v| v.is("b", "list")));
