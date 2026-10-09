@@ -15,7 +15,7 @@
 Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls. The whole app is about 2,300 lines of Rust and a 3.4 MB binary.
 
 <p align="center">
-  <img src="docs/screenshots/launcher.png" alt="The Flick launcher: a search field with the query &quot;s&quot; and a list of matching applications" width="750">
+  <img src="docs/screenshots/launcher.png" alt="The Flick launcher over a blurred desktop: an empty search field and suggestions ranked by recent use: commands, quicklinks, and applications" width="750">
 </p>
 
 ## Why
@@ -163,7 +163,7 @@ The panel is a non-activating `NSPanel`, so the app you came from stays active w
 
 macOS has no public API for Spaces. Flick switches desktops by activating an app the way a Dock click does, and macOS follows the app to its desktop. The Accessibility API returns window titles only for the current desktop, so the switcher shows one entry per app on other desktops.
 
-`flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the README screenshots hold no personal data.
+`flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the screenshots hold no personal data.
 
 Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network.
 
