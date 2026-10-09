@@ -1,53 +1,67 @@
 //! The launcher panel: a borderless, non-activating `NSPanel` with a search field and result rows.
-//! It shows what `render` gives it and reports typing and keys to the `Handlers`.
+//! It shows what `render` or `render_form` gives it and reports typing and keys to the
+//! `Handlers`.
 
+mod form;
 mod rows;
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 
 use objc2::rc::Retained;
-use objc2::runtime::{ProtocolObject, Sel};
+use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl, NSControlTextEditingDelegate,
-    NSEvent, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSPanel, NSResponder, NSScreen,
-    NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView, NSVisualEffectBlendingMode,
-    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
-    NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
+    NSEvent, NSEventModifierFlags, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSPanel,
+    NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView,
+    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
+    NSWindow, NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
-    NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
-    NSSize,
+    NSArray, NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
+    NSRunLoop, NSSize,
 };
 
+#[expect(unused_imports, reason = "the controller starts using forms in flick-1875")]
+pub use form::{FORM_FIELDS, FormField, FormFrame, field_value, focused_field, render_form};
+use form::{FormViews, make_form};
 pub use rows::{Frame, Icon, Row, render};
 use rows::{RowViews, label, make_row, ns, separator, top_rect};
 
 const W: f64 = 750.0;
 const H: f64 = 474.0;
 const SEARCH_H: f64 = 56.0;
-const FOOTER_H: f64 = 40.0;
+pub(super) const FOOTER_H: f64 = 40.0;
 const ROW_H: f64 = 44.0;
 const LIST_PAD: f64 = 6.0;
 pub const VISIBLE_ROWS: usize = 8;
 const STATUS_WINDOW_LEVEL: isize = 25;
 
-/// A key command from the search field.
+/// A key command from the search field, a form field or a read-only title.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Key {
     Up,
     Down,
     Enter,
     Tab,
+    /// Shift-Tab.
+    BackTab,
     Escape,
     Backspace,
+    /// ⌘K.
+    CmdK,
+    /// ⌘↵.
+    CmdEnter,
 }
 
-/// What the panel calls back into. `key` returns true when it handled the key.
+/// What the panel calls back into. `key` returns true when it handled the key; an unhandled
+/// key keeps its default behavior (⌘K and ⌘↵ go on to the menus).
 #[derive(Clone, Copy)]
 pub struct Handlers {
     pub query_changed: fn(),
+    /// The text of form field `index` changed.
+    pub field_changed: fn(usize),
     pub key: fn(Key) -> bool,
 }
 
@@ -63,6 +77,40 @@ define_class!(
         fn can_become_key_window(&self) -> bool {
             true
         }
+
+        // ⌘K and ⌘↵ reach the window before the field editor sees them. Only handled keys
+        // return true (as a tail expression: see mx-43d3f4), so ⌘C, ⌘V and ⌘A still work.
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
+            let flags = event.modifierFlags();
+            let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
+            let key = key_equivalent(
+                command_only(flags),
+                chars.as_deref().unwrap_or(""),
+                event.keyCode(),
+            );
+            key.is_some_and(send_key)
+                // SAFETY: the superclass method, with the argument it was called with.
+                || unsafe { msg_send![super(self), performKeyEquivalent: event] }
+        }
+
+        // With a read-only title the panel itself is first responder: keys arrive here.
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            self.interpretKeyEvents(&NSArray::from_slice(&[event]));
+        }
+
+        #[unsafe(method(doCommandBySelector:))]
+        fn do_command_by_selector(&self, sel: Sel) {
+            if !key_for(sel).is_some_and(send_key) {
+                // SAFETY: the superclass method, with the argument it was called with.
+                unsafe { msg_send![super(self), doCommandBySelector: sel] }
+            }
+        }
+
+        // A read-only title ignores typing.
+        #[unsafe(method(insertText:))]
+        fn insert_text(&self, _text: &AnyObject) {}
     }
 );
 
@@ -83,16 +131,20 @@ define_class!(
 
     impl Delegate {
         #[unsafe(method(controlTextDidChange:))]
-        fn text_did_change(&self, _n: &NSNotification) {
+        fn text_did_change(&self, n: &NSNotification) {
+            let field = n.object().and_then(|o| form::field_index(Retained::as_ptr(&o)));
             if let Some(h) = HANDLERS.get() {
-                (h.query_changed)();
+                match field {
+                    Some(index) => (h.field_changed)(index),
+                    None => (h.query_changed)(),
+                }
             }
         }
 
         #[unsafe(method(control:textView:doCommandBySelector:))]
         fn do_command(&self, _control: &NSControl, _view: &NSTextView, sel: Sel) -> bool {
             // Unknown selectors fall through to the text view's default handling.
-            key_for(sel).is_some_and(|key| HANDLERS.get().is_some_and(|h| (h.key)(key)))
+            key_for(sel).is_some_and(send_key)
         }
 
         #[unsafe(method(windowDidResignKey:))]
@@ -101,6 +153,34 @@ define_class!(
         }
     }
 );
+
+fn send_key(key: Key) -> bool {
+    HANDLERS.get().is_some_and(|h| (h.key)(key))
+}
+
+/// Whether ⌘ is the only modifier held (Caps Lock, Fn and the keypad flag don't count).
+fn command_only(flags: NSEventModifierFlags) -> bool {
+    let held = flags
+        & (NSEventModifierFlags::Shift
+            | NSEventModifierFlags::Control
+            | NSEventModifierFlags::Option
+            | NSEventModifierFlags::Command);
+    held == NSEventModifierFlags::Command
+}
+
+/// The key command for a key equivalent: `chars` ignores modifiers, `key_code` is the virtual
+/// key (36 Return, 76 keypad Enter).
+fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key> {
+    if !command_only {
+        None
+    } else if key_code == 36 || key_code == 76 {
+        Some(Key::CmdEnter)
+    } else if chars.eq_ignore_ascii_case("k") {
+        Some(Key::CmdK)
+    } else {
+        None
+    }
+}
 
 fn key_for(sel: Sel) -> Option<Key> {
     Some(if sel == sel!(moveUp:) {
@@ -111,6 +191,8 @@ fn key_for(sel: Sel) -> Option<Key> {
         Key::Enter
     } else if sel == sel!(insertTab:) {
         Key::Tab
+    } else if sel == sel!(insertBacktab:) {
+        Key::BackTab
     } else if sel == sel!(cancelOperation:) {
         Key::Escape
     } else if sel == sel!(deleteBackward:) {
@@ -127,6 +209,7 @@ struct Ui {
     empty: Retained<NSTextField>,
     footer_left: Retained<NSTextField>,
     footer_action: Retained<NSTextField>,
+    form: FormViews,
     icons: RefCell<HashMap<String, Retained<NSImage>>>,
     _delegate: Retained<Delegate>,
 }
@@ -212,6 +295,7 @@ pub fn init(handlers: Handlers) {
     footer_action.setFrame(top_rect(H, W - 20.0 - 300.0, H - FOOTER_H + 12.0, 300.0, 16.0));
     root.addSubview(&footer_left);
     root.addSubview(&footer_action);
+    let form = make_form(mtm, &root, &delegate);
 
     panel.setContentView(Some(&root));
 
@@ -222,6 +306,7 @@ pub fn init(handlers: Handlers) {
         empty,
         footer_left,
         footer_action,
+        form,
         icons: RefCell::default(),
         _delegate: delegate,
     };
@@ -261,7 +346,7 @@ pub fn show() {
     place();
     with_ui(|ui| {
         ui.panel.makeKeyAndOrderFront(None);
-        ui.panel.makeFirstResponder(Some(&ui.field));
+        ui.panel.makeFirstResponder(form::responder(ui, ui.form.mode.get()));
     });
 }
 
@@ -319,5 +404,32 @@ mod tests {
         assert!(near(p.x, -1920.0 + (1920.0 - W) / 2.0) && near(p.y, 900.0 - H), "{p:?}");
         // Too short for the 80% line: the bottom edge holds.
         assert!(near(origin(area(0.0, 25.0, 800.0, 500.0)).y, 25.0));
+    }
+
+    #[test]
+    fn shift_tab_is_a_key_and_unknown_selectors_are_not() {
+        assert_eq!(key_for(sel!(insertBacktab:)), Some(Key::BackTab));
+        assert_eq!(key_for(sel!(insertTab:)), Some(Key::Tab));
+        assert_eq!(key_for(sel!(selectAll:)), None);
+    }
+
+    #[test]
+    fn cmd_k_and_cmd_enter_need_command_alone() {
+        use NSEventModifierFlags as F;
+        assert!(command_only(F::Command));
+        assert!(command_only(F::Command | F::CapsLock | F::NumericPad | F::Function));
+        assert!(!command_only(F::Command | F::Shift));
+        assert!(!command_only(F::Option));
+
+        assert_eq!(key_equivalent(true, "k", 40), Some(Key::CmdK));
+        assert_eq!(key_equivalent(true, "K", 40), Some(Key::CmdK));
+        assert_eq!(key_equivalent(true, "\r", 36), Some(Key::CmdEnter));
+        assert_eq!(key_equivalent(true, "\u{3}", 76), Some(Key::CmdEnter));
+        // ⌘C, ⌘V and ⌘A stay with the field editor.
+        for c in ["c", "v", "a"] {
+            assert_eq!(key_equivalent(true, c, 0), None);
+        }
+        assert_eq!(key_equivalent(false, "k", 40), None);
+        assert_eq!(key_equivalent(false, "\r", 36), None);
     }
 }
