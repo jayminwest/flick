@@ -1,0 +1,1 @@
+{"type":"convention","classification":"tactical","recorded_at":"2026-10-09T19:16:45.016Z","evidence":{"commit":"6ac82af5f3fa7bd2e56df87565b1da12c15de107"},"content":"keys wire tests: STUB remap_is_set reads thread_local REMAP_SET (default Ok(false)); tests expecting 'caps lock remap: set' must set it and reset it after.","id":"mx-fcf69c"}
