@@ -142,7 +142,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("app", &["uninstall"]),
     ("quicklink", &["add", "remove"]),
     ("capture", &[]),
-    ("feedback", &["add", "resolve"]),
+    ("feedback", &["resolve"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn network_policy_refuses_side_effects() {
-        let refused: [&[&str]; 14] = [
+        let refused: [&[&str]; 13] = [
             &["reload"],
             &["flick", "rebuild"],
             &["flick", "cancel"],
@@ -360,7 +360,6 @@ mod tests {
             &["quicklink", "remove", "X"],
             &["capture"],
             &["capture", "screen", "--out", "/tmp/x.png"],
-            &["feedback", "add", "hi"],
             &["feedback", "resolve", "2026-10-09T11:31:01-07:00"],
         ];
         for req in refused {
@@ -375,7 +374,7 @@ mod tests {
             net_policy(&words(&["capture"])).unwrap_err(),
             "capture: not allowed over the network"
         );
-        let allowed: [&[&str]; 11] = [
+        let allowed: [&[&str]; 12] = [
             &[],
             &["task", "ls"],
             &["herdr", "ls"],
@@ -387,6 +386,7 @@ mod tests {
             &["remote", "status"],
             &["flick", "version"],
             &["keys", "list"],
+            &["feedback", "add", "hi"],
         ];
         for req in allowed {
             assert_eq!(net_policy(&words(req)), Ok(()), "{req:?}");
