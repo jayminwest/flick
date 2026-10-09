@@ -24,6 +24,11 @@ impl Rect {
         (self.x + self.w / 2.0, self.y + self.h / 2.0)
     }
 
+    /// Equal within a few points; apps round their frames.
+    fn near(&self, o: Rect) -> bool {
+        [self.x - o.x, self.y - o.y, self.w - o.w, self.h - o.h].iter().all(|d| d.abs() <= 4.0)
+    }
+
     fn contains(&self, (px, py): (f64, f64)) -> bool {
         px >= self.x && px < self.x + self.w && py >= self.y && py < self.y + self.h
     }
@@ -48,10 +53,11 @@ pub enum WindowAction {
     AlmostMaximize,
     Center,
     NextDisplay,
+    PreviousDisplay,
 }
 
 impl WindowAction {
-    pub const ALL: [WindowAction; 17] = [
+    pub const ALL: [WindowAction; 18] = [
         Self::LeftHalf,
         Self::RightHalf,
         Self::TopHalf,
@@ -69,6 +75,7 @@ impl WindowAction {
         Self::AlmostMaximize,
         Self::Center,
         Self::NextDisplay,
+        Self::PreviousDisplay,
     ];
 
     pub fn title(self) -> &'static str {
@@ -90,6 +97,7 @@ impl WindowAction {
             Self::AlmostMaximize => "Almost Maximize",
             Self::Center => "Center",
             Self::NextDisplay => "Next Display",
+            Self::PreviousDisplay => "Previous Display",
         }
     }
 
@@ -109,12 +117,21 @@ impl WindowAction {
             Self::Maximize => "rectangle.inset.filled",
             Self::AlmostMaximize => "rectangle.dashed",
             Self::Center => "rectangle.center.inset.filled",
-            Self::NextDisplay => "display.2",
+            Self::NextDisplay | Self::PreviousDisplay => "display.2",
         }
     }
 
+    /// Config name: the title in kebab case, e.g. "left-half".
+    pub fn slug(self) -> String {
+        self.title().to_lowercase().replace(' ', "-")
+    }
+
+    pub fn from_slug(slug: &str) -> Option<WindowAction> {
+        Self::ALL.into_iter().find(|a| a.slug() == slug)
+    }
+
     /// Target frame within the screen's usable `area`, given the window's `current` frame.
-    /// `NextDisplay` is handled by `apply`, so here it keeps the frame.
+    /// Display moves are handled by `apply`, so here they keep the frame.
     pub fn target(self, a: Rect, current: Rect) -> Rect {
         let (hw, hh, tw) = (a.w / 2.0, a.h / 2.0, a.w / 3.0);
         let r = |x: f64, y: f64, w: f64, h: f64| Rect { x: a.x + x, y: a.y + y, w, h };
@@ -138,8 +155,26 @@ impl WindowAction {
                 let (w, h) = (current.w.min(a.w), current.h.min(a.h));
                 r((a.w - w) / 2.0, (a.h - h) / 2.0, w, h)
             }
-            Self::NextDisplay => current,
+            Self::NextDisplay | Self::PreviousDisplay => current,
         }
+    }
+
+    /// Like `target`, but repeating a half cycles its size through 1/2, 2/3, 1/3 (as Rectangle does).
+    pub fn cycled(self, a: Rect, current: Rect) -> Rect {
+        let frame = |f: f64| {
+            let r = match self {
+                Self::LeftHalf => Rect { w: a.w * f, ..a },
+                Self::RightHalf => Rect { x: a.x + a.w * (1.0 - f), w: a.w * f, ..a },
+                Self::TopHalf => Rect { h: a.h * f, ..a },
+                Self::BottomHalf => Rect { y: a.y + a.h * (1.0 - f), h: a.h * f, ..a },
+                _ => return None,
+            };
+            Some(Rect { x: r.x.round(), y: r.y.round(), w: r.w.round(), h: r.h.round() })
+        };
+        const SIZES: [f64; 3] = [1.0 / 2.0, 2.0 / 3.0, 1.0 / 3.0];
+        let Some(_) = frame(SIZES[0]) else { return self.target(a, current) };
+        let at = SIZES.iter().position(|&f| frame(f).is_some_and(|r| r.near(current)));
+        frame(SIZES[at.map_or(0, |i| (i + 1) % SIZES.len())]).unwrap()
     }
 }
 
@@ -291,10 +326,11 @@ pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static
     let areas = screen_areas(mtm);
     let index = areas.iter().position(|a| a.contains(current.center())).unwrap_or(0);
     let area = *areas.get(index).ok_or("No screens")?;
-    let target = if action == WindowAction::NextDisplay {
-        move_between(current, area, areas[(index + 1) % areas.len()])
-    } else {
-        action.target(area, current)
+    let n = areas.len();
+    let target = match action {
+        WindowAction::NextDisplay => move_between(current, area, areas[(index + 1) % n]),
+        WindowAction::PreviousDisplay => move_between(current, area, areas[(index + n - 1) % n]),
+        _ => action.cycled(area, current),
     };
     set_window_frame(&win, target);
     Ok(())
@@ -312,6 +348,26 @@ mod tests {
         assert_eq!(WindowAction::LeftHalf.target(AREA, WIN), Rect { x: 0.0, y: 25.0, w: 600.0, h: 800.0 });
         assert_eq!(WindowAction::BottomRight.target(AREA, WIN), Rect { x: 600.0, y: 425.0, w: 600.0, h: 400.0 });
         assert_eq!(WindowAction::LastTwoThirds.target(AREA, WIN), Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 });
+    }
+
+    #[test]
+    fn repeated_halves_cycle_sizes() {
+        let half = WindowAction::RightHalf.cycled(AREA, WIN);
+        assert_eq!(half, Rect { x: 600.0, y: 25.0, w: 600.0, h: 800.0 });
+        let two_thirds = WindowAction::RightHalf.cycled(AREA, half);
+        assert_eq!(two_thirds, Rect { x: 400.0, y: 25.0, w: 800.0, h: 800.0 });
+        let third = WindowAction::RightHalf.cycled(AREA, Rect { w: 799.0, ..two_thirds });
+        assert_eq!(third, Rect { x: 800.0, y: 25.0, w: 400.0, h: 800.0 });
+        assert_eq!(WindowAction::RightHalf.cycled(AREA, third), half);
+        assert_eq!(WindowAction::Maximize.cycled(AREA, AREA), AREA);
+    }
+
+    #[test]
+    fn slugs_round_trip() {
+        for a in WindowAction::ALL {
+            assert_eq!(WindowAction::from_slug(&a.slug()), Some(a));
+        }
+        assert_eq!(WindowAction::LeftHalf.slug(), "left-half");
     }
 
     #[test]

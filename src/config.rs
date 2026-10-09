@@ -1,13 +1,24 @@
 //! `~/.config/flick/config.toml`: hotkey and quicklinks.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 
-# Modifiers: cmd, alt, ctrl, shift. Keys: Space, KeyA..KeyZ, Digit0..Digit9, F1..F12, ...
+# Modifiers: cmd, alt, ctrl, shift. Keys: Space, KeyA..KeyZ, Digit0..Digit9, F1..F12, ArrowLeft, ...
 hotkey = "alt+shift+Space"
+
+# Global window hotkeys: <action> = "<hotkey>". Actions are the window command
+# titles in kebab case: left-half, right-half, top-half, bottom-half,
+# top-left-quarter, ..., first-third, center-third, last-third, first-two-thirds,
+# last-two-thirds, maximize, almost-maximize, center, next-display, previous-display.
+# Repeating a half cycles 1/2 -> 2/3 -> 1/3.
+[window_keys]
+# left-half = "ctrl+alt+ArrowLeft"
+# right-half = "ctrl+alt+ArrowRight"
+# maximize = "ctrl+alt+Enter"
 
 # Quicklinks open a URL or a path. "{query}" makes the link take an argument.
 # Typing "<keyword> <text>" runs a link straight from the root search.
@@ -35,6 +46,8 @@ url = "~/Projects"
 pub struct Config {
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    #[serde(default)]
+    pub window_keys: BTreeMap<String, String>,
     #[serde(default)]
     pub quicklinks: Vec<Quicklink>,
 }

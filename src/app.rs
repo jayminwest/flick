@@ -77,6 +77,13 @@ pub fn toggle() {
     ui::show(mtm());
 }
 
+/// A window action from a global hotkey, without the panel.
+pub fn window_action(action: WindowAction) {
+    if let Err(e) = windows::apply(action, mtm()) {
+        eprintln!("flick: {}: {e}", action.title());
+    }
+}
+
 pub fn query_changed() {
     with_state(|s| {
         s.status = None;
@@ -377,7 +384,7 @@ impl State {
             }
             Action::ReloadConfig => match config::load() {
                 Ok(config) => {
-                    let hotkey = crate::hotkey::register(&config.hotkey);
+                    let hotkey = crate::hotkey::register(&config);
                     self.config = config;
                     self.enter(Mode::Root);
                     match hotkey {
