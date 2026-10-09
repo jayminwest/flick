@@ -13,7 +13,7 @@ use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSPoint, NSSize, NSStrin
 
 use super::Rect;
 
-type CFTypeRef = *const c_void;
+pub(super) type CFTypeRef = *const c_void;
 type AXUIElementRef = *const c_void;
 
 const AX_VALUE_CGPOINT: u32 = 1;
@@ -47,7 +47,7 @@ unsafe extern "C" {
 }
 
 /// Owned CoreFoundation reference.
-struct Cf(CFTypeRef);
+pub(super) struct Cf(pub(super) CFTypeRef);
 
 impl Drop for Cf {
     fn drop(&mut self) {
@@ -59,12 +59,12 @@ impl Drop for Cf {
 }
 
 // NSString is toll-free bridged to CFString.
-fn cfstr(s: &NSString) -> CFTypeRef {
+pub(super) fn cfstr(s: &NSString) -> CFTypeRef {
     s as *const NSString as CFTypeRef
 }
 
 /// The Accessibility element for app `pid` (valid even if no such app runs; calls then fail).
-fn app_element(pid: i32) -> Cf {
+pub(super) fn app_element(pid: i32) -> Cf {
     // SAFETY: plain C call; it returns a +1 reference (or null), which `Cf` releases.
     Cf(unsafe { AXUIElementCreateApplication(pid) })
 }
@@ -128,6 +128,21 @@ pub fn focused_window() -> Option<FocusedWindow> {
     (err == 0 && !win.is_null()).then(|| FocusedWindow(Cf(win)))
 }
 
+/// The title of app `pid`'s focused window. None without Accessibility permission, without a
+/// focused window, or when the window has no title.
+#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
+pub fn focused_window_title(pid: i32) -> Option<String> {
+    let app_el = app_element(pid);
+    if app_el.0.is_null() {
+        return None;
+    }
+    // A hung app must not stall the caller.
+    // SAFETY: `app_el` is a live element.
+    unsafe { AXUIElementSetMessagingTimeout(app_el.0, 0.25) };
+    let win = copy_attr(app_el.0, "AXFocusedWindow")?;
+    string_attr(Retained::as_ptr(&win) as CFTypeRef, "AXTitle").filter(|t| !t.is_empty())
+}
+
 fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
     let attr = NSString::from_str(attr);
     let mut value: CFTypeRef = ptr::null();
@@ -183,7 +198,7 @@ pub struct AxWindow {
 }
 
 /// Copy an attribute as an Objective-C object (CF types are toll-free bridged).
-fn copy_attr(el: CFTypeRef, attr: &str) -> Option<Retained<AnyObject>> {
+pub(super) fn copy_attr(el: CFTypeRef, attr: &str) -> Option<Retained<AnyObject>> {
     let attr = NSString::from_str(attr);
     let mut value: CFTypeRef = ptr::null();
     // SAFETY: live element and attribute; `value` receives a +1 reference on success.
@@ -254,5 +269,16 @@ pub fn focus(pid: i32, window: Option<&AxWindow>, minimized: bool) {
     set_bool_attr(el, "AXMain", true);
     if !make_frontmost(pid) {
         super::workspace::open_running(&app);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_process_without_windows_has_no_focused_window_title() {
+        assert_eq!(focused_window_title(std::process::id() as i32), None);
+        assert_eq!(focused_window_title(-1), None);
     }
 }
