@@ -226,6 +226,7 @@ category = "code"
 ```bash
 flick activity status              # recording, titles, the open span
 flick activity today               # totals by category, project and app; `week` for 7 days
+flick activity today --by task     # totals per running task id (see `flick task ls`)
 flick activity spans --since 2026-10-01   # <start>\t<duration>\t<app>\t<bundle id>\t<title>
 flick --json activity today | jq .ok.by_app
 flick activity forget today --yes  # also: forget all --yes, forget app <bundle id> --yes
