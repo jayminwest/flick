@@ -133,7 +133,8 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 
 /// Requests a network caller may not send: `(module, verbs)`, where no verbs means every
 /// request to that module (or the bare word, for `reload`). These change config, run code,
-/// read the screen or write files. Review this table when a module gains a verb with side
+/// read the screen, write files or delete data that cannot come back (`task rm` drops the
+/// task's tracked time). Review this table when a module gains a verb with side
 /// effects. `remote` is handled apart: only `remote status` is allowed.
 const NET_DENIED: &[(&str, &[&str])] = &[
     ("reload", &[]),
@@ -143,6 +144,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("quicklink", &["add", "remove"]),
     ("capture", &[]),
     ("feedback", &["resolve"]),
+    ("task", &["rm"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.

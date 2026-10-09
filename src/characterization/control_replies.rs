@@ -187,6 +187,7 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["capture", "screen"], "capture screen"),
         (&["capture"], "capture"),
         (&["feedback", "resolve", "x"], "feedback resolve"),
+        (&["task", "rm", "3"], "task rm"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
