@@ -5,6 +5,8 @@ use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
 
+mod ink;
+
 thread_local! {
     /// What the fakes saw on this test's thread: `png <len>`, `text <s>`, `open <path>`...
     static CALLS: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
@@ -115,7 +117,16 @@ fn root_items_have_fixed_ids_and_recent_opens_the_view() {
     let mut m = module(&dir, "");
     with_cx(|cx| {
         let ids: Vec<_> = m.items(cx).into_iter().map(|i| i.id.to_string()).collect();
-        assert_eq!(ids, ["capture:area", "capture:window", "capture:screen", "capture:recent"]);
+        let want = [
+            "capture:area",
+            "capture:window",
+            "capture:screen",
+            "capture:area-annotate",
+            "capture:draw",
+            "capture:cursor",
+            "capture:recent",
+        ];
+        assert_eq!(ids, want);
         let pushed = m.activate(&ItemId::new("capture", "recent"), cx);
         assert!(matches!(pushed, Outcome::Push(v) if v.is("capture", "recent")));
         assert!(m.open("recent", cx).is_some() && m.open("other", cx).is_none());
@@ -268,7 +279,7 @@ fn recent_view_lists_live_shots_and_acts() {
         assert_eq!(cx.store.shots(10).len(), 1);
         let id = view.items[0].id.clone();
         let keys: Vec<_> = m.actions(&id, cx).into_iter().map(|a| a.key).collect();
-        assert_eq!(keys, ["copy-image", "reveal", "copy-path", "trash"]);
+        assert_eq!(keys, ["copy-image", "annotate", "reveal", "copy-path", "trash"]);
         let path = dir.join("display.png").display().to_string();
         let shown: Vec<_> = [None, Some("copy-image"), Some("copy-path"), Some("reveal"), Some("nope")]
             .into_iter()

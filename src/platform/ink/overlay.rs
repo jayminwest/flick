@@ -27,7 +27,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize};
 
-use super::model::{Command, Style};
+use super::model::{Command, Style, Tool};
 use super::view::{FlickInkView, now, ns_color};
 use crate::platform::{Rect, mtm, timer};
 
@@ -124,10 +124,6 @@ thread_local! {
 
 /// Turn draw mode on (the panels take the mouse and keys, without activating Flick) or off
 /// (click-through; shapes stay until Esc or `clear`). `style` sets colors, width and fade.
-#[expect(
-    dead_code,
-    reason = "wired in flick-abc0 step 6 (flick-2759); needs the main thread, so no test calls it"
-)]
 pub fn set_drawing(on: bool, style: &Style) {
     STATE.with_borrow_mut(|s| s.style = style.clone());
     DRAWING.set(on);
@@ -150,19 +146,21 @@ pub fn set_drawing(on: bool, style: &Style) {
 }
 
 /// Whether draw mode is on.
-#[expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)")]
 pub fn drawing() -> bool {
     DRAWING.get()
 }
 
 /// Whether any shape is on the screen.
-#[expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)")]
 pub fn has_shapes() -> bool {
     STATE.with_borrow(|s| s.screens.iter().any(|screen| !screen.view.is_empty()))
 }
 
+/// Whether the cursor halo is on.
+pub fn cursor() -> bool {
+    STATE.with_borrow(|s| s.cursor.is_some())
+}
+
 /// Drop every shape on every display.
-#[expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)")]
 pub fn clear() {
     for view in views() {
         view.clear();
@@ -171,10 +169,6 @@ pub fn clear() {
 }
 
 /// Show `halo` around the pointer, or hide it with `None`.
-#[expect(
-    dead_code,
-    reason = "wired in flick-abc0 step 6 (flick-2759); installs global monitors, so no test calls it"
-)]
 pub fn set_cursor(halo: Option<Halo>) {
     if let Some(cursor) = STATE.with_borrow_mut(|s| s.cursor.take()) {
         for monitor in &cursor.monitors {
@@ -203,7 +197,6 @@ pub fn set_cursor(halo: Option<Halo>) {
 
 /// Fit the panels to the current displays (after a display is added, removed or moved).
 /// Displays that kept their frame keep their shapes.
-#[expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)")]
 pub fn relayout() {
     if STATE.with_borrow(|s| s.screens.is_empty()) {
         return;
@@ -277,6 +270,7 @@ fn new_screen(mtm: MainThreadMarker, frame: Rect) -> Screen {
     let style = STATE.with_borrow(|s| s.style.clone());
     let view = FlickInkView::new(mtm, bounds, style, Some(command));
     view.set_on_stroke(Some(stroked));
+    view.set_tool(Tool::Pen);
     panel.setContentView(Some(&view));
     Screen { panel, view, frame }
 }
