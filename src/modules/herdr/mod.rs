@@ -14,12 +14,17 @@
 //! this Mac's server), `remote_refresh_secs` (default 0: remote machines refresh only
 //! while the launcher is open; at least 15 to poll in the background too), `terminal`
 //! (the app brought to the front on a jump; default `WezTerm`), `hotkey` (opens the agents
-//! view) and `preview_lines` (default 6).
+//! view), `preview_lines` (default 6) and `notify` (default `["blocked"]`: statuses that
+//! post a notification when an agent enters them; `"done"` too, or `[]` for none).
 //!
 //! All herdr I/O runs on the threads in `io.rs`; they post `ModuleChanged`. The local
 //! server streams events; remote machines are polled every `VISIBLE_EVERY` while the
 //! launcher is open, on `LauncherOpened`, and on `remote_refresh_secs` when set.
+//!
+//! On each `ModuleChanged` the main thread drains the fleet's transitions into
+//! notifications (`alerts.rs`) and jumps to the agents of clicked ones.
 
+mod alerts;
 mod cli;
 mod io;
 pub mod local;
@@ -28,6 +33,7 @@ pub mod remote;
 #[cfg(test)]
 mod testkit;
 mod views;
+mod wire;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,7 +43,6 @@ use serde::Deserialize;
 
 use crate::config::Section;
 use crate::core::{Action, Binding, Cx, Event, Icon, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::{events, panel, workspace};
 use io::{Hooks, LOCAL, Shared, Transport, lock};
 use local::Local;
 use remote::Remote;
@@ -56,6 +61,7 @@ struct Settings {
     terminal: String,
     hotkey: Option<String>,
     preview_lines: usize,
+    notify: Vec<String>,
 }
 
 impl Default for Settings {
@@ -68,6 +74,7 @@ impl Default for Settings {
             terminal: "WezTerm".into(),
             hotkey: None,
             preview_lines: 6,
+            notify: vec!["blocked".into()],
         }
     }
 }
@@ -83,6 +90,7 @@ impl Settings {
         if let Some(bad) = self.machines.iter().find(|m| m.trim().is_empty() || m.contains('/')) {
             return Err(format!("[herdr]: bad machine name \"{bad}\""));
         }
+        alerts::kinds(&self.notify)?;
         Ok(self)
     }
 
@@ -94,18 +102,6 @@ impl Settings {
 fn unix_now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
-
-const HOOKS: Hooks = Hooks {
-    post: || events::post(Event::ModuleChanged { module: ID }),
-    now: unix_now,
-    visible: panel::is_visible,
-    front: |name| {
-        events::on_main(move || match workspace::find_app(&name) {
-            Some(app) => workspace::open_file(&app),
-            None => eprintln!("flick: herdr: no app \"{name}\" to bring to the front"),
-        });
-    },
-};
 
 pub struct Herdr {
     settings: Settings,
@@ -121,7 +117,7 @@ pub struct Herdr {
 
 impl Default for Herdr {
     fn default() -> Self {
-        Herdr::with_hooks(HOOKS)
+        Herdr::with_hooks(wire::HOOKS)
     }
 }
 
@@ -170,6 +166,39 @@ impl Herdr {
             let every = Duration::from_secs(self.settings.remote_refresh_secs);
             io::start_timer(&self.shared, every, self.hooks);
         }
+        (self.hooks.listen)(!self.settings.notify.is_empty());
+    }
+
+    /// Post a notification for each agent that started to wait on me since the last call.
+    fn alert(&self) {
+        let transitions = lock(&self.shared.fleet).take_transitions();
+        if transitions.is_empty() || self.settings.notify.is_empty() {
+            return;
+        }
+        let on = alerts::kinds(&self.settings.notify).unwrap_or_default();
+        let front = (self.hooks.is_front)(&self.settings.terminal);
+        let notes = alerts::notes(transitions, &on, &lock(&self.shared.fleet), front);
+        for n in notes {
+            (self.hooks.notify)(&n.id, &n.title, &n.body);
+        }
+    }
+
+    /// Jump to the agents of clicked notifications.
+    fn follow_clicks(&self) {
+        for id in (self.hooks.clicks)() {
+            if let Some((machine, pane_id)) = alerts::clicked(&id) {
+                let (shared, t, terminal) = (&self.shared, &self.transport, &self.settings.terminal);
+                io::jump(shared, t, machine, pane_id, terminal, self.hooks);
+            }
+        }
+    }
+
+    /// The `notifications` line of `status`.
+    fn notifications(&self) -> String {
+        if self.settings.notify.is_empty() {
+            return "off".into();
+        }
+        format!("{} ({})", (self.hooks.notifications)(), self.settings.notify.join(", "))
     }
 
     /// Connect to the local server unless connected, when the fleet has it.
@@ -340,7 +369,11 @@ impl Module for Herdr {
                 self.ensure_local();
                 self.poll(false);
             }
-            Event::ModuleChanged { module: ID } if self.started => self.poll((self.hooks.visible)()),
+            Event::ModuleChanged { module: ID } if self.started => {
+                self.alert();
+                self.follow_clicks();
+                self.poll((self.hooks.visible)());
+            }
             _ => {}
         }
         false
@@ -367,10 +400,13 @@ impl Module for Herdr {
                     socket: self.transport.local.socket(),
                     herdr: self.transport.remote.herdr(),
                 };
+                let notifications = self.notifications();
                 Ok(if cx.json {
-                    cli::status_json(&fleet, &info, &paths).to_string()
+                    let mut st = cli::status_json(&fleet, &info, &paths);
+                    st["notifications"] = notifications.into();
+                    st.to_string()
                 } else {
-                    cli::status_text(&fleet, &info, &paths, self.now())
+                    format!("{}\nnotifications: {notifications}", cli::status_text(&fleet, &info, &paths, self.now()))
                 })
             }
             _ => Err(unknown_verb(ID, args)),

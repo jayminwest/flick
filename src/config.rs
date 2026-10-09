@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, activity, keys, flick.
+# builtin, clip, activity, keys, herdr, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -72,6 +72,20 @@ hotkey = "alt+shift+Space"
 # app = "wezterm|zed"
 # project = "flick"
 # category = "code"
+
+# Herdr: coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones
+# waiting on you first. "Herdr Agents" in the launcher; Enter focuses the agent's pane and
+# brings the terminal to the front. Read-only: Flick never sends input to an agent.
+# machines = [] means local plus every enabled `herdr machine list` profile.
+# remote_refresh_secs = 0 polls remote machines only while the launcher is open.
+# notify: statuses that post a notification ("blocked", "done"); [] for none.
+# [herdr]
+# machines = ["local", "mbp-server"]
+# remote_refresh_secs = 60
+# terminal = "WezTerm"
+# hotkey = "cmd+ctrl+alt+shift+KeyA"
+# preview_lines = 6
+# notify = ["blocked", "done"]
 
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
@@ -321,6 +335,16 @@ mod tests {
         let rules = activity.get("rules").and_then(Value::as_array).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].get("category").and_then(Value::as_str), Some("code"));
+    }
+
+    #[test]
+    fn default_config_herdr_example_parses_uncommented() {
+        let example = uncommented("# [herdr]");
+        let herdr: Table =
+            parse(&example).unwrap().section("herdr").unwrap().unwrap().get().unwrap();
+        assert_eq!(herdr.get("remote_refresh_secs").and_then(Value::as_integer), Some(60));
+        assert_eq!(herdr.get("notify").and_then(Value::as_array).map(Vec::len), Some(2));
+        assert!(!DEFAULT_CONFIG.contains("\n[herdr]"), "the default leaves [herdr] commented");
     }
 
     #[test]

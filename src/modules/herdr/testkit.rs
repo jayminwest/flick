@@ -5,6 +5,7 @@
 
 use super::io::Hooks;
 use serde_json::{Value, json};
+use std::cell::RefCell;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -13,7 +14,26 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub const HOOKS: Hooks = Hooks { post: || {}, now: || 1_000, visible: || false, front: |_| {} };
+pub const HOOKS: Hooks = Hooks {
+    post: || {},
+    now: || 1_000,
+    visible: || false,
+    front: |_| {},
+    is_front: |_| false,
+    notify: |id, title, body| NOTES.with_borrow_mut(|n| n.push(format!("{id} | {title} | {body}"))),
+    listen: |ask| LISTENS.with_borrow_mut(|l| l.push(ask)),
+    clicks: || CLICKS.with_borrow_mut(std::mem::take),
+    notifications: || "test".into(),
+};
+
+thread_local! {
+    /// Notifications "posted" on this thread, as `id | title | body`. Never a real one.
+    pub static NOTES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// `listen` calls on this thread: whether each asked for permission.
+    pub static LISTENS: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    /// Clicked notification ids the next `ModuleChanged` on this thread reads.
+    pub static CLICKS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Wait up to 5 s for `cond`.
 pub fn wait(what: &str, mut cond: impl FnMut() -> bool) {
