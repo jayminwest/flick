@@ -1,0 +1,1 @@
+{"type":"convention","classification":"tactical","recorded_at":"2026-10-09T20:27:07.554Z","evidence":{"commit":"d668e6e4149e4ba43962f2cf6bbf0a1e4e4a0a2e"},"content":"README must never state code line counts or binary size (e.g. 'about 3,200 lines of Rust, binary under 4 MB'); the user removed it for good in 0.0.2. Do not re-add.","id":"mx-00a8f0"}
