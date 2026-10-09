@@ -45,6 +45,7 @@ modules! {
         mod activity => "activity", activity::Activity::default;
         mod keys => "keys", keys::Keys::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
+        mod capture => "capture", capture::Capture::default;
     }
 }
 

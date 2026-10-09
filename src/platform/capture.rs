@@ -20,7 +20,6 @@ use super::Rect;
 const SCREENCAPTURE: &str = "/usr/sbin/screencapture";
 
 /// What to capture.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Target {
     /// The user drags a rectangle (Space switches to picking a window).
@@ -43,7 +42,6 @@ impl Target {
 }
 
 /// One screenshot to take.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Request {
     pub target: Target,
@@ -59,7 +57,6 @@ pub struct Request {
 }
 
 /// A screenshot on disk, with its size in pixels.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shot {
     pub path: PathBuf,
@@ -68,7 +65,6 @@ pub struct Shot {
 }
 
 /// Why `run` returned no shot.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The user pressed Esc in the selection UI.
@@ -88,7 +84,6 @@ impl fmt::Display for Error {
 
 /// The screencapture arguments for `req`, path last. `Target::Screen` maps to the main display
 /// here; `run` first resolves it to the display under the mouse.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 pub fn args(req: &Request) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     match req.target {
@@ -115,7 +110,6 @@ pub fn args(req: &Request) -> Vec<String> {
 
 /// Take the screenshot and wait for it. Blocking: interactive targets wait for the user.
 /// Refuses an existing `req.path`, so a cancelled run is never mistaken for an old file.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 pub fn run(req: &Request) -> Result<Shot, Error> {
     if req.path.exists() {
         return Err(Error::Failed(format!("{} already exists", req.path.display())));
@@ -152,7 +146,6 @@ fn finish(req: &Request, path: &Path) -> Result<Shot, Error> {
 }
 
 /// Width and height in pixels from a PNG's IHDR chunk, which the format requires first.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)"))]
 pub fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
     const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
     let rest = bytes.strip_prefix(SIGNATURE)?;
@@ -168,9 +161,9 @@ fn display_at(x: f64, y: f64, frames: &[Rect]) -> u32 {
     hit.and_then(|i| u32::try_from(i + 1).ok()).unwrap_or(1)
 }
 
-/// The display the mouse is on. `NSScreen::screens` lists the main display first, matching
-/// screencapture's `-D` numbering.
-fn display_under_mouse() -> u32 {
+/// The display the mouse is on, as a `Target::Display` number. `NSScreen::screens` lists the
+/// main display first, matching screencapture's `-D` numbering. Main thread only.
+pub fn display_under_mouse() -> u32 {
     let p = NSEvent::mouseLocation();
     let frames: Vec<Rect> = NSScreen::screens(super::mtm())
         .iter()
@@ -189,7 +182,6 @@ unsafe extern "C" {
 }
 
 /// Flick has the Screen Recording permission. Never prompts.
-#[expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)")]
 pub fn permitted() -> bool {
     // SAFETY: plain C call without arguments; it only reads the TCC state.
     unsafe { CGPreflightScreenCaptureAccess() }
@@ -197,7 +189,6 @@ pub fn permitted() -> bool {
 
 /// Ask for the Screen Recording permission: the first call shows the system prompt, later
 /// calls only answer. A grant takes effect after Flick restarts.
-#[expect(dead_code, reason = "wired in flick-abc0 step 5 (flick-e24c)")]
 pub fn request_permission() -> bool {
     // SAFETY: plain C call without arguments; macOS shows its own prompt.
     unsafe { CGRequestScreenCaptureAccess() }

@@ -69,3 +69,17 @@ fn json_answers_are_embedded_as_values() {
         assert_eq!(reply(&mut registry, &["report", "--json", "today"], cx), r#"{"ok":"Zed 1m"}"#);
     });
 }
+
+#[test]
+fn capture_ls_json_is_an_array() {
+    let mut registry = with_apps(&Config::default(), vec![]).unwrap();
+    test_cx("", |cx| {
+        registry.migrate(cx.store).unwrap();
+        assert_eq!(reply(&mut registry, &["capture", "ls", "--json"], cx), r#"{"ok":[]}"#);
+        assert_eq!(reply(&mut registry, &["capture", "ls"], cx), r#"{"ok":""}"#);
+        assert_eq!(
+            reply(&mut registry, &["capture", "last", "--json"], cx),
+            r#"{"error":"capture: no captures yet"}"#
+        );
+    });
+}
