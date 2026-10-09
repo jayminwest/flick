@@ -180,3 +180,13 @@ fn task_ids_are_fixed_keys() {
     let task: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("task:")).collect();
     assert_eq!(task, ["task:start", "task:today"]);
 }
+
+#[test]
+fn feedback_ids_are_fixed_keys() {
+    // `feedback:save` is the `fb <text>` row (the text rides in the arg); Recent Feedback rows
+    // are `feedback:entry/<n>` and do not record use.
+    let items = root_items(&[], &[]);
+    let feedback: Vec<&str> =
+        ids(&items).into_iter().filter(|id| id.starts_with("feedback:")).collect();
+    assert_eq!(feedback, ["feedback:new", "feedback:list"]);
+}
