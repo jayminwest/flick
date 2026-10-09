@@ -121,6 +121,16 @@ fn remote_requests_answer_like_local_ones_unless_a_module_checks() {
             reply(&mut registry, &["capture", "ls", "--remote", "--json"], cx),
             r#"{"ok":[]}"#
         );
+        // Activity checks: without the user's grant an agent reads nothing and grants nothing.
+        let refused = r#"{"error":"activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick"}"#;
+        assert_eq!(reply(&mut registry, &["activity", "today", "--remote", "--json"], cx), refused);
+        assert_eq!(
+            reply(&mut registry, &["activity", "remote", "allow", "--remote", "--json"], cx),
+            r#"{"error":"activity: not allowed from an agent session (--remote)"}"#
+        );
+        assert!(
+            reply(&mut registry, &["activity", "today", "--json"], cx).starts_with(r#"{"ok":"#)
+        );
     });
 }
 

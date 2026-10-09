@@ -18,6 +18,10 @@ pub const MIGRATIONS: &[&str] = &["CREATE TABLE activity_spans (
 const RECORDING: &str = "recording";
 /// `activity_state` key of the open span's row id.
 const OPEN: &str = "open";
+/// `activity_state` key of the remote grant's end (unix secs; 0 or missing: no grant).
+const REMOTE_UNTIL: &str = "remote_until";
+/// `activity_state` key of the time of the last remote read.
+const REMOTE_LAST: &str = "remote_last";
 
 
 /// Activity spans and state on the shared store. Writes ignore SQL errors: a lost span
@@ -42,6 +46,12 @@ pub trait Spans {
     fn forget_since(&self, ts: i64) -> usize;
     /// Delete spans of app `app` (bundle id or name); how many.
     fn forget_app(&self, app: &str) -> usize;
+    /// The end of the remote grant (unix secs; 0: none, `i64::MAX`: no end).
+    fn remote_until(&self) -> i64;
+    fn set_remote_until(&self, until: i64);
+    /// When a remote caller last read activity.
+    fn remote_last(&self) -> Option<i64>;
+    fn set_remote_last(&self, at: i64);
     /// Empty both tables, then VACUUM so the rows leave the file; how many spans.
     fn forget_all(&self) -> usize;
 }
@@ -123,6 +133,22 @@ impl Spans for Store {
         self.conn()
             .execute("DELETE FROM activity_spans WHERE app = ?1 OR name = ?1", [app])
             .unwrap_or(0)
+    }
+
+    fn remote_until(&self) -> i64 {
+        state(self, REMOTE_UNTIL).and_then(|v| v.parse().ok()).unwrap_or(0)
+    }
+
+    fn set_remote_until(&self, until: i64) {
+        set_state(self, REMOTE_UNTIL, (until > 0).then(|| until.to_string()).as_deref());
+    }
+
+    fn remote_last(&self) -> Option<i64> {
+        state(self, REMOTE_LAST)?.parse().ok()
+    }
+
+    fn set_remote_last(&self, at: i64) {
+        set_state(self, REMOTE_LAST, Some(at.to_string().as_str()));
     }
 
     fn forget_all(&self) -> usize {
@@ -217,5 +243,19 @@ mod tests {
         s.set_recording(true);
         assert_eq!(s.forget_all(), 1);
         assert!(s.spans(0, 1000).is_empty() && !s.recording());
+    }
+
+    #[test]
+    fn remote_grant_round_trips() {
+        let s = store();
+        assert_eq!((s.remote_until(), s.remote_last()), (0, None));
+        s.set_remote_until(i64::MAX);
+        s.set_remote_last(42);
+        assert_eq!((s.remote_until(), s.remote_last()), (i64::MAX, Some(42)));
+        s.set_remote_until(0);
+        assert_eq!(s.remote_until(), 0);
+        s.set_remote_until(7);
+        s.forget_all(); // the grant goes with the rest of the state
+        assert_eq!((s.remote_until(), s.remote_last()), (0, None));
     }
 }
