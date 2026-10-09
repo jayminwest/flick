@@ -235,6 +235,7 @@ pub struct Fleet {
 }
 
 impl Fleet {
+    #[cfg(test)]
     pub fn new<S: Into<String>>(machines: impl IntoIterator<Item = S>) -> Fleet {
         let mut fleet = Fleet::default();
         fleet.set_machines(machines);
@@ -357,6 +358,7 @@ impl Fleet {
     }
 
     /// Transitions since the last call, oldest first.
+    #[cfg_attr(not(test), expect(dead_code, reason = "notifications call it (flick-adda)"))]
     pub fn take_transitions(&mut self) -> Vec<Transition> {
         std::mem::take(&mut self.pending)
     }

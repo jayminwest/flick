@@ -68,6 +68,7 @@ impl Remote {
     }
 
     /// The same runner with calls killed after `timeout`.
+    #[cfg(test)]
     pub fn with_timeout(self, timeout: Duration) -> Remote {
         Remote { timeout, ..self }
     }
