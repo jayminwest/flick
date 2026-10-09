@@ -6,6 +6,7 @@
 //! - the store schema, the 500-clip cap and clip dedupe
 //! - window rect math
 //! - launcher ranking order (fuzzy score plus frecency)
+//! - window switcher order
 //!
 //! Each test reaches the code only through the `use` lines at the top of its file. When
 //! code moves, fix those paths and nothing else; a changed assertion is a behavior change.
@@ -15,4 +16,5 @@ mod item_ids;
 mod legacy_config;
 mod ranking;
 mod store_schema;
+mod switcher_order;
 mod window_rects;
