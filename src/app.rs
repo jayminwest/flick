@@ -8,6 +8,7 @@ use std::cell::RefCell;
 
 use crate::config::{self, Config};
 use crate::control;
+use crate::core::control::Flags;
 use crate::core::store::{self, Store};
 use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::hotkey::{self, Target};
@@ -29,7 +30,14 @@ struct Env {
 
 impl Env {
     fn cx<'a>(&'a mut self, query: &'a str) -> Cx<'a> {
-        Cx { query, store: &self.store, ranker: &mut self.ranker, hide: ui::hide, json: false }
+        Cx {
+            query,
+            store: &self.store,
+            ranker: &mut self.ranker,
+            hide: ui::hide,
+            json: false,
+            remote: false,
+        }
     }
 }
 
@@ -236,14 +244,16 @@ pub fn on_event(event: Event) {
 }
 
 /// A control request: `reload`, or `<module> <verb> [args...]` for that module.
-/// `json`: the request asked for structured output (`Cx::json`).
-pub fn control(words: &[String], json: bool) -> Result<String, String> {
+/// `flags`: the request's trailing flag words (`Cx::json`, `Cx::remote`).
+pub fn control(words: &[String], flags: Flags) -> Result<String, String> {
     STATE.with(|s| {
         let Ok(mut s) = s.try_borrow_mut() else { return Err("Flick is busy; try again".into()) };
         let s = s.as_mut().ok_or("Flick is still starting")?;
         match words {
             [verb] if verb == "reload" => s.reload(),
-            _ => s.registry.command(words, &mut Cx { json, ..s.env.cx("") }),
+            _ => s
+                .registry
+                .command(words, &mut Cx { json: flags.json, remote: flags.remote, ..s.env.cx("") }),
         }
     })
 }

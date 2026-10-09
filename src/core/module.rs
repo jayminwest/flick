@@ -24,6 +24,13 @@ pub struct Cx<'a> {
     /// The control request asked for structured output (`--json`): `command` may answer
     /// with a JSON object or array. False for events, hotkeys and the launcher.
     pub json: bool,
+    /// The control request came from a session that may send its output to a remote model
+    /// (`--remote`). False for events, hotkeys and the launcher.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the activity remote grant, flick-eed3")
+    )]
+    pub remote: bool,
 }
 
 impl Cx<'_> {
@@ -37,7 +44,14 @@ impl Cx<'_> {
 pub fn test_cx<R>(query: &str, f: impl FnOnce(&mut Cx) -> R) -> R {
     let store = Store::in_memory();
     let mut ranker = Ranker::new();
-    f(&mut Cx { query, store: &store, ranker: &mut ranker, hide: || {}, json: false })
+    f(&mut Cx {
+        query,
+        store: &store,
+        ranker: &mut ranker,
+        hide: || {},
+        json: false,
+        remote: false,
+    })
 }
 
 /// A feature. Every method has a do-nothing default, so a module implements only what it

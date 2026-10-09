@@ -2,8 +2,10 @@
 //! JSON array of strings, `["<module>","<verb>",args...]`; the reply is one line,
 //! `{"ok":"<output>"}` or `{"error":"<message>"}`. A request whose last word is `--json`
 //! asks for structured output: a module's JSON object or array answer is then sent as the
-//! value itself, `{"ok":<value>}`. The request `["events"]` instead turns the connection
-//! into a stream of events, one JSON object per line.
+//! value itself, `{"ok":<value>}`. Before that word, a trailing `--remote` marks a request
+//! from a session that may send its output to a remote model (`Cx::remote`). The request
+//! `["events"]` instead turns the connection into a stream of events, one JSON object per
+//! line.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,6 +15,18 @@ pub const EVENTS: &str = "events";
 
 /// The last request word that asks for a structured reply.
 pub const JSON: &str = "--json";
+
+/// The request word, last or just before `--json`, that marks a remote caller.
+pub const REMOTE: &str = "--remote";
+
+/// What the trailing flag words of a request asked for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Flags {
+    /// A structured reply (`--json`).
+    pub json: bool,
+    /// The caller may send the output to a remote model (`--remote`).
+    pub remote: bool,
+}
 
 /// The answer to one request: text (a JSON string) or, for a `--json` request, any JSON
 /// value.
@@ -66,11 +80,12 @@ pub fn parse_request(line: &str) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
-/// Split a trailing `--json` off `words`: the words a module sees, and whether a structured
-/// reply was asked for.
-pub fn split_json(mut words: Vec<String>) -> (Vec<String>, bool) {
+/// Split the trailing flag words off `words`: first a trailing `--json`, then a trailing
+/// `--remote`. Returns the words a module sees and the flags. Elsewhere both are arguments.
+pub fn split_flags(mut words: Vec<String>) -> (Vec<String>, Flags) {
     let json = words.pop_if(|w| w == JSON).is_some();
-    (words, json)
+    let remote = words.pop_if(|w| w == REMOTE).is_some();
+    (words, Flags { json, remote })
 }
 
 /// A request line for `words`, without the newline.
@@ -131,9 +146,22 @@ mod tests {
     }
 
     #[test]
-    fn only_a_trailing_json_word_is_split_off() {
-        assert_eq!(split_json(words(&["a", "b", "--json"])), (words(&["a", "b"]), true));
-        assert_eq!(split_json(words(&["a", "--json", "b"])), (words(&["a", "--json", "b"]), false));
-        assert_eq!(split_json(words(&["--json"])), (vec![], true));
+    fn only_trailing_flag_words_are_split_off() {
+        let flags = |json, remote| Flags { json, remote };
+        let cases: [(&[&str], &[&str], Flags); 9] = [
+            (&["a", "b"], &["a", "b"], flags(false, false)),
+            (&["a", "b", "--json"], &["a", "b"], flags(true, false)),
+            (&["a", "b", "--remote"], &["a", "b"], flags(false, true)),
+            (&["a", "--remote", "--json"], &["a"], flags(true, true)),
+            // --json goes last: before --remote it is an argument.
+            (&["a", "--json", "--remote"], &["a", "--json"], flags(false, true)),
+            (&["a", "--json", "b"], &["a", "--json", "b"], flags(false, false)),
+            (&["a", "--remote", "b"], &["a", "--remote", "b"], flags(false, false)),
+            (&["--json"], &[], flags(true, false)),
+            (&["--remote", "--json"], &[], flags(true, true)),
+        ];
+        for (input, rest, want) in cases {
+            assert_eq!(split_flags(words(input)), (words(rest), want), "{input:?}");
+        }
     }
 }

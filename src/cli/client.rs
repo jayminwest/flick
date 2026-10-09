@@ -6,13 +6,15 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::core::control::{EVENTS, JSON, Reply, request_line};
+use crate::core::control::{EVENTS, Flags, JSON, REMOTE, Reply, request_line};
 
-/// Send `words` to the Flick at `path` and print the reply: its text, or with `json` the
-/// raw reply line. With `json` the request ends in `--json`, so a module may answer with
-/// structured JSON. Returns the exit code: 0 for an ok reply, 1 otherwise.
-pub fn request(path: &Path, words: &[String], json: bool) -> i32 {
-    let words = with_json(words, json);
+/// Send `words` to the Flick at `path` and print the reply: its text, or with `flags.json`
+/// the raw reply line. With `flags.json` the request ends in `--json`, so a module may answer
+/// with structured JSON; `flags.remote` adds `--remote` before it. Returns the exit code: 0
+/// for an ok reply, 1 otherwise.
+pub fn request(path: &Path, words: &[String], flags: Flags) -> i32 {
+    let json = flags.json;
+    let words = with_flags(words, flags);
     let reply = connect(path).and_then(|stream| exchange(stream, &words));
     match reply {
         Ok(line) => {
@@ -57,10 +59,14 @@ fn connect(path: &Path) -> io::Result<UnixStream> {
     })
 }
 
-/// The request words: `words`, plus a trailing `--json` when `json`.
-fn with_json(words: &[String], json: bool) -> Vec<String> {
+/// The request words: `words`, then `--remote` when `flags.remote`, then `--json` when
+/// `flags.json` (the order `core::control::split_flags` takes them off).
+fn with_flags(words: &[String], flags: Flags) -> Vec<String> {
     let mut words = words.to_vec();
-    if json {
+    if flags.remote {
+        words.push(REMOTE.to_string());
+    }
+    if flags.json {
         words.push(JSON.to_string());
     }
     words
@@ -131,13 +137,23 @@ mod tests {
         let path = dir.join("f.sock");
         let missing = connect(&path).unwrap_err().to_string();
         assert!(missing.contains("is it running?"), "{missing}");
-        assert_eq!(request(&path, &["x".into()], false), 1);
+        assert_eq!(request(&path, &["x".into()], Flags::default()), 1);
         server::spawn(server::bind(&path).unwrap(), upper, &HUB).unwrap();
         let words = ["clip".to_string(), "get".into(), "a b".into()];
         let line = exchange(connect(&path).unwrap(), &words).unwrap();
         assert_eq!(line, "{\"ok\":\"CLIP GET A B\"}\n");
-        assert_eq!(request(&path, &words, true), 0);
-        assert_eq!(with_json(&words, true).last().map(String::as_str), Some("--json"));
-        assert_eq!(with_json(&words, false), words);
+        assert_eq!(request(&path, &words, Flags { json: true, remote: true }), 0);
+    }
+
+    #[test]
+    fn flag_words_go_last_in_the_order_the_server_takes_them_off() {
+        let words = ["task".to_string(), "ls".into()];
+        let sent = |json, remote| with_flags(&words, Flags { json, remote });
+        assert_eq!(sent(false, false), words);
+        assert_eq!(sent(true, false), ["task", "ls", "--json"]);
+        assert_eq!(sent(false, true), ["task", "ls", "--remote"]);
+        let both = sent(true, true);
+        assert_eq!(both, ["task", "ls", "--remote", "--json"]);
+        assert_eq!(crate::core::control::split_flags(both).1, Flags { json: true, remote: true });
     }
 }
