@@ -30,7 +30,6 @@ impl Store {
         Self::init(Connection::open(path)?)
     }
 
-    #[cfg(test)]
     pub fn in_memory() -> Store {
         Self::init(Connection::open_in_memory().unwrap()).unwrap()
     }

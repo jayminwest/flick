@@ -8,13 +8,13 @@ use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBox, NSBoxType, NSColor, NSControl, NSControlTextEditingDelegate, NSEvent,
+    NSBackingStoreType, NSBitmapImageFileType, NSBox, NSBoxType, NSColor, NSControl, NSControlTextEditingDelegate, NSEvent,
     NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSImageScaling, NSImageView, NSLineBreakMode,
     NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView, NSView,
     NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
     NSWindowCollectionBehavior, NSWindowDelegate, NSWorkspace, NSWindowStyleMask,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSTimer};
+use objc2_foundation::{NSDate, NSDictionary, NSNotification, NSRunLoop, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSTimer};
 
 use crate::search::{Icon, Item};
 
@@ -184,6 +184,7 @@ pub fn init(mtm: MainThreadMarker) {
     field.setDrawsBackground(false);
     field.setFocusRingType(NSFocusRingType::None);
     field.setFont(Some(&NSFont::systemFontOfSize(20.0)));
+    field.setTextColor(Some(&NSColor::labelColor()));
     field.setUsesSingleLineMode(true);
     unsafe { field.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
     root.addSubview(&field);
@@ -224,6 +225,22 @@ pub fn init(mtm: MainThreadMarker) {
     UI.with(|cell| {
         let _ = cell.set(ui);
     });
+}
+
+/// Draw the panel into a PNG at `path` without showing it.
+pub fn snapshot(path: &str) -> Result<(), String> {
+    // App icons load asynchronously; let the run loop deliver them first.
+    NSRunLoop::currentRunLoop().runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(1.0));
+    with_ui(|ui| {
+        let view = ui.panel.contentView().ok_or("no content view")?;
+        let bounds = view.bounds();
+        let rep = view.bitmapImageRepForCachingDisplayInRect(bounds).ok_or("can't create bitmap")?;
+        view.cacheDisplayInRect_toBitmapImageRep(bounds, &rep);
+        let png = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()) }
+            .ok_or("can't encode PNG")?;
+        png.writeToFile_atomically(&ns(path), true).then_some(()).ok_or(format!("can't write {path}"))
+    })
+    .unwrap_or(Err("UI not initialized".into()))
 }
 
 pub fn is_visible() -> bool {
