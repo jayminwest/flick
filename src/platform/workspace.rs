@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use objc2_app_kit::{
     NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSArray, NSString, NSURL};
+use objc2_foundation::{NSArray, NSBundle, NSString, NSURL};
 
 /// Folders searched for an app given by name, in order.
 const APP_DIRS: [&str; 5] = [
@@ -138,6 +138,60 @@ pub(super) fn open_running(app: &NSRunningApplication) -> bool {
     NSWorkspace::sharedWorkspace().openURL(&url)
 }
 
+/// The bundle identifier of the app bundle at `path` ("com.apple.Safari"); `None` when it is
+/// not a bundle or declares none. Reads its Info.plist, so call it per action, not per scan.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
+pub fn bundle_id(path: &Path) -> Option<String> {
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.display().to_string()))?;
+    bundle.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty())
+}
+
+/// Pids of the running apps launched from the bundle at `path`, in the system's order.
+/// Matches the bundle's location, so a second copy of the same app is not included.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
+pub fn running_for_bundle(path: &Path) -> Vec<i32> {
+    let want = canonical(path);
+    NSWorkspace::sharedWorkspace()
+        .runningApplications()
+        .iter()
+        .filter(|app| {
+            let bundle = app.bundleURL().and_then(|u| u.path());
+            bundle.is_some_and(|p| canonical(Path::new(&p.to_string())) == want)
+        })
+        .map(|app| app.processIdentifier())
+        .collect()
+}
+
+/// `path` with symlinks resolved, or as given when it cannot be resolved (e.g. it is gone).
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Ask app `pid` to quit, like cmd+Q: it may ask to save or refuse. Asynchronous; `true` only
+/// means the request was sent. `false` when `pid` is not a running app.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
+pub fn terminate(pid: i32) -> bool {
+    NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+        .is_some_and(|a| a.terminate())
+}
+
+/// Force app `pid` to quit, like Force Quit: unsaved work is lost. `false` when `pid` is not a
+/// running app or the request failed.
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
+pub fn force_terminate(pid: i32) -> bool {
+    NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+        .is_some_and(|a| a.forceTerminate())
+}
+
+/// Show the file, folder or bundle at `path` selected in a Finder window. Untested: it opens
+/// Finder.
+#[expect(dead_code, reason = "first caller is the app actions (flick-78f6)")]
+pub fn reveal(path: &Path) {
+    let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
+    NSWorkspace::sharedWorkspace()
+        .activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[url]));
+}
+
 /// Hide the frontmost app, like cmd+H.
 pub fn hide_frontmost() -> Result<(), &'static str> {
     let app = NSWorkspace::sharedWorkspace().frontmostApplication().ok_or("No frontmost app")?;
@@ -163,5 +217,63 @@ mod tests {
         assert_eq!(named.last(), Some(&PathBuf::from("/Users/me/Applications/Safari.app")));
         assert_eq!(named.len(), APP_DIRS.len() + 1);
         assert_eq!(app_candidates("Safari.app", home), named);
+    }
+
+    /// A minimal `.app` bundle with id `bid` in a fresh temp folder.
+    fn fake_bundle(name: &str, bid: Option<&str>) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("flk-{}-ws-{name}", std::process::id()));
+        let app = dir.join(format!("{name}.app"));
+        let contents = app.join("Contents");
+        std::fs::create_dir_all(&contents).unwrap();
+        let key = bid.map_or(String::new(), |b| {
+            format!("<key>CFBundleIdentifier</key><string>{b}</string>")
+        });
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\
+             <key>CFBundleName</key><string>{name}</string>{key}</dict></plist>"
+        );
+        std::fs::write(contents.join("Info.plist"), plist).unwrap();
+        app
+    }
+
+    #[test]
+    fn bundle_id_reads_the_info_plist() {
+        assert_eq!(
+            bundle_id(&fake_bundle("WithId", Some("dev.flick.ws-test"))).as_deref(),
+            Some("dev.flick.ws-test")
+        );
+        assert_eq!(bundle_id(&fake_bundle("NoId", None)), None);
+        assert_eq!(bundle_id(Path::new("/nonexistent/flick/Nope.app")), None);
+    }
+
+    #[test]
+    fn an_app_that_is_not_running_has_no_pids() {
+        assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle"))).is_empty());
+        assert!(running_for_bundle(Path::new("/nonexistent/flick/Nope.app")).is_empty());
+    }
+
+    #[test]
+    fn terminate_ignores_pids_that_are_not_apps() {
+        // A plain child process is not an NSRunningApplication: both calls refuse it and it
+        // keeps running. No real app is ever asked to quit.
+        let mut child = std::process::Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        assert!(!terminate(pid));
+        assert!(!force_terminate(pid));
+        assert!(child.try_wait().unwrap().is_none(), "child must still run");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!terminate(-1));
+        assert!(!force_terminate(-1));
+    }
+
+    #[test]
+    fn canonical_resolves_symlinks_and_keeps_missing_paths() {
+        let missing = Path::new("/nonexistent/flick/X.app");
+        assert_eq!(canonical(missing), missing);
+        let app = fake_bundle("Linked", Some("dev.flick.ws-linked"));
+        let link = app.with_file_name("Link.app");
+        std::os::unix::fs::symlink(&app, &link).unwrap();
+        assert_eq!(canonical(&link), canonical(&app));
     }
 }
