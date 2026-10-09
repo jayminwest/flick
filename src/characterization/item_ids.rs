@@ -218,3 +218,20 @@ fn help_ids_are_fixed_keys() {
     let help: Vec<&str> = ids(&items).into_iter().filter(|id| id.starts_with("help:")).collect();
     assert_eq!(help, ["help:index"]);
 }
+
+#[test]
+fn script_ids_are_the_name() {
+    // The typed argument of `<keyword> <text>` rides in the arg, not the id.
+    let text = "[[script.commands]]\nname = \"Ask KOTA\"\nkeyword = \"k\"\nshell = \"echo {query}\"\n\
+                [[script.commands]]\nname = \"Lock\"\nshell = \"true\"\n";
+    let mut registry = with_apps(&crate::config::parse(text).unwrap(), vec![]).unwrap();
+    let script = |items: Vec<Item>| {
+        items
+            .into_iter()
+            .map(|i| i.id.to_string())
+            .filter(|id| id.starts_with("script:"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(script(test_cx("", |cx| registry.items(cx))), ["script:Ask KOTA", "script:Lock"]);
+    assert_eq!(script(test_cx("k hi", |cx| registry.direct(cx))), ["script:Ask KOTA"]);
+}
