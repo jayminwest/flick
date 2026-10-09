@@ -86,6 +86,7 @@ pub fn start(sink: fn(Event)) {
     observe(&ws, activated, || workspace::frontmost_pid().map(|pid| Event::AppActivated { pid }));
     observe(&ws, wake, || Some(Event::Wake));
     observe(&NSNotificationCenter::defaultCenter(), screens, || Some(Event::DisplaysChanged));
+    on_session(session_event);
 
     let count = Cell::new(pasteboard::change_count());
     let polls = Cell::new(0u32);
@@ -130,7 +131,6 @@ fn observe(
 
 /// A change in whether this login session is in use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
 pub enum SessionChange {
     /// The machine is about to sleep.
     Sleep,
@@ -141,8 +141,7 @@ pub enum SessionChange {
 }
 
 /// Call `on_change` on the main thread on sleep, screen lock/unlock and fast user switching.
-/// Nothing is observed until this is called.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
+/// Nothing is observed until this is called; `start` calls it once for the sink.
 pub fn on_session(on_change: fn(SessionChange)) {
     let ws = NSWorkspace::sharedWorkspace().notificationCenter();
     // SAFETY: notification names are immutable framework constants, set at load time.
@@ -163,6 +162,17 @@ pub fn on_session(on_change: fn(SessionChange)) {
     let unlocked = NSString::from_str(SCREEN_UNLOCKED);
     observe_with(&distributed, &locked, move || on_change(SessionChange::Locked));
     observe_with(&distributed, &unlocked, move || on_change(SessionChange::Unlocked));
+}
+
+/// `on_session` handler of `start`: the change as an event for the sink.
+fn session_event(change: SessionChange) {
+    if let Some(sink) = SINK.get() {
+        sink(match change {
+            SessionChange::Sleep => Event::Sleep,
+            SessionChange::Locked => Event::Locked,
+            SessionChange::Unlocked => Event::Unlocked,
+        });
+    }
 }
 
 const SCREEN_LOCKED: &str = "com.apple.screenIsLocked";

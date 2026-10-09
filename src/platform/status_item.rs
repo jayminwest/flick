@@ -2,10 +2,6 @@
 //! Flick is an accessory app with no menu bar of its own, so this is its only menu bar
 //! presence, and it exists only between `show` and `hide`. Opening the menu does not activate
 //! Flick or take key status from the launcher panel.
-#![expect(
-    dead_code,
-    reason = "wired in flick-a513 step 6 (flick-a30b); `show` needs the main thread, so no test calls it"
-)]
 
 use std::cell::{OnceCell, RefCell};
 
@@ -91,6 +87,7 @@ pub fn hide() {
 }
 
 /// Whether the item is in the menu bar.
+#[cfg(test)]
 pub fn shown() -> bool {
     ITEM.with_borrow(Option::is_some)
 }
