@@ -19,7 +19,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, activity, keys, herdr, task, capture, feedback, flick, remote.
+# builtin, clip, activity, keys, herdr, task, capture, feedback, message, flick, remote.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -137,6 +137,20 @@ hotkey = "alt+shift+Space"
 # file = "~/Projects/flick/feedback.jsonl"
 # keyword = "fb"
 # hotkey = "cmd+ctrl+alt+shift+KeyF"
+
+# Messages: "flick message post <text>" (or "flick --host <this Mac> message post ..." from a
+# peer) shows a corner card that does not take focus; Messages in the launcher lists them.
+# style: panel, notification, both or none. position: top-right, top-left, bottom-right,
+# bottom-left, top or bottom. timeout_secs = 0 keeps the card until dismissed. docs/message.md
+# [message]
+# name = "KOTA"
+# style = "panel"
+# position = "top-right"
+# width = 380
+# timeout_secs = 20
+# max_history = 50
+# sound = true
+# hotkey = "cmd+ctrl+alt+shift+KeyM"
 
 # Remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale addresses
 # only. Off until "flick remote on" or "Turn On Network Access". Peers may not reload, rebuild,

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Messages:** new `message` module. `flick message post [--title] [--url] [--reply-to] [--pending] <body>`, locally or from a remote peer, shows a corner card that does not take focus (click opens the link, Esc or a timeout dismisses it), a notification, or both; **Messages** in the launcher lists the history. `[message]` sets `name`, `style`, `position`, `width`, `timeout_secs`, `max_history`, `sound` and `hotkey`. A `--pending` post is replaced by its `--reply-to` reply. [Messages](docs/message.md).
 - **Script commands:** new `[[script.commands]]` table. Each command is a root item that runs `shell` with `/bin/sh -c`; one with `{query}` takes an argument, typed as `<keyword> <text>` and passed as one single-quoted word. A failed command posts a notification. [Script commands](docs/scripts.md).
 
 ## 0.0.2 — 2026-10-09

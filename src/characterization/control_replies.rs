@@ -8,7 +8,7 @@
 use crate::config::Config;
 use crate::control::net::gate;
 use crate::control::server::EVENTS_REFUSED;
-use crate::core::control::{Flags, Reply, split_flags};
+use crate::core::control::{Flags, Reply, net_policy, split_flags};
 use crate::core::{Cx, Module, Registry, test_cx};
 use crate::modules::{Clips, with_apps};
 
@@ -218,6 +218,11 @@ fn network_requests_are_remote_even_without_the_flag() {
         r#"{"error":"capture ls: not allowed over the network"}"#
     );
     assert!(net_reply(&["task", "ls"]).starts_with(r#"{"ok":"#));
+    // Posting a message is what peers are for (`docs/message.md`). Not run here: a post
+    // shows the panel, which needs AppKit's main thread.
+    let post = ["message", "post", "--reply-to", "k1", "hi"].map(String::from);
+    assert_eq!(net_policy(&post), Ok(()));
+    assert_eq!(net_reply(&["message", "ls", "--json"]), r#"{"ok":[]}"#);
     // Network callers may read the toggle; it stays off by default.
     assert_eq!(
         net_reply(&["remote", "status", "--json"]),
