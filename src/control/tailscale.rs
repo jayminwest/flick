@@ -63,7 +63,16 @@ fn find(candidates: &[&str]) -> Result<PathBuf, String> {
 /// Run `bin args` and return its stdout. Killed after `budget`; a failed exit is an error
 /// with its stderr.
 fn run(bin: &Path, args: &[&str], budget: Duration) -> Result<String, String> {
-    let name = format!("tailscale {}", args.first().copied().unwrap_or_default());
+    run_as(&format!("tailscale {}", args.first().copied().unwrap_or_default()), bin, args, budget)
+}
+
+/// `run`, with errors prefixed by `name`.
+pub(super) fn run_as(
+    name: &str,
+    bin: &Path,
+    args: &[&str],
+    budget: Duration,
+) -> Result<String, String> {
     let mut child = Command::new(bin)
         .args(args)
         .stdin(Stdio::null())
