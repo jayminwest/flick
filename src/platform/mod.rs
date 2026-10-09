@@ -9,6 +9,7 @@ pub mod ax;
 pub mod events;
 pub mod files;
 pub mod hotkeys;
+pub mod keytap;
 pub mod panel;
 pub mod pasteboard;
 pub mod screens;
