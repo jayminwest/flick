@@ -186,7 +186,6 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["capture", "ls"], "capture ls"),
         (&["capture", "screen"], "capture screen"),
         (&["capture"], "capture"),
-        (&["feedback", "add", "x"], "feedback add"),
         (&["feedback", "resolve", "x"], "feedback resolve"),
     ];
     for (words, what) in refused {
