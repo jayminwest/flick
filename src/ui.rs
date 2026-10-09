@@ -1,27 +1,33 @@
-//! The launcher view: turns results into what the platform panel draws, and wires the panel's
-//! typing and keys to the controller.
+//! The launcher view: turns results and forms into what the platform panel draws, and wires
+//! the panel's typing and keys to the controller.
 
-use crate::core::{Icon, Item};
-use crate::platform::panel::{self, Frame, Handlers, Row};
+use crate::core::{Field, Form, Icon, Item};
+use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
 pub use crate::platform::panel::{
-    VISIBLE_ROWS, hide, is_visible, place, query, set_query, show, snapshot,
+    VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, set_query, show,
+    snapshot,
 };
 
 pub fn init() {
     panel::init(Handlers {
         query_changed: crate::app::query_changed,
-        field_changed: |_| {},
+        field_changed: crate::app::field_changed,
         key: crate::app::command,
     });
 }
 
 pub struct View<'a> {
+    /// A read-only title in place of the search field.
+    pub title: Option<&'a str>,
     pub items: &'a [Item],
-    pub selected: usize,
+    /// The highlighted item; `None` for read-only rows.
+    pub selected: Option<usize>,
     pub scroll: usize,
     pub footer: &'a str,
     pub empty: &'a str,
+    /// Right-aligned footer text: what Return does.
+    pub action: &'a str,
 }
 
 pub fn render(view: &View) {
@@ -40,13 +46,29 @@ pub fn render(view: &View) {
             },
         })
         .collect();
-    let action = view.items.get(view.selected).map(|i| format!("{}  ↵", i.verb));
     panel::render(&Frame {
-        title: None,
+        title: view.title,
         rows: &rows,
-        selected: view.selected.checked_sub(view.scroll),
+        selected: view.selected.and_then(|s| s.checked_sub(view.scroll)),
         empty: if view.items.is_empty() { view.empty } else { "" },
         footer: view.footer,
-        action: action.as_deref().unwrap_or(""),
+        action: view.action,
     });
+}
+
+/// Draw `form`, with `footer` on the left and its submit label as the action.
+pub fn render_form(form: &Form, footer: &str) {
+    let fields: Vec<FormField> = form.fields.iter().map(form_field).collect();
+    panel::render_form(&FormFrame {
+        title: &form.title,
+        fields: &fields,
+        focused: form.focused,
+        error: form.error.as_deref().unwrap_or(""),
+        footer,
+        action: &format!("{}  ↵", form.submit_label),
+    });
+}
+
+fn form_field(f: &Field) -> FormField<'_> {
+    FormField { label: &f.label, value: &f.value, placeholder: &f.placeholder }
 }

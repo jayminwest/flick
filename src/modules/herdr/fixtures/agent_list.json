@@ -1,0 +1,68 @@
+{
+  "id": "req-1",
+  "result": {
+    "type": "agent_list",
+    "agents": [
+      {
+        "terminal_id": "t1",
+        "pane_id": "w1:p1",
+        "workspace_id": "w1",
+        "tab_id": "w1:t1",
+        "agent": "claude",
+        "display_agent": null,
+        "name": "api-refactor",
+        "agent_status": "working",
+        "agent_session": { "kind": "session_id", "value": "00000000-0000-0000-0000-000000000001" },
+        "cwd": "/Users/example/src/api",
+        "foreground_cwd": "/Users/example/src/api",
+        "terminal_title": "\u001b]0;claude: refactor\u0007",
+        "terminal_title_stripped": "claude: refactor",
+        "focused": false,
+        "interactive_ready": true,
+        "launch_pending": false,
+        "revision": 41,
+        "state_change_seq": 7,
+        "state_labels": {},
+        "tokens": { "ctx": "41k" }
+      },
+      {
+        "terminal_id": "t2",
+        "pane_id": "w1:p2",
+        "workspace_id": "w1",
+        "tab_id": "w1:t1",
+        "agent": "pi",
+        "display_agent": "pi (custom)",
+        "agent_status": "blocked",
+        "cwd": "/Users/example/src/web",
+        "terminal_title_stripped": "Allow edit to app.ts?",
+        "focused": true,
+        "revision": 12,
+        "state_change_seq": 3
+      },
+      {
+        "terminal_id": "t3",
+        "pane_id": "w2:p1",
+        "workspace_id": "w2",
+        "tab_id": "w2:t1",
+        "agent": "codex",
+        "agent_status": "done",
+        "cwd": null,
+        "terminal_title_stripped": null,
+        "title": "codex",
+        "focused": false,
+        "revision": 5,
+        "a_field_from_a_newer_herdr": [1, 2, 3]
+      },
+      {
+        "terminal_id": "t4",
+        "pane_id": "w2:p2",
+        "workspace_id": "w2",
+        "tab_id": "w2:t1",
+        "agent": null,
+        "agent_status": "paused",
+        "focused": false,
+        "revision": 1
+      }
+    ]
+  }
+}

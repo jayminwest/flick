@@ -1,0 +1,9 @@
+{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p1","workspace_id":"w1","agent":"claude","display_agent":null,"agent_status":"blocked","title":"Run tests?","state_labels":{}}}
+{"event":"pane_agent_status_changed","data":{"type":"pane_agent_status_changed","pane_id":"w2:p1","workspace_id":"w2","agent":"codex","display_agent":"codex","agent_status":"idle"}}
+{"event":"pane_created","data":{"type":"pane_created","pane":{"pane_id":"w3:p1","terminal_id":"t9","workspace_id":"w3","tab_id":"w3:t1","focused":false,"agent_status":"unknown","revision":0,"agent":null,"label":null}}}
+{"event":"pane_updated","data":{"type":"pane_updated","pane":{"pane_id":"w1:p2","terminal_id":"t2","workspace_id":"w1","tab_id":"w1:t1","focused":false,"agent_status":"working","revision":13,"agent":"pi","label":"web-tests","cwd":"/Users/example/src/web","terminal_title_stripped":"pi: running"}}}
+{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w3:p1","workspace_id":"w3","agent":"claude","released":false}}
+{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w2:p2","workspace_id":"w2","agent":null,"final_status":"idle","released":true}}
+{"event":"pane_exited","data":{"type":"pane_exited","pane_id":"w2:p1","workspace_id":"w2"}}
+{"event":"pane_closed","data":{"type":"pane_closed","pane_id":"w1:p1","workspace_id":"w1"}}
+{"event":"tab_focused","data":{"type":"tab_focused","tab_id":"w1:t1","workspace_id":"w1"}}
