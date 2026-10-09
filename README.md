@@ -131,6 +131,10 @@ Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `K
 > [!WARNING]
 > A global hotkey overrides that shortcut in every app. For example, `cmd+KeyL` would replace the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
 
+### Create and edit quicklinks
+
+Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to edit or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml and keeps all other text in the file, comments included. The change applies at once, without a reload. A renamed link loses its usage history.
+
 ### Import Raycast quicklinks
 
 In Raycast, run **Export Quicklinks**. Then:

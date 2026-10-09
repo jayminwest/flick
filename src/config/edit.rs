@@ -1,7 +1,6 @@
 //! Edit the `[[<module>.<key>]]` entries of config.toml in place. Everything outside the
 //! edited entry (comments, blank lines, key order) stays byte for byte. Writes are atomic and
 //! never leave a file that `config::parse` rejects.
-#![expect(dead_code, reason = "the quicklink editor (flick-37d5) is the first caller")]
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -32,7 +31,7 @@ pub fn edit_entries(module: &str, key: &str, edit: &Edit) -> Result<(), String> 
 
 /// Re-read `path` (never a cached copy, so a hand edit is not lost), edit it and replace it
 /// atomically. A symlink is written through to its target.
-fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Result<(), String> {
+pub fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Result<(), String> {
     let at = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
     if !path.exists() {
         write_default(path);
