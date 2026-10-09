@@ -47,6 +47,9 @@ modules! {
     }
 }
 
+// Not registered yet: its `modules!` line lands with the module itself (flick-6d92).
+mod herdr;
+
 #[cfg(test)]
 pub use clipboard::store::Clips;
 
