@@ -107,7 +107,10 @@ pub const DEFAULT_PORT: u16 = 7419;
 /// Whether `ip` is a Tailscale address: IPv4 100.64.0.0/10 (CGNAT) or IPv6
 /// `fd7a:115c:a1e0::/48`. An IPv4-mapped IPv6 address is not one: the transport binds and
 /// sees only plain Tailscale addresses.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first caller: control::net, wired in flick-3537")
+)]
 pub fn is_tailnet(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -122,7 +125,10 @@ pub fn is_tailnet(ip: IpAddr) -> bool {
 /// Hostinfo.Hostname and Node.Name) is one of the allowed `peers`. Case-insensitive; a name
 /// also matches by its first DNS label, so `mbp-server.tail1.ts.net.` matches peer
 /// `mbp-server`. Empty names and peers match nothing.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first caller: control::net, wired in flick-3537")
+)]
 pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
     let candidates = names.iter().flat_map(|n| {
         let full = n.trim_end_matches('.');
@@ -153,7 +159,10 @@ const REMOTE_MODULE: &str = "remote";
 /// Whether a network caller may send `words` (a request after `split_flags`). `Err` is the
 /// refusal to send back. Everything not denied here is allowed; modules still apply their
 /// own remote guards, since every network request has `Cx::remote` set.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first caller: control::net, wired in flick-3537")
+)]
 pub fn net_policy(words: &[String]) -> Result<(), String> {
     let (module, verb) = match words {
         [] => return Ok(()),
@@ -186,7 +195,10 @@ pub struct NetSettings {
 }
 
 /// The last network connection the transport saw.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first caller: control::net, wired in flick-3537")
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LastConn {
     /// The peer's name from `tailscale whois`, `None` when whois failed.
@@ -202,7 +214,10 @@ pub struct LastConn {
 }
 
 /// The transport's state, for `remote status`. The default is "not listening".
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller: network transport, flick-ed0f"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "first caller: control::net, wired in flick-3537")
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct NetStatus {
     /// The addresses it listens on; empty when stopped.

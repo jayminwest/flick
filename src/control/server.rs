@@ -1,11 +1,12 @@
 //! The socket server, plain std: a thread blocks in `accept`, and each connection gets a
 //! thread that reads request lines and writes reply lines. An event subscriber gets a second
 //! thread that writes the events while the first blocks in `read` to see the hang-up at once.
-//! Nothing polls.
+//! Nothing polls. The Unix socket and the network transport (`super::net`) share this code
+//! through the `Stream` trait; `Limits` holds what differs between them.
 
 use std::fs::{self, Permissions};
-use std::io::{self, BufRead, BufReader, Write};
-use std::net::Shutdown;
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::net::{Shutdown, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -13,11 +14,58 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use crate::core::control::{EVENTS, Reply, parse_request};
 
 /// Answers one request's words. Runs on the connection's thread.
 pub type Handler = fn(Vec<String>) -> Reply;
+
+/// A connected byte stream the server can serve: a Unix or a TCP stream.
+pub trait Stream: Read + Write + Send + Sized + 'static {
+    fn try_clone(&self) -> io::Result<Self>;
+    fn shutdown(&self, how: Shutdown) -> io::Result<()>;
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+}
+
+macro_rules! stream {
+    ($t:ty) => {
+        impl Stream for $t {
+            fn try_clone(&self) -> io::Result<Self> {
+                <$t>::try_clone(self)
+            }
+            fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+                <$t>::shutdown(self, how)
+            }
+            fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+                <$t>::set_read_timeout(self, timeout)
+            }
+        }
+    };
+}
+stream!(UnixStream);
+stream!(TcpStream);
+
+/// What one connection may do.
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    /// The longest request line, newline included; a longer one ends the connection.
+    pub line: usize,
+    /// How long to wait for each request line; `None` waits forever. An event stream waits
+    /// forever whatever this is.
+    pub idle: Option<Duration>,
+    /// Whether `["events"]` may turn the connection into an event stream.
+    pub events: bool,
+}
+
+/// The local socket's limits: none. Only this user can connect to it.
+pub const LOCAL: Limits = Limits { line: usize::MAX, idle: None, events: true };
+
+/// The reply to `["events"]` on a connection whose `Limits` forbid it.
+pub const EVENTS_REFUSED: &str = "events: not allowed over the network";
+
+/// The reply to a request line longer than `Limits::line`, before the connection ends.
+pub const TOO_LONG: &str = "request too long";
 
 /// Event lines a subscriber may fall behind by before it is disconnected.
 const BACKLOG: usize = 256;
@@ -96,7 +144,7 @@ pub fn spawn(listener: UnixListener, handler: Handler, hub: &'static Hub) -> io:
                 Ok(stream) => {
                     let _ = thread::Builder::new()
                         .name("flick-client".into())
-                        .spawn(move || connection(stream, handler, hub));
+                        .spawn(move || connection(stream, handler, hub, LOCAL));
                 }
                 Err(e) => eprintln!("flick: control socket: {e}"),
             }
@@ -106,21 +154,36 @@ pub fn spawn(listener: UnixListener, handler: Handler, hub: &'static Hub) -> io:
 }
 
 /// Serve one client: a reply line per request line until it hangs up, or, after an
-/// `["events"]` request, event lines until it hangs up.
-fn connection(stream: UnixStream, handler: Handler, hub: &Hub) -> io::Result<()> {
+/// `["events"]` request, event lines until it hangs up. `limits` bound what it may send.
+pub fn connection<S: Stream>(
+    stream: S,
+    handler: Handler,
+    hub: &Hub,
+    limits: Limits,
+) -> io::Result<()> {
     let mut out = stream.try_clone()?;
+    stream.set_read_timeout(limits.idle)?;
     let mut input = BufReader::new(stream);
     let mut line = String::new();
     loop {
         line.clear();
-        if input.read_line(&mut line)? == 0 {
+        let cap = u64::try_from(limits.line).unwrap_or(u64::MAX);
+        if (&mut input).take(cap).read_line(&mut line)? == 0 {
             return Ok(());
+        }
+        if !line.ends_with('\n') && line.len() >= limits.line {
+            writeln!(out, "{}", Reply::Error(TOO_LONG.into()).to_line())?;
+            return out.shutdown(Shutdown::Both);
         }
         if line.trim().is_empty() {
             continue;
         }
         let reply = match parse_request(&line) {
-            Ok(words) if words == [EVENTS] => return stream_events(out, input, hub),
+            Ok(words) if words == [EVENTS] && limits.events => {
+                input.get_ref().set_read_timeout(None)?;
+                return stream_events(out, input, hub);
+            }
+            Ok(words) if words == [EVENTS] => Reply::Error(EVENTS_REFUSED.into()),
             Ok(words) => handler(words),
             Err(e) => Reply::Error(e),
         };
@@ -132,11 +195,7 @@ fn connection(stream: UnixStream, handler: Handler, hub: &Hub) -> io::Result<()>
 /// reading `input` until the client hangs up (or closes its write side). Either end stops
 /// the other: a hang-up ends the subscription, so the writer runs dry; a failed write or a
 /// hub drop (backlog) shuts the socket down, so the read returns.
-fn stream_events(
-    mut out: UnixStream,
-    mut input: BufReader<UnixStream>,
-    hub: &Hub,
-) -> io::Result<()> {
+fn stream_events<S: Stream>(mut out: S, mut input: BufReader<S>, hub: &Hub) -> io::Result<()> {
     let (id, rx) = hub.subscribe();
     let writer = thread::Builder::new().name("flick-events".into()).spawn(move || {
         for line in rx {
@@ -157,7 +216,6 @@ fn stream_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
     use std::os::unix::fs::FileTypeExt;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -308,5 +366,33 @@ mod tests {
         // The server closes the stream as the writer ends.
         let mut rest = String::new();
         assert_eq!(a.read_to_string(&mut rest).unwrap(), 0);
+    }
+
+    #[test]
+    fn limits_bound_line_length_idle_time_and_events() {
+        static HUB: Hub = Hub::new();
+        let limits = Limits { line: 16, idle: Some(Duration::from_millis(50)), events: false };
+        let (client, server) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || connection(server, echo, &HUB, limits));
+        let mut client = BufReader::new(client);
+        assert_eq!(ask(&mut client, r#"["a","b"]"#), "{\"ok\":\"a b\"}\n");
+        assert_eq!(
+            ask(&mut client, r#"["events"]"#),
+            format!("{{\"error\":\"{EVENTS_REFUSED}\"}}\n")
+        );
+        assert_eq!(HUB.len(), 0);
+        // An idle client is dropped.
+        assert!(task.join().unwrap().is_err());
+        let mut rest = String::new();
+        assert_eq!(client.read_to_string(&mut rest).unwrap(), 0);
+
+        let (client, server) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || connection(server, echo, &HUB, limits));
+        let mut client = BufReader::new(client);
+        assert_eq!(
+            ask(&mut client, r#"["0123456789abcdef"]"#),
+            format!("{{\"error\":\"{TOO_LONG}\"}}\n")
+        );
+        task.join().unwrap().unwrap();
     }
 }
