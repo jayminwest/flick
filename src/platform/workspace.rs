@@ -82,6 +82,12 @@ pub fn frontmost_pid() -> Option<i32> {
     NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
 }
 
+/// Some app with bundle identifier `id` ("com.knollsoft.Hyperkey") is running.
+pub fn is_running(id: &str) -> bool {
+    !NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(id))
+        .is_empty()
+}
+
 /// App `pid` is a regular (Dock) app, not a menu-bar or background one.
 pub fn is_regular(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
