@@ -1,3 +1,17 @@
+## Architecture
+
+Read `ARCHITECTURE.md` before changing layers, the `Module` trait, events, the store, config
+or the control socket. Update it in the same commit when one of those contracts changes.
+
+- New feature = new directory under `src/modules/` plus its registration in
+  `src/modules/mod.rs`. Do not add feature code to `src/app.rs`, `src/ui.rs` or `src/core/`.
+- `unsafe` and macOS APIs only in `src/platform/`; modules never import each other
+  (`scripts/layer-rules.toml`). They meet through item ids and view names.
+- Item id keys and released migrations are permanent: existing flick.db files depend on them.
+- Old flat config keys map only in `LEGACY` in `src/config.rs`.
+- Tests under `src/characterization/` pin user-visible behavior. A changed assertion there is a
+  behavior change; say so in the commit.
+
 ## Quality gates
 
 `scripts/check-all.sh` runs every gate in order: lint (rustfmt + clippy), check:layers,
