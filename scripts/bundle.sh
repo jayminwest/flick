@@ -41,7 +41,8 @@ if [[ "${1:-}" == "--install" ]]; then
   agent="gui/$(id -u)/org.nix-community.home.flick"
   launchd=false
   launchctl print "$agent" >/dev/null 2>&1 && launchd=true
-  $launchd || pkill -x Flick || true
+  # Stop every copy, including one opened by hand next to the agent's.
+  pkill -x Flick || true
   rm -rf ~/Applications/Flick.app
   mkdir -p ~/Applications
   cp -R "$app" ~/Applications/

@@ -70,7 +70,11 @@ fn main() {
 /// Another Flick.app is running (e.g. opened by hand next to the login agent's copy).
 fn already_running() -> bool {
     let Some(id) = NSBundle::mainBundle().bundleIdentifier() else { return false };
-    NSRunningApplication::runningApplicationsWithBundleIdentifier(&id).count() > 1
+    // Compare pids: a process launchd starts directly may not be registered yet itself.
+    let me = std::process::id() as i32;
+    NSRunningApplication::runningApplicationsWithBundleIdentifier(&id)
+        .iter()
+        .any(|app| app.processIdentifier() != me)
 }
 
 /// `flick snapshot <out.png> [query]`: draw the launcher to a PNG without showing it.
