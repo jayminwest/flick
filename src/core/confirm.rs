@@ -11,7 +11,6 @@ pub struct ConfirmRow {
 
 impl ConfirmRow {
     /// A row with no subtitle or accessory.
-    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn new(title: impl Into<String>) -> ConfirmRow {
         ConfirmRow { title: title.into(), subtitle: String::new(), accessory: String::new() }
     }
@@ -34,7 +33,6 @@ pub struct Confirm {
 
 impl Confirm {
     /// A non-destructive confirmation with no rows, "Confirm" as its label.
-    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn new(
         module: &'static str,
         token: impl Into<String>,
