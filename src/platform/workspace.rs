@@ -13,8 +13,12 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSNotification, NSObjectProtocol, NSString, NSURL};
 
+const MAX_RECENT: usize = 32;
+
 thread_local! {
     static OBSERVER: RefCell<Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>> = const { RefCell::new(None) };
+    /// Pids of activated apps, most recent first.
+    static RECENT: RefCell<Vec<i32>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Open `url` in its default app.
@@ -47,6 +51,32 @@ pub fn on_app_activated(f: impl Fn() + 'static) {
         center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
     };
     OBSERVER.with(|o| *o.borrow_mut() = Some(observer));
+}
+
+fn record(pid: i32) {
+    RECENT.with(|r| {
+        let mut r = r.borrow_mut();
+        r.retain(|&p| p != pid);
+        r.insert(0, pid);
+        r.truncate(MAX_RECENT);
+    });
+}
+
+/// Start recording app activations for `recent_pids`. Takes over `on_app_activated`.
+pub fn track_recent() {
+    if let Some(pid) = frontmost_pid() {
+        record(pid);
+    }
+    on_app_activated(|| {
+        if let Some(pid) = frontmost_pid() {
+            record(pid);
+        }
+    });
+}
+
+/// Pids of apps activated since `track_recent`, most recent first (at most 32).
+pub fn recent_pids() -> Vec<i32> {
+    RECENT.with(|r| r.borrow().clone())
 }
 
 /// App `pid` is a regular (Dock) app, not a menu-bar or background one.

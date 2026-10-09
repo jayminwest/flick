@@ -11,7 +11,7 @@ mod view;
 pub use item::{Icon, Item, ItemId};
 #[cfg(test)]
 pub use module::test_cx;
-pub use module::{Cx, Event, Module};
+pub use module::{Binding, Cx, Event, Module};
 pub use rank::{Ranker, Usage, frecency};
 pub use registry::Registry;
 pub use view::{ListView, Outcome};

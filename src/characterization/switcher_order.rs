@@ -4,8 +4,8 @@
 
 use std::collections::HashSet;
 
+use crate::modules::switcher::list::{AppWindow, AppWithWindows, arrange};
 use crate::platform::workspace::RunningApp;
-use crate::windows::{AppWindow, AppWithWindows, arrange};
 
 fn app(pid: i32, name: &str, hidden: bool, windows: &[(&str, bool)]) -> AppWithWindows<u32> {
     let running = RunningApp {

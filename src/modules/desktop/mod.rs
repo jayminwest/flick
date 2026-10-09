@@ -1,43 +1,37 @@
-//! Desktop toggle. There is no public Spaces API, so this goes through apps: activate the most
-//! recently used app whose windows are all on another Space, and macOS switches to that Space.
+//! Module `desktop`: the desktop toggle hotkey. There is no public Spaces API, so this goes
+//! through apps: activate the most recently used app whose windows are all on another
+//! Space, and macOS switches to that Space.
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 
-pub use crate::platform::workspace::frontmost_pid;
+use crate::config::Config;
+use crate::core::{Binding, Cx, ListView, Module};
 use crate::platform::{spaces, workspace};
 
-const MAX_RECENT: usize = 32;
+pub struct Desktop;
 
-thread_local! {
-    /// Pids of activated apps, most recent first.
-    static RECENT: RefCell<Vec<i32>> = const { RefCell::new(Vec::new()) };
-}
-
-fn record(pid: i32) {
-    RECENT.with(|r| {
-        let mut r = r.borrow_mut();
-        r.retain(|&p| p != pid);
-        r.insert(0, pid);
-        r.truncate(MAX_RECENT);
-    });
-}
-
-/// Pids of activated apps, most recent first.
-pub fn recent() -> Vec<i32> {
-    RECENT.with(|r| r.borrow().clone())
-}
-
-/// Start tracking app activations.
-pub fn init() {
-    if let Some(pid) = frontmost_pid() {
-        record(pid);
+impl Module for Desktop {
+    fn id(&self) -> &'static str {
+        "desktop"
     }
-    workspace::on_app_activated(|| {
-        if let Some(pid) = frontmost_pid() {
-            record(pid);
+
+    /// `desktop_toggle` binds key `toggle`.
+    fn hotkeys(&self, config: &Config) -> Vec<Binding> {
+        config
+            .desktop_toggle
+            .iter()
+            .map(|spec| Binding { spec: spec.clone(), key: Ok("toggle".into()) })
+            .collect()
+    }
+
+    fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+        if key == "toggle"
+            && let Err(e) = toggle()
+        {
+            eprintln!("flick: desktop toggle: {e}");
         }
-    });
+        None
+    }
 }
 
 /// Pick the app (other than `current`) with windows, none of them on this Space: the most recent
@@ -56,12 +50,12 @@ fn pick(
         .find(|pid| Some(*pid) != current && anywhere.contains(pid) && !here.contains(pid))
 }
 
-pub fn toggle() -> Result<(), &'static str> {
+fn toggle() -> Result<(), &'static str> {
     // Regular (Dock) apps only: menu-bar apps keep hidden windows but have no desktop to switch to.
     let regular = |pid: &i32| workspace::is_regular(*pid);
-    let recent: Vec<i32> = RECENT.with(|r| r.borrow().iter().copied().filter(regular).collect());
+    let recent: Vec<i32> = workspace::recent_pids().into_iter().filter(regular).collect();
     let fallback: Vec<i32> = workspace::unhidden_app_pids().into_iter().filter(regular).collect();
-    let current = frontmost_pid();
+    let current = workspace::frontmost_pid();
     let (here, anywhere) = (spaces::window_pids(true), spaces::window_pids(false));
     let pid =
         pick(&recent, &fallback, current, &here, &anywhere).ok_or("No app on another desktop")?;
@@ -84,5 +78,13 @@ mod tests {
         assert_eq!(pick(&[1, 2], &[], Some(1), &here, &anywhere), None);
         // Empty history falls back to any app on another Space.
         assert_eq!(pick(&[1], &[2, 4], Some(1), &here, &anywhere), Some(4));
+    }
+
+    #[test]
+    fn binds_desktop_toggle() {
+        let config = Config { desktop_toggle: Some("cmd+Backquote".into()), ..Config::default() };
+        let want = Binding { spec: "cmd+Backquote".into(), key: Ok("toggle".into()) };
+        assert_eq!(Desktop.hotkeys(&config), [want]);
+        assert!(Desktop.hotkeys(&Config::default()).is_empty());
     }
 }
