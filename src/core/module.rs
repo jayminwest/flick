@@ -1,6 +1,6 @@
 //! The module contract: one feature behind a narrow interface.
 
-use super::{Event, Item, ItemId, ListView, Outcome, Ranker};
+use super::{Action, Event, Form, Item, ItemId, ListView, Outcome, Ranker};
 use crate::config::Section;
 use crate::store::Store;
 
@@ -70,6 +70,34 @@ pub trait Module {
 
     /// Run the item `id` (whose `module()` is this module).
     fn activate(&mut self, _id: &ItemId, _cx: &mut Cx) -> Outcome {
+        Outcome::Stay(None)
+    }
+
+    /// Build this module's form `name` (a separate namespace from list views). `None` when
+    /// it has no such form.
+    fn form(&mut self, _name: &str, _cx: &mut Cx) -> Option<Form> {
+        None
+    }
+
+    /// Save `form` (one this module built), its required fields already filled. `Ok` is a
+    /// status for root search; `Err` is shown in the form, which stays open.
+    fn submit(&mut self, form: &Form, _cx: &mut Cx) -> Result<String, String> {
+        Err(format!("{}: cannot submit form \"{}\"", self.id(), form.name))
+    }
+
+    /// The action menu (cmd+K) for item `id`, asked each time the menu opens so state such
+    /// as "running" is current. Empty when the item has none.
+    fn actions(&mut self, _id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        vec![]
+    }
+
+    /// Run action `key` (one of `actions(id)`) on item `id`.
+    fn act(&mut self, _id: &ItemId, _key: &str, _cx: &mut Cx) -> Outcome {
+        Outcome::Stay(None)
+    }
+
+    /// The user confirmed this module's `Confirm` carrying `token`.
+    fn confirmed(&mut self, _token: &str, _cx: &mut Cx) -> Outcome {
         Outcome::Stay(None)
     }
 

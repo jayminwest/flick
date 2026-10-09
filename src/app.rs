@@ -325,6 +325,8 @@ impl State {
                 }
             }
             Outcome::Push(view) => self.enter(Some(view)),
+            // TODO(flick-1875): show form and confirm screens; no module returns these yet.
+            Outcome::Form { .. } | Outcome::Confirm(_) => {}
             Outcome::ReloadConfig => {
                 let status = self.reload().unwrap_or_else(|e| e);
                 self.set_status(status);
