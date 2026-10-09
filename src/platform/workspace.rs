@@ -148,7 +148,6 @@ pub fn bundle_id(path: &Path) -> Option<String> {
 
 /// Pids of the running apps launched from the bundle at `path`, in the system's order.
 /// Matches the bundle's location, so a second copy of the same app is not included.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn running_for_bundle(path: &Path) -> Vec<i32> {
     let want = canonical(path);
     NSWorkspace::sharedWorkspace()
@@ -169,7 +168,6 @@ fn canonical(path: &Path) -> PathBuf {
 
 /// Ask app `pid` to quit, like cmd+Q: it may ask to save or refuse. Asynchronous; `true` only
 /// means the request was sent. `false` when `pid` is not a running app.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn terminate(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.terminate())
