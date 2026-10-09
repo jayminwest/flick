@@ -60,7 +60,7 @@ fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
             import.warnings.push(format!("{name}: unsupported {}", unsupported.join(", ")));
         }
         seen.push((name.to_lowercase(), url.clone()));
-        import.added.push(Quicklink { name, url, keyword: None });
+        import.added.push(Quicklink { name, url, keyword: None, app: None });
     }
     Ok(import)
 }
@@ -139,8 +139,12 @@ mod tests {
 
     #[test]
     fn skips_duplicates_by_name_or_url() {
-        let existing =
-            vec![Quicklink { name: "Docs".into(), url: "https://docs.rs".into(), keyword: None }];
+        let existing = vec![Quicklink {
+            name: "Docs".into(),
+            url: "https://docs.rs".into(),
+            keyword: None,
+            app: None,
+        }];
         let json = r#"[
             {"name": "docs", "link": "https://other.com"},
             {"name": "Rust Docs", "link": "https://docs.rs"},
@@ -162,8 +166,14 @@ mod tests {
                 name: "Search".into(),
                 url: "https://x.com/?q={query}".into(),
                 keyword: None,
+                app: None,
             },
-            Quicklink { name: "Home".into(), url: "~/".into(), keyword: Some("h".into()) },
+            Quicklink {
+                name: "Home".into(),
+                url: "~/".into(),
+                keyword: Some("h".into()),
+                app: None,
+            },
         ];
         assert_eq!(
             appendix("", &added).unwrap(),

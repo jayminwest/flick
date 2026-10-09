@@ -38,6 +38,7 @@ hotkey = "alt+shift+Space"
 
 # Quicklinks open a URL or a path. "{query}" makes the link take an argument.
 # Typing "<keyword> <text>" runs a link straight from the root search.
+# app = "Safari" (a name, .app path or bundle id) opens a link in that app.
 [[quicklink.links]]
 name = "Google"
 keyword = "g"
