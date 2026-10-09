@@ -12,6 +12,7 @@ pub mod events;
 pub mod files;
 pub mod hid;
 pub mod hotkeys;
+pub mod ink;
 pub mod keytap;
 pub mod notify;
 pub mod panel;
