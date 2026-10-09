@@ -8,13 +8,13 @@ use std::cell::RefCell;
 
 use crate::config::{self, Config};
 use crate::control;
+use crate::core::store::{self, Store};
 use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::hotkey::{self, Target};
 use crate::modules;
 use crate::platform::events;
 use crate::platform::panel::Key;
 use crate::root;
-use crate::store::{self, Store};
 use crate::ui::{self, VISIBLE_ROWS, View};
 use screen::{Back, Screen};
 

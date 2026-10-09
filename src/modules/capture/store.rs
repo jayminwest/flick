@@ -4,7 +4,7 @@
 use rusqlite::params;
 use serde::Serialize;
 
-use crate::store::Store;
+use crate::core::store::Store;
 
 /// Append only.
 pub const MIGRATIONS: &[&str] = &[

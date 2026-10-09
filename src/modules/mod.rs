@@ -130,14 +130,14 @@ pub struct AppStore;
 
 #[cfg(test)]
 impl AppStore {
-    pub fn open(path: &std::path::Path) -> Result<crate::store::Store, String> {
-        let store = crate::store::Store::open(path).map_err(|e| e.to_string())?;
+    pub fn open(path: &std::path::Path) -> Result<crate::core::store::Store, String> {
+        let store = crate::core::store::Store::open(path).map_err(|e| e.to_string())?;
         with_apps(&Config::default(), vec![])?.migrate(&store)?;
         Ok(store)
     }
 
-    pub fn in_memory() -> crate::store::Store {
-        let store = crate::store::Store::in_memory();
+    pub fn in_memory() -> crate::core::store::Store {
+        let store = crate::core::store::Store::in_memory();
         with_apps(&Config::default(), vec![])
             .and_then(|r| r.migrate(&store))
             .expect("module migrations run on an empty database");

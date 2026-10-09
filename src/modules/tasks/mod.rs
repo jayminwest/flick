@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Section;
 use crate::core::track::{Clock, Input, Op, Span};
 use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
-use crate::store::Store;
+use crate::core::store::Store;
 use cli::{Listing, Range, Report, Verb};
 use store::{MIGRATIONS, Status, Task, TaskStore};
 use wire::Env;
