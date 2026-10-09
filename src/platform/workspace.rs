@@ -1,25 +1,10 @@
-//! Running apps, opening files and URLs, and app activation (`NSWorkspace`).
+//! Running apps, opening files and URLs (`NSWorkspace`). Activation events come from
+//! `super::events`.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::ptr::NonNull;
 
-use block2::RcBlock;
-use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2_app_kit::{
-    NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace,
-    NSWorkspaceDidActivateApplicationNotification,
-};
-use objc2_foundation::{NSNotification, NSObjectProtocol, NSString, NSURL};
-
-const MAX_RECENT: usize = 32;
-
-thread_local! {
-    static OBSERVER: RefCell<Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>> = const { RefCell::new(None) };
-    /// Pids of activated apps, most recent first.
-    static RECENT: RefCell<Vec<i32>> = const { RefCell::new(Vec::new()) };
-}
+use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace};
+use objc2_foundation::{NSString, NSURL};
 
 /// Open `url` in its default app.
 pub fn open_url(url: &str) {
@@ -36,47 +21,6 @@ pub fn open_file(path: &Path) {
 
 pub fn frontmost_pid() -> Option<i32> {
     NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())
-}
-
-/// Call `f` after each app activation. Replaces the previous observer.
-pub fn on_app_activated(f: impl Fn() + 'static) {
-    let block = RcBlock::new(move |_n: NonNull<NSNotification>| f());
-    let center = NSWorkspace::sharedWorkspace().notificationCenter();
-    // SAFETY: the notification name is an immutable framework constant, and the block takes
-    // the `NSNotification` argument the center passes.
-    let name = unsafe { NSWorkspaceDidActivateApplicationNotification };
-    // SAFETY: the block is 'static and only runs on the posting (main) thread; the returned
-    // observer is kept alive below, which keeps the registration.
-    let observer = unsafe {
-        center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
-    };
-    OBSERVER.with(|o| *o.borrow_mut() = Some(observer));
-}
-
-fn record(pid: i32) {
-    RECENT.with(|r| {
-        let mut r = r.borrow_mut();
-        r.retain(|&p| p != pid);
-        r.insert(0, pid);
-        r.truncate(MAX_RECENT);
-    });
-}
-
-/// Start recording app activations for `recent_pids`. Takes over `on_app_activated`.
-pub fn track_recent() {
-    if let Some(pid) = frontmost_pid() {
-        record(pid);
-    }
-    on_app_activated(|| {
-        if let Some(pid) = frontmost_pid() {
-            record(pid);
-        }
-    });
-}
-
-/// Pids of apps activated since `track_recent`, most recent first (at most 32).
-pub fn recent_pids() -> Vec<i32> {
-    RECENT.with(|r| r.borrow().clone())
 }
 
 /// App `pid` is a regular (Dock) app, not a menu-bar or background one.

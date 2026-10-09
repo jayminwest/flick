@@ -1,5 +1,7 @@
 //! The registered modules, and routing by module id.
 
+use std::panic::{self, AssertUnwindSafe};
+
 use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
 use crate::config::Config;
 use crate::store::Store;
@@ -59,12 +61,14 @@ impl Registry {
     }
 
     /// Send `event` to every module in order. Returns the ids of modules whose views went
-    /// stale.
+    /// stale. A module that panics is logged and skipped, so the others still get the event.
     pub fn dispatch(&mut self, event: Event, cx: &mut Cx) -> Vec<&'static str> {
         let mut stale = vec![];
         for m in &mut self.modules {
-            if m.on_event(event, cx) {
-                stale.push(m.id());
+            match panic::catch_unwind(AssertUnwindSafe(|| m.on_event(event, cx))) {
+                Ok(true) => stale.push(m.id()),
+                Ok(false) => {}
+                Err(_) => eprintln!("flick: module {} panicked handling {event:?}", m.id()),
             }
         }
         stale
@@ -135,7 +139,7 @@ mod tests {
 
         fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
             self.events += 1;
-            event == Event::Tick
+            event == Event::PasteboardChanged
         }
 
         fn hotkeys(&self, config: &Config) -> Vec<Binding> {
@@ -251,9 +255,36 @@ mod tests {
             assert!(!toy.on_event(Event::LauncherOpened, cx));
             let mut r = registry();
             assert!(r.dispatch(Event::Started, cx).is_empty());
-            assert_eq!(r.dispatch(Event::Tick, cx), ["a", "b"]);
+            assert_eq!(r.dispatch(Event::PasteboardChanged, cx), ["a", "b"]);
         });
         assert_eq!(toy.events, 1);
+    }
+
+    /// Panics on every event.
+    struct Faulty;
+
+    impl Module for Faulty {
+        fn id(&self) -> &'static str {
+            "faulty"
+        }
+
+        fn on_event(&mut self, _event: Event, _cx: &mut Cx) -> bool {
+            panic!("faulty module")
+        }
+    }
+
+    #[test]
+    fn a_panicking_module_does_not_stop_dispatch() {
+        let mut r = Registry::new(vec![
+            Box::new(Toy { id: "a", events: 0 }),
+            Box::new(Faulty),
+            Box::new(Toy { id: "b", events: 0 }),
+        ]);
+        with_cx("", |cx| {
+            assert_eq!(r.dispatch(Event::PasteboardChanged, cx), ["a", "b"]);
+            // The faulty module stays registered and keeps being isolated.
+            assert_eq!(r.dispatch(Event::Wake, cx), Vec::<&str>::new());
+        });
     }
 
     #[test]
