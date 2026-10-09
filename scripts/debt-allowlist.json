@@ -1,0 +1,4 @@
+{
+  "$comment": "check:debt (scripts/checks/debt.sh). TODO/FIXME/HACK/XXX must cite a seed (flick-xxxx), an issue (#N) or a URL on the same line. Uncited markers that must stay are listed here as path:line with a why; entries that no longer match fail the gate.",
+  "allow": []
+}

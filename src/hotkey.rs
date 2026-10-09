@@ -39,7 +39,8 @@ pub fn init() -> Result<(), String> {
 }
 
 fn dispatch(id: u32) {
-    let binding = HOTKEYS.with(|h| h.borrow().as_ref().and_then(|h| h.bound.get(&id).map(|(_, b)| *b)));
+    let binding =
+        HOTKEYS.with(|h| h.borrow().as_ref().and_then(|h| h.bound.get(&id).map(|(_, b)| *b)));
     match binding {
         Some(Binding::Toggle) => crate::app::toggle(),
         Some(Binding::Window(action)) => crate::app::window_action(action),
@@ -63,7 +64,9 @@ pub fn register(config: &Config) -> Result<(), String> {
         wanted.push((spec.as_str(), Ok(Binding::Windows)));
     }
     for (name, spec) in &config.window_keys {
-        let binding = WindowAction::from_slug(name).map(Binding::Window).ok_or(format!("Unknown window action \"{name}\""));
+        let binding = WindowAction::from_slug(name)
+            .map(Binding::Window)
+            .ok_or(format!("Unknown window action \"{name}\""));
         wanted.push((spec.as_str(), binding));
     }
 
@@ -76,11 +79,14 @@ pub fn register(config: &Config) -> Result<(), String> {
         let mut errors = vec![];
         for (spec, binding) in wanted {
             let result = binding.and_then(|binding| {
-                let hotkey: HotKey = spec.parse().map_err(|e| format!("Bad hotkey \"{spec}\": {e}"))?;
+                let hotkey: HotKey =
+                    spec.parse().map_err(|e| format!("Bad hotkey \"{spec}\": {e}"))?;
                 if h.bound.contains_key(&hotkey.id()) {
                     return Err(format!("\"{spec}\" is bound twice"));
                 }
-                h.manager.register(hotkey).map_err(|e| format!("Can't register \"{spec}\": {e}"))?;
+                h.manager
+                    .register(hotkey)
+                    .map_err(|e| format!("Can't register \"{spec}\": {e}"))?;
                 h.bound.insert(hotkey.id(), (hotkey, binding));
                 Ok(())
             });
@@ -98,9 +104,19 @@ mod tests {
 
     #[test]
     fn parses_hotkey_specs() {
-        for spec in ["alt+Space", "cmd+KeyH", "cmd+shift+KeyK", "ctrl+alt+ArrowLeft", "cmd+ctrl+alt+shift+KeyL", "cmd+Backquote"] {
+        for spec in [
+            "alt+Space",
+            "cmd+KeyH",
+            "cmd+shift+KeyK",
+            "ctrl+alt+ArrowLeft",
+            "cmd+ctrl+alt+shift+KeyL",
+            "cmd+Backquote",
+        ] {
             assert!(spec.parse::<HotKey>().is_ok(), "{spec}");
         }
-        assert_ne!("cmd+KeyK".parse::<HotKey>().unwrap().id(), "cmd+shift+KeyK".parse::<HotKey>().unwrap().id());
+        assert_ne!(
+            "cmd+KeyK".parse::<HotKey>().unwrap().id(),
+            "cmd+shift+KeyK".parse::<HotKey>().unwrap().id()
+        );
     }
 }

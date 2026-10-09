@@ -1,3 +1,19 @@
+## Quality gates
+
+`scripts/check-all.sh` runs every gate in order: lint (rustfmt + clippy), check:layers,
+check:agents, check:deps, check:size, check:debt, check:binary-size, check:coverage
+(the tests), check:ci-parity. CI and the pre-commit hook run only this script. Warnings fail.
+
+- `scripts/check-all.sh --bail` stops at the first failure; `CHECK_ALL_VERBOSE=1` streams output.
+- Re-run one gate: `scripts/checks/lint.sh`, `scripts/checks/layers.sh`, and so on.
+- One-time setup: `scripts/setup.sh` (points `core.hooksPath` at `scripts/hooks`, lists missing tools).
+- Lints: `Cargo.toml` `[lints]`, `clippy.toml`, `rustfmt.toml`. Mark an accepted violation with
+  `#[expect(lint, reason = "...")]`, never a bare `allow`.
+- Budgets only tighten: `scripts/file-size-budgets.json`, `scripts/coverage-budgets.json`,
+  `scripts/binary-size-budget.json`, `scripts/debt-allowlist.json`. Layer rules and their
+  allow entries: `scripts/layer-rules.toml`. The scripts never edit these files.
+- TODO/FIXME/HACK/XXX must cite a seed (`flick-xxxx`), an issue (`#N`) or a URL.
+
 <!-- seeds:start -->
 ## Issue Tracking (Seeds)
 <!-- seeds-onboard:v0.5.15 -->

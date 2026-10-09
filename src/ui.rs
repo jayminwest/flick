@@ -1,4 +1,9 @@
-//! The launcher panel: a borderless, non-activating NSPanel with a search field and result rows.
+//! The launcher panel: a borderless, non-activating `NSPanel` with a search field and result rows.
+
+#![expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "unsafe moves to src/platform with SAFETY comments in flick-ee5b"
+)]
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
@@ -6,15 +11,19 @@ use std::collections::HashMap;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, Sel};
-use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
+use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBitmapImageFileType, NSBox, NSBoxType, NSColor, NSControl, NSControlTextEditingDelegate, NSEvent,
-    NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSImageScaling, NSImageView, NSLineBreakMode,
-    NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView, NSView,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
-    NSWindowCollectionBehavior, NSWindowDelegate, NSWorkspace, NSWindowStyleMask,
+    NSBackingStoreType, NSBitmapImageFileType, NSBox, NSBoxType, NSColor, NSControl,
+    NSControlTextEditingDelegate, NSEvent, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage,
+    NSImageScaling, NSImageView, NSLineBreakMode, NSPanel, NSResponder, NSScreen, NSTextAlignment,
+    NSTextField, NSTextFieldDelegate, NSTextView, NSView, NSVisualEffectBlendingMode,
+    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
+    NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask, NSWorkspace,
 };
-use objc2_foundation::{NSDate, NSDictionary, NSNotification, NSRunLoop, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSTimer};
+use objc2_foundation::{
+    NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
+    NSSize, NSString, NSTimer,
+};
 
 use crate::search::{Icon, Item};
 
@@ -126,14 +135,20 @@ fn make_row(mtm: MainThreadMarker, index: usize) -> Row {
     let top = SEARCH_H + LIST_PAD + index as f64 * ROW_H;
     let view = NSView::initWithFrame(NSView::alloc(mtm), top_rect(H, 8.0, top, W - 16.0, ROW_H));
 
-    let bg = NSBox::initWithFrame(NSBox::alloc(mtm), NSRect::new(NSPoint::ZERO, NSSize::new(W - 16.0, ROW_H)));
+    let bg = NSBox::initWithFrame(
+        NSBox::alloc(mtm),
+        NSRect::new(NSPoint::ZERO, NSSize::new(W - 16.0, ROW_H)),
+    );
     bg.setBoxType(NSBoxType::Custom);
     bg.setBorderWidth(0.0);
     bg.setCornerRadius(8.0);
     bg.setFillColor(&NSColor::labelColor().colorWithAlphaComponent(0.1));
     bg.setTransparent(true);
 
-    let icon = NSImageView::initWithFrame(NSImageView::alloc(mtm), top_rect(ROW_H, 12.0, 11.0, 22.0, 22.0));
+    let icon = NSImageView::initWithFrame(
+        NSImageView::alloc(mtm),
+        top_rect(ROW_H, 12.0, 11.0, 22.0, 22.0),
+    );
     icon.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
 
     let title = label(mtm, 14.0, &NSColor::labelColor());
@@ -159,7 +174,8 @@ pub fn init(mtm: MainThreadMarker) {
     panel.setFloatingPanel(true);
     panel.setLevel(STATUS_WINDOW_LEVEL);
     panel.setCollectionBehavior(
-        NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary,
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
     );
     panel.setOpaque(false);
     panel.setBackgroundColor(Some(&NSColor::clearColor()));
@@ -178,7 +194,10 @@ pub fn init(mtm: MainThreadMarker) {
         layer.setMasksToBounds(true);
     }
 
-    let field = NSTextField::initWithFrame(NSTextField::alloc(mtm), top_rect(H, 20.0, 14.0, W - 40.0, 28.0));
+    let field = NSTextField::initWithFrame(
+        NSTextField::alloc(mtm),
+        top_rect(H, 20.0, 14.0, W - 40.0, 28.0),
+    );
     field.setBezeled(false);
     field.setBordered(false);
     field.setDrawsBackground(false);
@@ -197,14 +216,15 @@ pub fn init(mtm: MainThreadMarker) {
 
     let empty = label(mtm, 14.0, &NSColor::secondaryLabelColor());
     empty.setAlignment(NSTextAlignment::Center);
-    empty.setFrame(top_rect(H, 0.0, (H - FOOTER_H + SEARCH_H) / 2.0 - 10.0, W, 20.0));
+    empty.setFrame(top_rect(H, 0.0, f64::midpoint(H - FOOTER_H, SEARCH_H) - 10.0, W, 20.0));
     root.addSubview(&empty);
 
     root.addSubview(&separator(mtm, top_rect(H, 0.0, H - FOOTER_H, W, 1.0)));
     let footer_left = label(mtm, 12.0, &NSColor::secondaryLabelColor());
     footer_left.setFrame(top_rect(H, 20.0, H - FOOTER_H + 12.0, 380.0, 16.0));
     let footer_action = label(mtm, 12.0, &NSColor::labelColor());
-    footer_action.setFont(Some(&NSFont::systemFontOfSize_weight(12.0, unsafe { NSFontWeightMedium })));
+    footer_action
+        .setFont(Some(&NSFont::systemFontOfSize_weight(12.0, unsafe { NSFontWeightMedium })));
     footer_action.setAlignment(NSTextAlignment::Right);
     footer_action.setFrame(top_rect(H, W - 20.0 - 300.0, H - FOOTER_H + 12.0, 300.0, 16.0));
     root.addSubview(&footer_left);
@@ -234,11 +254,16 @@ pub fn snapshot(path: &str) -> Result<(), String> {
     with_ui(|ui| {
         let view = ui.panel.contentView().ok_or("no content view")?;
         let bounds = view.bounds();
-        let rep = view.bitmapImageRepForCachingDisplayInRect(bounds).ok_or("can't create bitmap")?;
+        let rep =
+            view.bitmapImageRepForCachingDisplayInRect(bounds).ok_or("can't create bitmap")?;
         view.cacheDisplayInRect_toBitmapImageRep(bounds, &rep);
-        let png = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()) }
-            .ok_or("can't encode PNG")?;
-        png.writeToFile_atomically(&ns(path), true).then_some(()).ok_or(format!("can't write {path}"))
+        let png = unsafe {
+            rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+        }
+        .ok_or("can't encode PNG")?;
+        png.writeToFile_atomically(&ns(path), true)
+            .then_some(())
+            .ok_or(format!("can't write {path}"))
     })
     .unwrap_or(Err("UI not initialized".into()))
 }
@@ -295,8 +320,11 @@ fn icon_image(ui: &Ui, icon: &Icon) -> Option<Retained<NSImage>> {
     }
     let img = match icon {
         Icon::File(p) => NSWorkspace::sharedWorkspace().iconForFile(&ns(&p.display().to_string())),
-        Icon::Symbol(s) => NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns(s), None)
-            .or_else(|| NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns("app"), None))?,
+        Icon::Symbol(s) => {
+            NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns(s), None).or_else(
+                || NSImage::imageWithSystemSymbolName_accessibilityDescription(&ns("app"), None),
+            )?
+        }
     };
     ui.icons.borrow_mut().insert(key, img.clone());
     Some(img)
