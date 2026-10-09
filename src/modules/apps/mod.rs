@@ -86,10 +86,12 @@ impl Module for Apps {
         Outcome::Hide
     }
 
-    /// Rescans on `LauncherOpened`, so new apps show up. Root search re-ranks on every
-    /// keystroke, so no view goes stale.
+    /// Rescans on `LauncherOpened`, so new apps show up, and on `Started` when it has no
+    /// index yet (a config reload enabled it). Root search re-ranks on every keystroke, so
+    /// no view goes stale.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        if event == Event::LauncherOpened {
+        let empty = self.apps.is_empty();
+        if event == Event::LauncherOpened || (event == Event::Started && empty) {
             self.apps = scan();
         }
         false
@@ -137,5 +139,20 @@ mod tests {
                 "app: unknown command \"open\""
             );
         });
+    }
+
+    #[test]
+    fn started_scans_only_an_empty_index() {
+        let safari = App { name: "Safari".into(), path: "/A/Safari.app".into() };
+        let names = |a: &Apps| a.apps.iter().map(|a| a.name.clone()).collect::<Vec<_>>();
+        let mut kept = Apps::new(vec![safari]);
+        let mut fresh = Apps::new(vec![]);
+        test_cx("", |cx| {
+            assert!(!kept.on_event(Event::Started, cx));
+            assert!(!fresh.on_event(Event::Started, cx));
+        });
+        assert_eq!(names(&kept), ["Safari"]);
+        // A scan always finds Finder.
+        assert!(names(&fresh).contains(&"Finder".to_string()));
     }
 }

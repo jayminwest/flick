@@ -70,24 +70,29 @@ pub fn verbs() -> Vec<&'static str> {
 
 /// `registry` under a reloaded `config`, unchanged on error. Modules still enabled keep
 /// their state (recent apps, the app index) and take their new table; newly enabled ones
-/// start fresh, without `Event::Started`.
-pub fn reload(registry: &mut Registry, config: &Config) -> Result<(), String> {
+/// start fresh. Returns the ids of the fresh ones, which the caller sends `Event::Started`.
+pub fn reload(registry: &mut Registry, config: &Config) -> Result<Vec<&'static str>, String> {
     let fresh = with_apps(config, vec![])?.into_modules();
     let mut old = std::mem::replace(registry, Registry::new(vec![])).into_modules();
+    let mut started = vec![];
     let list = fresh
         .into_iter()
         .map(|new| {
-            let Some(i) = old.iter().position(|m| m.id() == new.id()) else { return new };
-            let mut kept = old.swap_remove(i);
-            // `fresh` already took this table, so it cannot fail here.
-            match config.section(kept.id()) {
-                Ok(Some(table)) if kept.configure(&table).is_ok() => kept,
-                _ => new,
+            if let Some(i) = old.iter().position(|m| m.id() == new.id()) {
+                let mut kept = old.swap_remove(i);
+                // `fresh` already took this table, so it cannot fail here.
+                if let Ok(Some(table)) = config.section(kept.id())
+                    && kept.configure(&table).is_ok()
+                {
+                    return kept;
+                }
             }
+            started.push(new.id());
+            new
         })
         .collect();
     *registry = Registry::new(list);
-    Ok(())
+    Ok(started)
 }
 
 struct Modules<'a> {
@@ -171,15 +176,20 @@ mod tests {
         let specs = |r: &Registry| r.hotkeys().into_iter().map(|(_, b)| b.spec).collect::<Vec<_>>();
         assert!(ids(&mut r).contains(&"app:/Applications/Safari.app".to_string()));
         let next = parse("[switcher]\nhotkey = \"cmd+K\"\n[clip]\nenabled = false").unwrap();
-        reload(&mut r, &next).unwrap();
+        assert!(reload(&mut r, &next).unwrap().is_empty());
         assert!(ids(&mut r).contains(&"app:/Applications/Safari.app".to_string()));
         assert_eq!(specs(&r), ["cmd+K"]);
         assert!(reload(&mut r, &parse("[switcher]\nhotkey = 1").unwrap()).is_err());
         assert_eq!(specs(&r), ["cmd+K"]);
-        reload(&mut r, &parse("[app]\nenabled = false").unwrap()).unwrap();
+        // Re-enabled `clip` starts fresh; the caller sends it `Started`.
+        assert_eq!(reload(&mut r, &parse("[app]\nenabled = false").unwrap()).unwrap(), ["clip"]);
         assert!(!ids(&mut r).iter().any(|id| id.starts_with("app:")));
-        reload(&mut r, &parse("").unwrap()).unwrap();
+        assert_eq!(reload(&mut r, &parse("").unwrap()).unwrap(), ["app"]);
         assert!(ids(&mut r).iter().any(|id| id.starts_with("window:")));
+        // A fresh `app` has no index until `Started` scans one.
+        assert!(!ids(&mut r).iter().any(|id| id.starts_with("app:")));
+        test_cx("", |cx| r.dispatch_to(&["app"], crate::core::Event::Started, cx));
+        assert!(ids(&mut r).iter().any(|id| id.starts_with("app:")));
     }
 
     #[test]

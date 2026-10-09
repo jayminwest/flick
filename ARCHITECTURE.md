@@ -104,7 +104,8 @@ Sources:
 - `platform::events::start` registers `NSWorkspace`/`NSNotificationCenter` observers
   (activation, wake, screen parameters) and one 0.5 s timer. The timer compares the pasteboard
   change count, and every 10th tick (5 s) checks idle time against 60 s. Nothing else polls.
-- `app::init` dispatches `Started` to modules. It is not published to the socket.
+- `app::init` dispatches `Started` to modules, and a config reload to the modules it
+  enabled (`Registry::dispatch_to`). It is not published to the socket.
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
@@ -158,8 +159,8 @@ writes a commented default.
 - Startup: a bad file or a bad module table means the whole default config, with a log line.
 - Reload (`Reload Flick Config`, `flick reload`): `modules::reload` builds a fresh registry to
   validate the file. On error nothing changes. Modules still enabled keep their instance and
-  get `configure` again. Newly enabled modules start fresh and do not get `Started`.
-  Migrations run again, then hotkeys rebind.
+  get `configure` again. Newly enabled modules start fresh. Migrations run again, the fresh
+  modules get `Started`, then hotkeys rebind.
 
 ## Control socket and CLI
 

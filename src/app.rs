@@ -210,12 +210,13 @@ impl State {
     /// `Err` is a load, configure, or binding error.
     fn reload(&mut self) -> Result<String, String> {
         let config = config::load()?;
-        modules::reload(&mut self.registry, &config)
+        let started = modules::reload(&mut self.registry, &config)
             .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
         self.env.config = config;
         if let Err(e) = self.registry.migrate(&self.env.store) {
             eprintln!("flick: store migration failed: {e}");
         }
+        self.registry.dispatch_to(&started, Event::Started, &mut self.env.cx(""));
         let bound = self.bind();
         self.enter(None);
         bound.map(|()| "Config reloaded".into())
