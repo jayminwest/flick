@@ -1,7 +1,9 @@
 mod app;
 #[cfg(test)]
 mod characterization;
+mod cli;
 mod config;
+mod control;
 mod core;
 mod hotkey;
 mod modules;
@@ -13,28 +15,19 @@ mod ui;
 
 use platform::app as macos;
 
-#[expect(clippy::panic, reason = "startup invariant: no launcher without the database")]
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some("snapshot") {
-        snapshot(&args[2..]);
-        return;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match cli::parse(&args) {
+        cli::Command::Launch => launch(),
+        command => match cli::run(command) {
+            0 => {}
+            code => std::process::exit(code),
+        },
     }
-    if args.get(1).map(String::as_str) == Some("import-raycast") {
-        let Some(path) = args.get(2) else {
-            eprintln!("usage: flick import-raycast <Quicklinks.json>");
-            std::process::exit(2);
-        };
-        match raycast::import_file(path.as_ref()) {
-            Ok(report) => println!("{report}"),
-            Err(e) => {
-                eprintln!("flick: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
+}
 
+#[expect(clippy::panic, reason = "startup invariant: no launcher without the database")]
+fn launch() {
     macos::require_main_thread();
     if macos::already_running() {
         eprintln!("flick: already running");
@@ -63,23 +56,9 @@ fn main() {
         if platform::ax::is_trusted(false) { "granted" } else { "NOT granted" }
     );
     platform::events::start(app::on_event);
+    if let Err(e) = control::start() {
+        eprintln!("flick: control socket: {e}");
+    }
 
     macos::run();
-}
-
-/// `flick snapshot <out.png> [query]`: draw the launcher to a PNG without showing it.
-/// Uses the default config and an empty database, so no personal data appears.
-fn snapshot(args: &[String]) {
-    let Some(out) = args.first() else {
-        eprintln!("usage: flick snapshot <out.png> [query]");
-        std::process::exit(2);
-    };
-    macos::require_main_thread();
-    ui::init();
-    app::init(config::Config::default(), store::Store::in_memory());
-    app::set_root_query(args.get(1).map_or("", String::as_str));
-    if let Err(e) = ui::snapshot(out) {
-        eprintln!("flick: {e}");
-        std::process::exit(1);
-    }
 }

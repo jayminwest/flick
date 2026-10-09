@@ -135,6 +135,23 @@ In Raycast, run **Export Quicklinks**. Then:
 
 Flick changes `{argument}` placeholders to `{query}` and skips links with the same name or URL as an existing link. It reports placeholders that it cannot fill, such as `{clipboard}`.
 
+### Command line
+
+A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mode 0600; set `FLICK_SOCKET` to use another path). The `flick` binary is its client:
+
+```bash
+flick app list                 # <name>\t<path> per app
+flick app open Safari
+flick clip list                # <id>\t<first line>, newest first
+flick clip get 42              # one clip's full text
+flick window left-half         # any action from `flick window list`
+flick reload                   # reload config.toml
+flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
+flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
+```
+
+The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. An error reply exits with status 1.
+
 ## Keys
 
 | Key | Action |
@@ -159,6 +176,7 @@ Flick changes `{argument}` placeholders to `{query}` and skips links with the sa
 | [`store.rs`](src/store.rs) | SQLite: usage counts and clipboard history |
 | [`config.rs`](src/config.rs) | TOML config and quicklinks |
 | [`raycast.rs`](src/raycast.rs) | Raycast quicklink import |
+| [`control/`](src/control), [`cli/`](src/cli) | Control socket server, and the command-line client |
 
 The panel is a non-activating `NSPanel`, so the app you came from stays active while Flick has keyboard focus. That is why window commands and paste act on the right app.
 
