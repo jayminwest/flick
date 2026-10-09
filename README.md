@@ -40,6 +40,7 @@ Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 - **Desktop toggle.** One hotkey jumps to the most recent app on another desktop. Built for a full-screen terminal on one desktop and everything else on another.
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
 - **Herdr agents.** Coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones waiting on you first. ↵ jumps to the agent's pane; a notification tells you when one starts to wait.
+- **Screenshots and drawing.** Capture an area, a window or a screen to a PNG file and the clipboard, mark it up with arrows, boxes, a pen, a highlighter, text and redaction, and draw on the screen with a cursor halo. It replaces Shottr and Presentify.
 - **Quicklinks.** URLs and paths with an optional `{query}` argument. Type `<keyword> <text>` to run one from the root search. Import your Raycast quicklinks with one command.
 
 ## See it
@@ -153,7 +154,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `activity`, `task`, `keys`, `flick`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `builtin`, `clip`, `activity`, `task`, `keys`, `capture`, `flick`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
@@ -300,6 +301,69 @@ flick --json herdr ls | jq '.ok.machines | keys'
 
 [docs/herdr.md](docs/herdr.md) has a manual test checklist.
 
+### Capture
+
+The `capture` module takes screenshots, opens them in a small annotation editor, and draws on the screen. It replaces Shottr and Presentify. Shots go through macOS's own `screencapture`, so the selection is the native one: a crosshair, Space for a window, Esc to cancel, every display, Retina pixels.
+
+| Launcher item | What it does |
+|---|---|
+| **Capture Area** | Drag to select; Space picks a window instead; Esc cancels and saves nothing. |
+| **Capture Window** | Click a window. With `shadow = true` the PNG keeps the window shadow. |
+| **Capture Screen** | The whole display under the mouse. |
+| **Capture Area and Annotate** | Capture Area, then the editor opens on the shot. |
+| **Draw on Screen** / **Stop Drawing on Screen** | Draw over every app and every display. |
+| **Highlight Cursor** / **Stop Highlighting Cursor** | A ring follows the pointer and pulses on a click. |
+| **Clear Drawing** | Remove the shapes from the screen. Shows only while shapes are there. |
+| **Recent Captures** | Your shots, newest first. ↵ opens one. ⌘K: **Copy Image**, **Annotate**, **Show in Finder**, **Copy Path**, **Move to Trash**. |
+
+Editor and draw keys: `a` arrow, `r` rectangle, `p` pen, `h` highlighter, `t` text, `x` redact (a solid black box), `1` to `5` the colors, ⌘Z undo, ⇧⌘Z redo, Delete clears.
+
+- **Editor.** ↵ writes the annotated PNG at full pixel size, and copies it when `copy = true`. ⌘C writes and copies; ⌘S writes and does not copy. Esc or the close button writes nothing. The app you came from is in front again after the editor closes. **Capture Area and Annotate** writes over the shot; **Annotate** in Recent Captures and `flick capture annotate` write `<name> annotated.png` beside the file, and that copy shows in Recent Captures.
+- **Draw on Screen.** Drawing starts with the pen. ↵ stops drawing and keeps the shapes on the screen; clicks then pass through to the apps under them. Esc stops drawing and clears the shapes. With `fade_secs` above 0, each shape fades after that many seconds.
+
+```toml
+[capture]
+dir = "~/Pictures/Flick"           # created on the first save
+name = "Flick {date} at {time}.png"  # also {kind}: area, window, screen, display, rect
+copy = true                        # put each shot on the clipboard
+save = true                        # false: clipboard only (save and copy cannot both be off)
+sound = true                       # the shutter sound
+cursor = false                     # include the mouse pointer
+shadow = true                      # window shadows in Capture Window
+history = 200                      # rows in Recent Captures; trimming never deletes files
+colors = ["#ff3b30", "#ffcc00", "#34c759", "#0a84ff", "#ffffff"]  # keys 1-5; #rrggbb or #rrggbbaa
+width = 4.0                        # pen width in points
+fade_secs = 0.0                    # draw on screen: 0 keeps shapes until Esc or Clear Drawing
+halo_color = "#ffcc00"
+halo_radius = 28.0
+area_hotkey = "cmd+ctrl+alt+shift+Digit4"  # area, window, screen, annotate, draw and cursor
+draw_hotkey = "cmd+ctrl+alt+shift+KeyD"    # hotkeys are all unbound by default
+```
+
+```bash
+flick capture area                 # starts the selection and answers "Select an area" at once
+flick capture area --annotate      # also: window, window --annotate
+flick capture screen               # the display under the mouse; prints the file path
+flick capture display 2            # display 2, main display first
+flick capture rect 0,0,400,300 --no-copy   # x,y,w,h in points from the top left
+flick capture screen --out /tmp/shot.png   # --out needs an absolute path
+flick --json capture screen | jq .ok.path  # {"path","width","height","copied"}
+flick capture ls --limit 5         # <id>\t<path>\t<w>x<h>, newest first; --json: rows
+flick capture last                 # the newest file
+flick capture draw on              # on|off|toggle|clear
+flick capture cursor toggle        # on|off|toggle
+flick capture annotate ~/Desktop/shot.png  # opens the editor; prints the copy's path
+```
+
+`screen`, `display` and `rect` answer when the file is written. `area` and `window` answer at once; the shot lands in Recent Captures when you finish the selection.
+
+- **Screen Recording.** Flick needs the Screen Recording permission (System Settings → Privacy & Security → Screen & System Audio Recording). Without it, macOS gives back only the wallpaper and Flick's own windows, so Flick does not capture: the first try shows `Allow Screen Recording for Flick in System Settings` and opens the system prompt. Quit and restart Flick after you allow it. macOS 15 and later also asks again from time to time whether Flick may keep recording the screen; that prompt is from macOS, and Flick keeps working when you allow it. An ad hoc signed rebuild can lose the grant, as with Accessibility.
+- **Where files go.** `dir`, named from `name`; a taken name gets ` (2)`, ` (3)` and so on. `--out <path>` writes there instead. With `save = false` the shot is a file in `$TMPDIR/flick-capture`, is on the clipboard, and does not show in Recent Captures; Flick does not delete those files, macOS clears the temp folder.
+- **What is stored.** Table `capture_shots` in `flick.db` holds each shot's path, kind, size and time, never the image. A row whose file is gone drops out of Recent Captures.
+- **Trash.** **Move to Trash** asks first (⌘↵ confirms), moves the file to the macOS Trash (Finder's Put Back restores it) and removes the row. Nothing else in Flick deletes a screenshot.
+
+[docs/capture.md](docs/capture.md) has a manual test checklist.
+
 ### Rebuild settings
 
 ```toml
@@ -358,7 +422,7 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 
 | Path | Role |
 |---|---|
-| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, activity, tasks. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
+| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, activity, tasks, capture. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
 | [`core/`](src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
