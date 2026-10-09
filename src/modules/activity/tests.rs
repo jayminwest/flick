@@ -94,6 +94,8 @@ fn rows(cx: &Cx) -> Vec<(i64, i64, String)> {
 
 const T: i64 = 1_000_000;
 
+mod tasks;
+
 #[test]
 fn nothing_is_recorded_until_recording_is_on() {
     with_cx(|cx| {
@@ -434,3 +436,4 @@ fn the_indicator_menu_stops_recording() {
         assert_eq!(calls(), ["indicator false"]);
     });
 }
+

@@ -7,6 +7,8 @@
 //! While recording, a menu bar indicator shows; with `titles = true` the front app's window
 //! is followed for title changes (`Event::WindowChanged`), and only then. Sleep and screen
 //! lock pause recording; wake and unlock resume it. Quit closes the open span.
+//! Spans carry the running task's id, learned from `Event::TaskChanged` (activity never
+//! reads the task module's tables); a task change splits the open span.
 //! Ids are `activity:record`, `activity:today` and `activity:row/<kind>/<name>` (view rows).
 
 mod report;
@@ -16,10 +18,10 @@ mod store;
 mod tests;
 mod wire;
 
-use crate::core::track::{Clock, Input, Op, Subject};
+use crate::core::track::{Clock, Input, Op, Span, Subject};
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::store::Store;
-use report::{Report, clip, parse_since, span_list, span_text};
+use report::{TaskReport, Report, clip, parse_since, span_list, span_text};
 use rules::Config;
 use store::{MIGRATIONS, Spans};
 use wire::Env;
@@ -40,6 +42,8 @@ pub struct Activity {
     /// The menu bar indicator is shown.
     indicated: bool,
     away: Away,
+    /// The running task, from the last `Event::TaskChanged`.
+    task: Option<i64>,
 }
 
 /// Why the machine is not in use; recording pauses while either holds.
@@ -105,7 +109,7 @@ impl Activity {
         self.front = Some(pid);
         // With `titles = false` no title is ever read.
         let title = if self.config.titles { (self.env.title)(pid) } else { None };
-        let subject = Subject::new(&app, &name, title.as_deref(), None);
+        let subject = Subject::new(&app, &name, title.as_deref(), self.task);
         Some(if std::mem::take(&mut self.excluded) {
             Input::Resume(subject)
         } else {
@@ -196,6 +200,11 @@ impl Activity {
                     None => self.touch(store, now),
                 }
             }
+            // The open span ends; the front app's next span carries the new task.
+            Event::TaskChanged { .. } if !away => match self.front.and_then(|pid| self.focus(pid)) {
+                Some(input) => self.apply(input, store, now),
+                None => self.touch(store, now),
+            },
             Event::Idle { secs } => self.apply(Input::Idle { secs }, store, now),
             Event::Active => self.apply(Input::Active, store, now),
             _ => self.touch(store, now),
@@ -228,12 +237,34 @@ impl Activity {
     }
 
     fn report(&self, range: &'static str, store: &Store) -> Report {
+        let (from, now, offset, spans) = self.clipped(range, store);
+        Report::new(range, (from, now, offset), &spans, &self.config, store.recording())
+    }
+
+    /// Spans of `range` ("today" or "week") cut to it, with its start, now and the UTC offset.
+    fn clipped(&self, range: &str, store: &Store) -> (i64, i64, i32, Vec<Span<Subject>>) {
         let now = (self.env.now)();
         let offset = (self.env.utc_offset)(now);
         let from = parse_since(range, now, offset).unwrap_or(now);
         self.touch(store, now);
-        let spans = clip(store.spans(from, now), from, now);
-        Report::new(range, (from, now, offset), &spans, &self.config, store.recording())
+        (from, now, offset, clip(store.spans(from, now), from, now))
+    }
+
+    /// `today|week [--by task]`.
+    fn totals(&self, range: &'static str, args: &[String], cx: &Cx) -> Result<String, String> {
+        let json = |v: Result<String, serde_json::Error>| v.map_err(|e| format!("activity: {e}"));
+        match args {
+            [] => {
+                let r = self.report(range, cx.store);
+                if cx.json { json(serde_json::to_string(&r)) } else { Ok(r.text()) }
+            }
+            [by, what] if by == "--by" && what == "task" => {
+                let (from, now, _, spans) = self.clipped(range, cx.store);
+                let r = TaskReport::new(range, (from, now), &spans, cx.store.recording());
+                if cx.json { json(serde_json::to_string(&r)) } else { Ok(r.text()) }
+            }
+            _ => Err(format!("activity: usage: activity {range} [--by task]")),
+        }
     }
 
     fn status(&self, store: &Store) -> String {
@@ -394,6 +425,9 @@ impl Module for Activity {
 
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         let store = cx.store;
+        if let Event::TaskChanged { task } = event {
+            self.task = task;
+        }
         if event == Event::Started {
             self.settle(store);
             self.away = Away::default();
@@ -422,22 +456,18 @@ impl Module for Activity {
     }
 
     fn verbs(&self) -> &'static str {
-        "activity on|off|status | activity today|week | activity spans [--since <date>] | activity forget today|all|app <id> --yes"
+        "activity on|off|status | activity today|week [--by task] | activity spans [--since <date>] | activity forget today|all|app <id> --yes"
     }
 
-    /// `--json` (`cx.json`) makes `today`, `week` and `spans` answer with JSON.
+    /// `--json` (`cx.json`) makes `today`, `week` and `spans` answer with JSON; spans carry
+    /// their task id.
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
         match args {
             [v] if v == "on" => Ok(self.set_recording(true, cx.store)),
             [v] if v == "off" => Ok(self.set_recording(false, cx.store)),
             [v] if v == "status" => Ok(self.status(cx.store)),
-            [v] if v == "today" || v == "week" => {
-                let r = self.report(if v == "today" { "today" } else { "week" }, cx.store);
-                if cx.json {
-                    serde_json::to_string(&r).map_err(|e| format!("activity: {e}"))
-                } else {
-                    Ok(r.text())
-                }
+            [v, rest @ ..] if v == "today" || v == "week" => {
+                self.totals(if v == "today" { "today" } else { "week" }, rest, cx)
             }
             [v, rest @ ..] if v == "spans" => self.spans(rest, cx),
             [v, rest @ ..] if v == "forget" => self.forget(rest, cx.store),
