@@ -24,11 +24,11 @@ pub fn registry() -> Registry {
 pub fn with_apps(apps: Vec<apps::App>) -> Registry {
     Registry::new(vec![
         Box::new(apps::Apps::new(apps)),
-        Box::new(desktop::Desktop),
+        Box::new(desktop::Desktop::default()),
         Box::new(switcher::Switcher::default()),
         Box::new(windows::Windows),
         Box::new(quicklinks::Quicklinks),
         Box::new(flick::Flick),
-        Box::new(clipboard::Clipboard::default()),
+        Box::new(clipboard::Clipboard),
     ])
 }

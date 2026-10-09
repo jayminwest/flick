@@ -1,20 +1,8 @@
 //! The module contract: one feature behind a narrow interface.
 
-use super::{Item, ItemId, ListView, Outcome, Ranker};
+use super::{Event, Item, ItemId, ListView, Outcome, Ranker};
 use crate::config::Config;
 use crate::store::Store;
-
-/// Something that happened outside any module. Dispatched to every module in order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Event {
-    /// The controller started, before the run loop.
-    Started,
-    /// The launcher opened at root search.
-    LauncherOpened,
-    /// The half-second main-thread timer fired. Only for state macOS gives no notification
-    /// for (the pasteboard's change count).
-    Tick,
-}
 
 /// A global hotkey a module asks for: `spec` (e.g. "cmd+Space") runs the module's `hotkey`
 /// with `key`. `Err` reports a binding the module can't map, e.g. an unknown action name.

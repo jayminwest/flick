@@ -5,10 +5,14 @@
 use std::collections::HashSet;
 
 use crate::config::Config;
-use crate::core::{Binding, Cx, ListView, Module};
+use crate::core::{Binding, Cx, Event, ListView, Module, RecentPids};
 use crate::platform::{spaces, workspace};
 
-pub struct Desktop;
+/// `recent`: apps by activation, most recent first.
+#[derive(Default)]
+pub struct Desktop {
+    recent: RecentPids,
+}
 
 impl Module for Desktop {
     fn id(&self) -> &'static str {
@@ -26,11 +30,17 @@ impl Module for Desktop {
 
     fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
         if key == "toggle"
-            && let Err(e) = toggle()
+            && let Err(e) = toggle(self.recent.pids())
         {
             eprintln!("flick: desktop toggle: {e}");
         }
         None
+    }
+
+    /// Track app activations, starting from the frontmost app.
+    fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+        self.recent.observe(event, workspace::frontmost_pid);
+        false
     }
 }
 
@@ -50,10 +60,10 @@ fn pick(
         .find(|pid| Some(*pid) != current && anywhere.contains(pid) && !here.contains(pid))
 }
 
-fn toggle() -> Result<(), &'static str> {
+fn toggle(recent: &[i32]) -> Result<(), &'static str> {
     // Regular (Dock) apps only: menu-bar apps keep hidden windows but have no desktop to switch to.
     let regular = |pid: &i32| workspace::is_regular(*pid);
-    let recent: Vec<i32> = workspace::recent_pids().into_iter().filter(regular).collect();
+    let recent: Vec<i32> = recent.iter().copied().filter(regular).collect();
     let fallback: Vec<i32> = workspace::unhidden_app_pids().into_iter().filter(regular).collect();
     let current = workspace::frontmost_pid();
     let (here, anywhere) = (spaces::window_pids(true), spaces::window_pids(false));
@@ -84,7 +94,7 @@ mod tests {
     fn binds_desktop_toggle() {
         let config = Config { desktop_toggle: Some("cmd+Backquote".into()), ..Config::default() };
         let want = Binding { spec: "cmd+Backquote".into(), key: Ok("toggle".into()) };
-        assert_eq!(Desktop.hotkeys(&config), [want]);
-        assert!(Desktop.hotkeys(&Config::default()).is_empty());
+        assert_eq!(Desktop::default().hotkeys(&config), [want]);
+        assert!(Desktop::default().hotkeys(&Config::default()).is_empty());
     }
 }

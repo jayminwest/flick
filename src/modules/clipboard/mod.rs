@@ -7,11 +7,7 @@ use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::{ax, pasteboard, timer};
 use crate::store;
 
-/// `count`: the pasteboard's change count when last checked; set on `Event::Started`.
-#[derive(Default)]
-pub struct Clipboard {
-    count: Option<isize>,
-}
+pub struct Clipboard;
 
 fn relative_time(ts: i64) -> String {
     let secs = (store::now() - ts).max(0);
@@ -78,21 +74,11 @@ impl Module for Clipboard {
     /// Record new clipboard text. Skips content that password managers mark as concealed or
     /// transient.
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
-        match event {
-            Event::Started => self.count = Some(pasteboard::change_count()),
-            Event::Tick => {
-                let count = pasteboard::change_count();
-                if self.count == Some(count) {
-                    return false;
-                }
-                self.count = Some(count);
-                if let Some(text) = pasteboard::copied_text() {
-                    cx.store.add_clip(&text);
-                    return true;
-                }
-            }
-            Event::LauncherOpened => {}
+        if event != Event::PasteboardChanged {
+            return false;
         }
-        false
+        let Some(text) = pasteboard::copied_text() else { return false };
+        cx.store.add_clip(&text);
+        true
     }
 }
