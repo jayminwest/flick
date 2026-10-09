@@ -56,6 +56,17 @@
 # Optional: the app that opens it (a name, .app path or bundle id); default: the system's.
 #app = "Safari"
 
+# --- script: run a shell command from root search. "{query}" in shell makes the command
+# take an argument, passed as one single-quoted word; "<keyword> <text>" in root search
+# runs it at once. Repeat the table for each command. Example:
+#[[script.commands]]
+# Shown in search; also the command's id (renaming it loses its usage history).
+#name = "Search Notes"
+# The command line, run with /bin/sh -c.
+#shell = "open \"obsidian://search?query={query}\""
+# Optional: the word that runs the command from root search.
+#keyword = "n"
+
 # --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
 #[builtin]
 #enabled = true
