@@ -130,7 +130,6 @@ pub fn focused_window() -> Option<FocusedWindow> {
 
 /// The title of app `pid`'s focused window. None without Accessibility permission, without a
 /// focused window, or when the window has no title.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a30b"))]
 pub fn focused_window_title(pid: i32) -> Option<String> {
     let app_el = app_element(pid);
     if app_el.0.is_null() {

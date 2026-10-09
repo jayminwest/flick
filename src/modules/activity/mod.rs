@@ -4,6 +4,9 @@
 //! not in config. Window titles are never read unless `titles = true`. Excluded apps leave
 //! a gap. The open span is a row whose `end` advances on every event while recording, so a
 //! crash loses at most the time since the last event.
+//! While recording, a menu bar indicator shows; with `titles = true` the front app's window
+//! is followed for title changes (`Event::WindowChanged`), and only then. Sleep and screen
+//! lock pause recording; wake and unlock resume it. Quit closes the open span.
 //! Ids are `activity:record`, `activity:today` and `activity:row/<kind>/<name>` (view rows).
 
 mod report;
@@ -11,37 +14,15 @@ mod rules;
 mod store;
 #[cfg(test)]
 mod tests;
+mod wire;
 
 use crate::core::track::{Clock, Input, Op, Subject};
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::{clock, workspace};
 use crate::store::Store;
 use report::{Report, clip, parse_since, span_list, span_text};
 use rules::Config;
 use store::{MIGRATIONS, Spans};
-
-/// What the module reads from the system; swapped out in tests.
-struct Env {
-    now: fn() -> i64,
-    utc_offset: fn(i64) -> i32,
-    /// Bundle id (if any) and display name of app `pid`.
-    identity: fn(i32) -> Option<(Option<String>, String)>,
-    frontmost: fn() -> Option<i32>,
-    /// Flick's own pid: its activations never open spans.
-    own_pid: i32,
-}
-
-impl Default for Env {
-    fn default() -> Self {
-        Env {
-            now: crate::store::now,
-            utc_offset: clock::utc_offset,
-            identity: workspace::app_identity,
-            frontmost: workspace::frontmost_pid,
-            own_pid: std::process::id() as i32,
-        }
-    }
-}
+use wire::Env;
 
 #[derive(Default)]
 pub struct Activity {
@@ -52,6 +33,28 @@ pub struct Activity {
     open: Option<i64>,
     /// The clock is paused because an excluded app is in front.
     excluded: bool,
+    /// The app whose spans are open or would be (not Flick, not excluded).
+    front: Option<i32>,
+    /// The pid whose window titles are followed.
+    watched: Option<i32>,
+    /// The menu bar indicator is shown.
+    indicated: bool,
+    away: Away,
+}
+
+/// Why the machine is not in use; recording pauses while either holds.
+#[derive(Clone, Copy, Debug, Default)]
+struct Away {
+    /// The screen is locked: paused until `Unlocked`.
+    locked: bool,
+    /// The machine sleeps: paused until `Wake`.
+    asleep: bool,
+}
+
+impl Away {
+    fn any(self) -> bool {
+        self.locked || self.asleep
+    }
 }
 
 impl Activity {
@@ -96,10 +99,13 @@ impl Activity {
         let app = id.unwrap_or_else(|| name.clone());
         if self.config.excludes(&app, &name) {
             self.excluded = true;
+            self.front = None;
             return Some(Input::Pause);
         }
-        // Titles arrive with Event::WindowChanged (flick-a30b); until then spans are app-level.
-        let subject = Subject::new(&app, &name, None, None);
+        self.front = Some(pid);
+        // With `titles = false` no title is ever read.
+        let title = if self.config.titles { (self.env.title)(pid) } else { None };
+        let subject = Subject::new(&app, &name, title.as_deref(), None);
         Some(if std::mem::take(&mut self.excluded) {
             Input::Resume(subject)
         } else {
@@ -113,6 +119,7 @@ impl Activity {
         store.set_open_span(None);
         self.open = None;
         self.excluded = false;
+        self.front = None;
         self.clock = Clock::new(self.config.merge_secs);
     }
 
@@ -120,6 +127,78 @@ impl Activity {
     fn begin(&mut self, store: &Store, now: i64) {
         if let Some(input) = (self.env.frontmost)().and_then(|pid| self.focus(pid)) {
             self.apply(input, store, now);
+        }
+    }
+
+    /// Match the system to the recording state: the indicator shows while recording, and
+    /// the front app's titles are followed only while recording with titles on and the
+    /// machine in use.
+    fn sync(&mut self, store: &Store) {
+        let recording = store.recording();
+        if recording != self.indicated {
+            (self.env.indicator)(recording);
+            self.indicated = recording;
+            if recording {
+                (self.env.on_quit)(store);
+            }
+        }
+        let away = self.away.any();
+        let want = self.front.filter(|_| recording && self.config.titles && !away);
+        if want != self.watched {
+            match want {
+                Some(pid) => (self.env.follow)(pid),
+                None => (self.env.unfollow)(),
+            }
+            self.watched = want;
+        }
+    }
+
+    /// Handle `event` while recording.
+    fn record(&mut self, event: Event, store: &Store) {
+        let now = (self.env.now)();
+        let away = self.away.any();
+        match event {
+            Event::Started => {
+                // The time down is not counted: the span ended at its last event.
+                self.settle(store);
+                self.begin(store, now);
+            }
+            Event::Sleep | Event::Locked => {
+                self.away.asleep |= event == Event::Sleep;
+                self.away.locked |= event == Event::Locked;
+                self.apply(Input::Pause, store, now);
+            }
+            // The time asleep is not counted; a locked screen waits for `Unlocked`.
+            Event::Wake => {
+                self.away.asleep = false;
+                if !self.away.locked {
+                    self.settle(store);
+                    self.begin(store, now);
+                }
+            }
+            Event::Unlocked if self.away.locked => {
+                self.away.locked = false;
+                if !self.away.asleep {
+                    self.settle(store);
+                    self.begin(store, now);
+                }
+            }
+            Event::ModuleChanged { module: "activity" } if wire::take_stop() => {
+                self.set_recording(false, store);
+            }
+            Event::AppActivated { pid } if !away => match self.focus(pid) {
+                Some(input) => self.apply(input, store, now),
+                None => self.touch(store, now),
+            },
+            Event::WindowChanged { pid } if !away && self.config.titles && self.front == Some(pid) => {
+                match self.focus(pid) {
+                    Some(input) => self.apply(input, store, now),
+                    None => self.touch(store, now),
+                }
+            }
+            Event::Idle { secs } => self.apply(Input::Idle { secs }, store, now),
+            Event::Active => self.apply(Input::Active, store, now),
+            _ => self.touch(store, now),
         }
     }
 
@@ -144,6 +223,7 @@ impl Activity {
                 self.settle(store);
             }
         }
+        self.sync(store);
         format!("Activity recording {}", if on { "on" } else { "off" })
     }
 
@@ -158,12 +238,17 @@ impl Activity {
 
     fn status(&self, store: &Store) -> String {
         let on = if store.recording() { "on" } else { "off" };
-        let titles = if self.config.titles { "on" } else { "off" };
+        let titles = match (self.config.titles, (self.env.trusted)()) {
+            (false, _) => "off",
+            (true, true) => "on",
+            (true, false) => "no Accessibility permission",
+        };
         let open = match self.clock.open() {
             Some((s, start)) => {
                 let since = report::local_time(start, (self.env.utc_offset)(start));
                 format!("{} since {}", s.name, &since[11..])
             }
+            None if self.away.any() => "screen locked or asleep".into(),
             None if self.excluded && self.clock.is_paused() => "excluded app in front".into(),
             None if self.clock.is_idle() => "idle".into(),
             None => "none".into(),
@@ -213,6 +298,7 @@ impl Activity {
         if recording {
             self.begin(store, now);
         }
+        self.sync(store);
         Ok(format!("Deleted {n} spans"))
     }
 
@@ -310,26 +396,14 @@ impl Module for Activity {
         let store = cx.store;
         if event == Event::Started {
             self.settle(store);
+            self.away = Away::default();
         }
-        if !store.recording() {
-            return false;
+        let recording = store.recording();
+        if recording {
+            self.record(event, store);
         }
-        let now = (self.env.now)();
-        match event {
-            Event::Started | Event::Wake => {
-                // The time asleep (or down) is not counted: the span ends at its last event.
-                self.settle(store);
-                self.begin(store, now);
-            }
-            Event::AppActivated { pid } => match self.focus(pid) {
-                Some(input) => self.apply(input, store, now),
-                None => self.touch(store, now),
-            },
-            Event::Idle { secs } => self.apply(Input::Idle { secs }, store, now),
-            Event::Active => self.apply(Input::Active, store, now),
-            _ => self.touch(store, now),
-        }
-        true
+        self.sync(store);
+        recording
     }
 
     fn hotkeys(&self) -> Vec<Binding> {
