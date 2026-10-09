@@ -53,6 +53,7 @@ the main thread.
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
 | `hotkey(key, &mut Cx) -> Option<ListView>` | a bound hotkey press | `Some(view)` toggles the launcher on that view. `None` leaves the launcher alone. |
 | `command(&[String], &mut Cx) -> Result<String, String>` | `flick <id> <verb> ...` | `args` starts at the verb. Return `Err(unknown_verb(id, args))` for verbs you do not have. |
+| `verbs() -> &'static str` | `flick help` | One line naming `command`'s verbs, e.g. `toy ping`. Empty: none. |
 
 `Cx` gives a module `query` (the search field text; `""` for events, hotkeys and commands),
 `store`, `ranker`, and `hide()`. Call `cx.hide()` before an action that needs the previous app
@@ -63,7 +64,7 @@ A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open
 `activate` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
 `Err(text)`; do not panic.
 
-Registration order (`with_apps` in `src/modules/mod.rs`) is significant. It sets root order for
+Registration order (the `modules!` list in `src/modules/mod.rs`) is significant. It sets root order for
 equal ranks, event order, and hotkey bind order. Hotkeys bind in the order launcher, desktop,
 switcher, window. When two bindings use the same spec, the later one fails with "bound twice".
 
@@ -198,22 +199,20 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
 5. Views: return a `ListView` from `open` for each view name you own. Fill `view.items` in
    `refresh` and rank them with `cx.ranker`.
 6. Commands: match `args` in `command` and end with `_ => Err(unknown_verb("toy", args))`.
+   Return the verbs from `verbs()` (`"toy ping"`) so `flick help` lists them.
 7. Tables: put the SQL in `src/modules/toy/store.rs`. Return its `MIGRATIONS` from
    `migrations()`. Name tables after the module.
-8. Register it in `src/modules/mod.rs`: `mod toy;` and one line in `with_apps`,
-   `m.add("toy", toy::Toy::default)?;`. The string must equal `id()`. Its position sets root,
+8. Register it with one line in the `modules!` list in `src/modules/mod.rs`:
+   `mod toy => "toy", toy::Toy::default;`. The line declares the directory and registers the
+   module. The string is the config table name and must equal `id()`. Its position sets root,
    event and hotkey order.
 9. Tests: put unit tests in the module file. Use `crate::core::test_cx` for a `Cx` over an
    in-memory store, and `crate::config::parse` plus `section("toy")` for config.
 10. Run `scripts/check-all.sh`.
 
-Some characterization tests pin the default registry. A module that is enabled by default and
-adds root items or tables fails them until you update them on purpose:
+Nothing else changes: `git diff --stat` shows `src/modules/toy/` and one line in
+`src/modules/mod.rs`. The characterization tests pin only the modules they name (root item
+prefixes, ranking, tables, hotkey owners, `flick help` verbs), so a new default-enabled module does not break them. A new
+table must start with its module id, or `schema_is_usage_and_clips` fails.
 
-- `src/characterization/item_ids.rs` `root_items_are_apps_then_windows_then_quicklinks_then_builtins`
-  (count and order of root item prefixes).
-- `src/characterization/store_schema.rs` `schema_is_usage_and_clips` (the full table list).
-- `src/modules/mod.rs` `disabled_modules_add_nothing` (its list of modules to disable).
-
-Optional: add the module to the module list in `DEFAULT_CONFIG` (`src/config.rs`) and its verbs
-to `USAGE` (`src/cli/mod.rs`).
+Optional: add the module to the module list in `DEFAULT_CONFIG` (`src/config.rs`).
