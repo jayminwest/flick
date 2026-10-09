@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"b2c3d4e5-f6a7-4890-9bcd-ef0123456789","timestamp":"2026-10-09T18:05:00.000Z","cwd":"/Users/example/Library/Caches/Flick/bridge"}
+{"type":"agent_start"}
+{"type":"message_end","message":{"role":"assistant","content":[],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"401 invalid x-api-key","timestamp":1791569100000}}
+{"type":"agent_end","messages":[]}
