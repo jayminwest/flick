@@ -3,7 +3,8 @@
 //! Off unless configured: no chords and no hyper means no item and no worker thread.
 //! The only id is `keys:status`, the Key Triggers root item.
 //!
-//! Key names stay strings here; the key tap that matches them is wired in flick-df71.
+//! Configure checks key names with `core::keys::names` and keeps the engine's `Rules`; the
+//! key tap that runs them is wired in flick-df71.
 
 mod action;
 
@@ -11,6 +12,8 @@ use action::{Action, Job, Spec, Worker};
 use serde::Deserialize;
 
 use crate::config::Section;
+use crate::core::keys::names::{KeyName, keycode, parse_chord, parse_mods};
+use crate::core::keys::{self, CAPS_LOCK, F18, Rules};
 use crate::core::{Cx, Icon, Item, ItemId, Module, Outcome, unknown_verb};
 
 /// Table `[keys]`. `hyper` names the key that acts as Hyper (`caps_lock`, or any key name;
@@ -53,10 +56,12 @@ struct ChordSpec {
 struct Chord {
     name: String,
     keys: Vec<String>,
+    rule: keys::Chord,
     on_down: Option<Action>,
     on_up: Option<Action>,
 }
 
+/// The hyper settings as written, for `list` and `status`.
 #[derive(Debug, PartialEq, Eq)]
 struct Hyper {
     key: String,
@@ -69,10 +74,13 @@ struct Hyper {
 pub struct Keys {
     hyper: Option<Hyper>,
     chords: Vec<Chord>,
+    /// What the key tap matches: `hyper` and `chords` compiled, chords in the same order.
+    rules: Rules,
     worker: Worker,
 }
 
-/// The chords in `specs`, checked: names unique and non-empty, keys non-empty, actions valid.
+/// The chords in `specs`, checked: names unique and non-empty, keys known (modifiers plus at
+/// most one other key), actions valid.
 fn chords(specs: Vec<ChordSpec>) -> Result<Vec<Chord>, String> {
     let mut chords: Vec<Chord> = vec![];
     for spec in specs {
@@ -84,19 +92,46 @@ fn chords(specs: Vec<ChordSpec>) -> Result<Vec<Chord>, String> {
         if chords.iter().any(|c| c.name == name) {
             return Err(bad("duplicate name; keep one".into()));
         }
-        if spec.keys.is_empty() || spec.keys.iter().any(|k| k.trim().is_empty()) {
-            return Err(bad("keys: name at least one key, none empty".into()));
-        }
+        let rule = parse_chord(&spec.keys).map_err(|e| bad(format!("keys: {e}")))?;
         let action = |spec: Option<Spec>| spec.map(Action::parse).transpose().map_err(bad);
         let (on_down, on_up) = (action(spec.on_down)?, action(spec.on_up)?);
-        chords.push(Chord { name, keys: spec.keys, on_down, on_up });
+        chords.push(Chord { name, keys: spec.keys, rule, on_down, on_up });
     }
     Ok(chords)
 }
 
+/// `[keys] hyper`, compiled: a non-modifier source key (`caps_lock` means F18, which the HID
+/// remap turns Caps Lock into), `hyper_mods` flags and an optional `hyper_tap` key.
+fn hyper(s: &Settings) -> Result<Option<(Hyper, keys::Hyper)>, String> {
+    let key = s.hyper.trim();
+    if key.is_empty() {
+        return Ok(None);
+    }
+    let source = match key.parse::<KeyName>().map_err(|e| format!("[keys] hyper: {e}"))? {
+        KeyName::Key(CAPS_LOCK) => F18,
+        KeyName::Key(code) => code,
+        KeyName::Mod(_) => {
+            return Err(format!("[keys] hyper: `{key}` is a modifier; name a key such as caps_lock"));
+        }
+    };
+    let flags = parse_mods(&s.hyper_mods).map_err(|e| format!("[keys] hyper_mods: {e}"))?;
+    let tap_name = s.hyper_tap.trim();
+    let tap = match tap_name {
+        "" => None,
+        name => Some(keycode(name).ok_or_else(|| format!("[keys] hyper_tap: unknown key `{name}`"))?),
+    };
+    let shown = Hyper {
+        key: key.into(),
+        mods: s.hyper_mods.trim().into(),
+        tap: tap.map(|_| tap_name.into()),
+        tap_ms: s.hyper_tap_ms,
+    };
+    Ok(Some((shown, keys::Hyper { source, flags, tap, tap_ms: s.hyper_tap_ms })))
+}
+
 impl Keys {
     fn off(&self) -> bool {
-        self.hyper.is_none() && self.chords.is_empty()
+        self.rules.is_empty()
     }
 
     /// Queue chord `index`'s action for its `down` or up edge. `Ok` says what was queued.
@@ -158,17 +193,10 @@ impl Module for Keys {
     }
 
     fn configure(&mut self, table: &Section) -> Result<(), String> {
-        let s = table.get::<Settings>()?;
-        let chords = chords(s.chord)?;
-        let hyper = (!s.hyper.trim().is_empty()).then(|| Hyper {
-            key: s.hyper.trim().into(),
-            mods: s.hyper_mods,
-            tap: (!s.hyper_tap.trim().is_empty()).then(|| s.hyper_tap.trim().into()),
-            tap_ms: s.hyper_tap_ms,
-        });
-        if hyper.as_ref().is_some_and(|h| h.mods.trim().is_empty()) {
-            return Err("[keys] hyper_mods: name at least one modifier".into());
-        }
+        let mut s = table.get::<Settings>()?;
+        let (hyper, rule) = hyper(&s)?.unzip();
+        let chords = chords(std::mem::take(&mut s.chord))?;
+        self.rules = Rules { hyper: rule, chords: chords.iter().map(|c| c.rule).collect() };
         (self.hyper, self.chords) = (hyper, chords);
         Ok(())
     }
@@ -219,6 +247,7 @@ mod tests {
     use super::*;
     use crate::config::parse;
     use crate::core::test_cx;
+    use crate::core::keys::{HYPER_FLAGS, flags};
 
     fn configured(text: &str) -> Result<Keys, String> {
         let mut keys = Keys::default();
@@ -289,14 +318,30 @@ mod tests {
     }
 
     #[test]
+    fn compiles_rules_for_the_tap() {
+        let text = format!("[keys]\nhyper = \"caps_lock\"\n{PTT}").replace("PORT", "8600");
+        let keys = configured(&text).unwrap();
+        // caps_lock compiles to F18 (the HID remap's target); chords keep their order.
+        let rule = keys::Hyper { source: F18, flags: HYPER_FLAGS, tap: Some(53), tap_ms: 300 };
+        let mods = flags::CMD | flags::RIGHT_CMD | flags::ALT | flags::RIGHT_ALT;
+        let chord = keys::Chord { mods, key: None };
+        assert_eq!(keys.rules, Rules { hyper: Some(rule), chords: vec![chord] });
+        let keys = configured("[keys]\nhyper = \"F18\"\nhyper_tap = \"\"").unwrap();
+        assert_eq!(keys.rules.hyper.map(|h| (h.source, h.tap)), Some((F18, None)));
+        let keys = configured("[keys]\nhyper = \"KeyH\"\nhyper_mods = \"cmd\"").unwrap();
+        assert_eq!(keys.rules.hyper.map(|h| (h.source, h.flags)), Some((4, flags::CMD)));
+    }
+
+    #[test]
     fn bad_tables_name_the_problem() {
         let chord = |body: &str| format!("[[keys.chord]]\n{body}");
         let cases = [
             (chord("name = \"a\"\nkeys = [\"fn\"]\non_dwn = { shell = \"x\" }"), "unknown field"),
             (chord("name = \"a\"\nkeys = [\"fn\"]\non_up = { exec = \"x\" }"), "unknown variant"),
             (chord("name = \" \"\nkeys = [\"fn\"]"), "[keys] chord: empty name"),
-            (chord("name = \"a\"\nkeys = []"), "[keys] chord \"a\": keys: name at least"),
-            (chord("name = \"a\"\nkeys = [\"\"]"), "keys: name at least"),
+            (chord("name = \"a\"\nkeys = []"), "[keys] chord \"a\": keys: a chord needs at least"),
+            (chord("name = \"a\"\nkeys = [\"right_cmd\", \"KeyQ\", \"KeyW\"]"), "at most one"),
+            (chord("name = \"a\"\nkeys = [\"hyperspace\"]"), "unknown key name `hyperspace`"),
             (
                 chord("name = \"a\"\nkeys = [\"fn\"]\non_down = { http = \"https://x/\" }"),
                 "[keys] chord \"a\": http \"https://x/\": only http://",
@@ -305,7 +350,11 @@ mod tests {
                 chord("name = \"a\"\nkeys = [\"fn\"]\n") + &chord("name = \"a\"\nkeys = [\"fn\"]"),
                 "[keys] chord \"a\": duplicate name",
             ),
-            ("[keys]\nhyper = \"F18\"\nhyper_mods = \"\"".into(), "hyper_mods: name at least"),
+            ("[keys]\nhyper = \"F18\"\nhyper_mods = \"\"".into(), "[keys] hyper_mods: unknown"),
+            ("[keys]\nhyper = \"F18\"\nhyper_mods = \"cmd+KeyA\"".into(), "not a modifier"),
+            ("[keys]\nhyper = \"right_cmd\"".into(), "`right_cmd` is a modifier"),
+            ("[keys]\nhyper = \"Hyper\"".into(), "[keys] hyper: unknown key name"),
+            ("[keys]\nhyper = \"F18\"\nhyper_tap = \"cmd\"".into(), "hyper_tap: unknown key"),
         ];
         for (text, want) in cases {
             let err = configured(&text).err().unwrap();
