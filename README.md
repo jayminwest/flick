@@ -29,7 +29,7 @@ Raycast, Rectangle, and AltTab each own one hotkey and one background process. F
                       └── window commands
 ⌘Space ──► window switcher ──► any window, any desktop
 ⌘`     ──► other desktop
-⌘HJKL  ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
+Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 ```
 
 ## What Flick does
@@ -102,12 +102,13 @@ windows_hotkey = "cmd+Space"       # window switcher
 desktop_toggle = "cmd+Backquote"   # most recent app on another desktop
 
 [window_keys]
-left-half = "cmd+KeyH"
-right-half = "cmd+KeyL"
-maximize = "cmd+KeyK"
-hide = "cmd+KeyJ"
-next-display = "cmd+shift+KeyK"
-previous-display = "cmd+shift+KeyJ"
+# Hyper (cmd+ctrl+alt+shift), e.g. Caps Lock via Hyperkey
+left-half = "cmd+ctrl+alt+shift+KeyH"
+right-half = "cmd+ctrl+alt+shift+KeyL"
+maximize = "cmd+ctrl+alt+shift+KeyK"
+hide = "cmd+ctrl+alt+shift+KeyJ"
+next-display = "cmd+ctrl+alt+shift+KeyN"
+previous-display = "cmd+ctrl+alt+shift+KeyP"
 
 [[quicklinks]]
 name = "GitHub Search"
@@ -122,7 +123,7 @@ url = "~/Projects"
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
 > [!WARNING]
-> A global hotkey overrides that shortcut in every app. `cmd+KeyH` replaces Hide (bind the `hide` action to another key to keep it) and `cmd+KeyL` replaces the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
+> A global hotkey overrides that shortcut in every app. For example, `cmd+KeyL` would replace the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
 
 ### Import Raycast quicklinks
 
