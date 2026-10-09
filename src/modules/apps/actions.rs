@@ -1,4 +1,5 @@
 //! The action menu (cmd+K) on app items, and the `app quit | force-quit | reveal` verbs.
+//! Uninstall… is in `uninstall.rs`.
 
 use std::path::Path;
 
@@ -10,11 +11,13 @@ const OPEN: &str = "open";
 const REVEAL: &str = "reveal";
 const QUIT: &str = "quit";
 const FORCE_QUIT: &str = "force-quit";
+const UNINSTALL: &str = "uninstall";
 
 impl Apps {
     /// cmd+K on the app at `path`. The panel asks on every render of the selected item, so
     /// this makes no `AppKit` query: Quit and Force Quit are listed for every app but Flick
-    /// itself, and `quit` checks that the app runs. Empty for a key that is not a path.
+    /// itself, and `quit` checks that the app runs. Uninstall… is left out for protected apps
+    /// (see `uninstallable`). Empty for a key that is not a path.
     pub(super) fn menu(&self, path: &Path) -> Vec<Action> {
         if !path.is_absolute() {
             return vec![];
@@ -31,11 +34,14 @@ impl Apps {
                 Icon::Symbol("exclamationmark.octagon"),
             ));
         }
+        if self.uninstallable(path) {
+            menu.push(Action::new(UNINSTALL, "Uninstall…", Icon::Symbol("trash")));
+        }
         menu
     }
 
     /// Run menu action `key` on the app at `path`.
-    pub(super) fn run_action(&self, path: &Path, key: &str, cx: &mut Cx) -> Outcome {
+    pub(super) fn run_action(&mut self, path: &Path, key: &str, cx: &mut Cx) -> Outcome {
         match key {
             OPEN => {
                 cx.hide();
@@ -51,6 +57,7 @@ impl Apps {
                 let status = self.quit(path, key == FORCE_QUIT);
                 Outcome::Stay(Some(status.unwrap_or_else(|e| e)))
             }
+            UNINSTALL => self.ask_uninstall(path),
             _ => Outcome::Stay(None),
         }
     }
@@ -82,7 +89,7 @@ impl Apps {
     }
 
     /// The indexed name of the app at `path`, else its file stem.
-    fn name_of(&self, path: &Path) -> String {
+    pub(super) fn name_of(&self, path: &Path) -> String {
         let indexed = self.apps.iter().find(|a| a.path == path).map(|a| a.name.clone());
         indexed.unwrap_or_else(|| {
             path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned())
@@ -101,7 +108,7 @@ mod tests {
 
     fn apps() -> Apps {
         let apps = vec![App { name: "Fake".into(), path: FAKE.into() }];
-        Apps { apps, own: Some(OWN.into()) }
+        Apps { own: Some(OWN.into()), ..Apps::new(apps) }
     }
 
     fn keys(actions: &[Action]) -> Vec<&'static str> {
@@ -144,7 +151,10 @@ mod tests {
                 let status = a.act(&id, key, cx);
                 assert!(matches!(status, Outcome::Stay(Some(s)) if s == "Fake is not running"));
             }
-            assert!(matches!(a.act(&id, "uninstall", cx), Outcome::Stay(None)));
+            assert!(matches!(a.act(&id, "nope", cx), Outcome::Stay(None)));
+            let refusal = a.act(&id, UNINSTALL, cx);
+            let want = "Cannot uninstall Fake: it has no bundle identifier";
+            assert!(matches!(refusal, Outcome::Stay(Some(s)) if s == want));
         });
     }
 

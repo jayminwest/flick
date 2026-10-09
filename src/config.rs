@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip, flick.
+# builtin, clip, activity, keys, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -37,6 +37,24 @@ hotkey = "alt+shift+Space"
 # left-half = "ctrl+alt+ArrowLeft"
 # right-half = "ctrl+alt+ArrowRight"
 # maximize = "ctrl+alt+Enter"
+
+# Key triggers. Off until set: no [keys] table means no key tap and no Caps Lock remap.
+# hyper = "caps_lock" makes Caps Lock add hyper_mods to every key held with it (it then
+# sends F18 until Flick quits); a quick tap sends hyper_tap. Needs Accessibility.
+# A chord runs on_down when all its keys are held and on_up when one is released:
+# { http = "POST http://host:port/path" } (http:// only) or { shell = "command" }.
+# Keys: cmd, alt, ctrl, shift, fn, right_cmd, left_alt, ... plus one key such as KeyA.
+# [keys]
+# hyper = "caps_lock"
+# hyper_mods = "cmd+ctrl+alt+shift"
+# hyper_tap = "Escape"
+# hyper_tap_ms = 300
+#
+# [[keys.chord]]
+# name = "ptt"
+# keys = ["right_cmd", "right_alt"]
+# on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
+# on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
 
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
@@ -252,6 +270,21 @@ mod tests {
         assert_eq!(c.hotkey, "alt+shift+Space");
         assert_eq!(links(&c), ["Google", "GitHub Search", "YouTube", "Projects"]);
         assert!(keys(&c).is_empty());
+        assert!(c.section("keys").unwrap().unwrap().get::<Table>().unwrap().is_empty());
+    }
+
+    #[test]
+    fn default_config_keys_example_parses_uncommented() {
+        let start = DEFAULT_CONFIG.find("# [keys]").unwrap();
+        let end = start + DEFAULT_CONFIG[start..].find("\n\n").unwrap();
+        let example: String = DEFAULT_CONFIG[start..end]
+            .lines()
+            .map(|l| l.trim_start_matches('#').trim_start())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let keys: Table = parse(&example).unwrap().section("keys").unwrap().unwrap().get().unwrap();
+        assert_eq!(keys.get("hyper").and_then(Value::as_str), Some("caps_lock"));
+        assert_eq!(keys.get("chord").and_then(Value::as_array).map(Vec::len), Some(1));
     }
 
     #[test]
