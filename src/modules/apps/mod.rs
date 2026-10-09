@@ -2,11 +2,12 @@
 
 mod actions;
 mod leftovers;
+mod running;
 mod uninstall;
 
 use std::path::{Path, PathBuf};
 
-use crate::core::{Action, Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
+use crate::core::{Action, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::{app, files, workspace};
 
 #[derive(Clone)]
@@ -60,7 +61,8 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<App>) {
     }
 }
 
-/// Module `app`: one root item per installed app; ids are `app:<bundle path>`.
+/// Module `app`: one root item per installed app; ids are `app:<bundle path>`. Root item
+/// `app:quit` opens the Quit Applications view (`running`).
 #[expect(clippy::struct_field_names, reason = "`apps` is the index; renaming it churns every use")]
 pub struct Apps {
     apps: Vec<App>,
@@ -102,10 +104,29 @@ impl Module for Apps {
                     Icon::File(a.path.clone()),
                 )
             })
+            // An index that is not scanned yet (`Started` fills it) has no root items at all.
+            .chain((!self.apps.is_empty()).then(running::root_item))
             .collect()
     }
 
+    fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
+        (view == running::VIEW).then(running::view)
+    }
+
+    fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        if view.name == running::VIEW {
+            running::refresh(view, &running::running(self.own.as_deref()), cx);
+        }
+    }
+
+    /// `app:<path>` opens the app; with arg `quit` (the running view) asks it to quit.
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        if id.key() == running::ROOT_KEY {
+            return Outcome::Push(running::view());
+        }
+        if id.arg() == Some(running::QUIT_ARG) {
+            return Outcome::Stay(Some(self.quit(Path::new(id.key()), false).unwrap_or_else(|e| e)));
+        }
         cx.hide();
         workspace::open_file(Path::new(id.key()));
         Outcome::Hide
@@ -125,8 +146,11 @@ impl Module for Apps {
 
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
-    /// keystroke, so no view goes stale.
+    /// keystroke. `AppActivated` makes the running view stale: an app launched or quit.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+        if let Event::AppActivated { .. } = event {
+            return true;
+        }
         let rescan = match event {
             Event::LauncherOpened | Event::Wake => true,
             Event::Started => self.apps.is_empty(),
@@ -139,12 +163,13 @@ impl Module for Apps {
     }
 
     fn verbs(&self) -> &'static str {
-        "app list | app open|quit|force-quit|reveal <name> | app uninstall <name> --dry-run|--yes"
+        "app list | app open|quit|force-quit|reveal <name> | app running | app uninstall <name> --dry-run|--yes"
     }
 
     /// `list`: `<name>\t<path>` per app. `open|quit|force-quit|reveal <name>`: act on the app
     /// with that name, any case; `quit` prints the status, e.g. "Asked Safari to quit".
-    /// `uninstall <name> --dry-run|--yes`: see `uninstall_command`.
+    /// `running`: `<pid>\t<name>\t<path>` per running app. `uninstall <name> --dry-run|--yes`:
+    /// see `uninstall_command`.
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {
             [verb] if verb == "list" => Ok(self
@@ -153,6 +178,7 @@ impl Module for Apps {
                 .map(|a| format!("{}\t{}", a.name, a.path.display()))
                 .collect::<Vec<_>>()
                 .join("\n")),
+            [verb] if verb == "running" => Ok(running::lines(&running::running(self.own.as_deref()))),
             [verb, rest @ ..] if verb == "uninstall" => self.uninstall_command(rest, TRASH),
             [verb, name @ ..] if !name.is_empty() && NAME_VERBS.contains(&verb.as_str()) => {
                 let path = self.named(&name.join(" "))?.path.clone();
@@ -218,5 +244,30 @@ mod tests {
             assert!(!apps.on_event(Event::Wake, cx));
         });
         assert!(!has_gone(&apps));
+    }
+
+    #[test]
+    fn quit_applications_opens_the_running_view() {
+        let mut apps = Apps::new(vec![App { name: "Safari".into(), path: "/A/Safari.app".into() }]);
+        test_cx("", |cx| {
+            let ids: Vec<_> = apps.items(cx).into_iter().map(|i| i.id.to_string()).collect();
+            assert_eq!(ids, ["app:/A/Safari.app", "app:quit"]);
+            let pushed = apps.activate(&ItemId::new("app", "quit"), cx);
+            assert!(matches!(pushed, Outcome::Push(v) if v.is("app", "running")));
+            let mut view = apps.open("running", cx).unwrap();
+            apps.refresh(&mut view, cx);
+            assert!(view.items.iter().all(|i| i.id.arg() == Some("quit")));
+            assert!(apps.open("other", cx).is_none());
+            // A quit for an app that does not run asks nothing of anyone.
+            let id = ItemId::new("app", "/nonexistent/flick/Nope.app").with_arg("quit");
+            assert!(matches!(apps.activate(&id, cx), Outcome::Stay(Some(s)) if s == "Nope is not running"));
+            // Enter on Flick's own row (were it listed) never quits Flick.
+            let own = "/nonexistent/flick/Flick.app";
+            let mut flick = Apps { own: Some(own.into()), ..Apps::new(vec![]) };
+            let id = ItemId::new("app", own).with_arg("quit");
+            assert!(matches!(flick.activate(&id, cx), Outcome::Stay(Some(s)) if s.contains("is Flick")));
+            assert!(apps.on_event(Event::AppActivated { pid: 1 }, cx));
+            assert!(apps.command(&["running".into()], cx).is_ok());
+        });
     }
 }
