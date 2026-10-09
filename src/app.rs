@@ -7,6 +7,7 @@ use crate::config::{self, Config};
 use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::hotkey::{self, Target};
 use crate::modules;
+use crate::platform::events;
 use crate::platform::panel::Key;
 use crate::root;
 use crate::store::{self, Store};
@@ -154,14 +155,23 @@ pub fn command(key: Key) -> bool {
     .unwrap_or(false)
 }
 
-/// The half-second timer: modules poll, and a visible view they report stale refreshes.
-pub fn tick() {
-    with_state(|s| {
-        let stale = s.registry.dispatch(Event::Tick, &mut s.env.cx(""));
-        if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
-            s.refresh();
+/// A platform event: every module handles it, and a visible view they report stale
+/// refreshes. One that arrives while the controller is busy (a notification posted inside a
+/// call) is posted back to the main queue instead of re-entering.
+pub fn on_event(event: Event) {
+    let busy = STATE.with(|s| {
+        let Ok(mut s) = s.try_borrow_mut() else { return true };
+        if let Some(s) = s.as_mut() {
+            let stale = s.registry.dispatch(event, &mut s.env.cx(""));
+            if s.view.as_ref().is_some_and(|v| stale.contains(&v.module)) && ui::is_visible() {
+                s.refresh();
+            }
         }
+        false
     });
+    if busy {
+        events::post(event);
+    }
 }
 
 impl State {

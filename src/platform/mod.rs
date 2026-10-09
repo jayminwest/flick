@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod ax;
+pub mod events;
 pub mod hotkeys;
 pub mod panel;
 pub mod pasteboard;

@@ -6,12 +6,14 @@ pub mod list;
 use list::AppWindow;
 
 use crate::config::Config;
-use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, RecentPids};
 use crate::platform::workspace;
 
+/// `recent`: apps by activation, most recent first.
 #[derive(Default)]
 pub struct Switcher {
     windows: Vec<AppWindow>,
+    recent: RecentPids,
 }
 
 impl Module for Switcher {
@@ -24,7 +26,7 @@ impl Module for Switcher {
         if view != "windows" {
             return None;
         }
-        self.windows = list::list_windows(&workspace::recent_pids(), workspace::frontmost_pid());
+        self.windows = list::list_windows(self.recent.pids(), workspace::frontmost_pid());
         Some(ListView {
             placeholder: "Search windows…".into(),
             footer: format!("{} windows", self.windows.len()),
@@ -73,6 +75,12 @@ impl Module for Switcher {
             list::focus(w);
         }
         Outcome::Hide
+    }
+
+    /// Track app activations, starting from the frontmost app.
+    fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+        self.recent.observe(event, workspace::frontmost_pid);
+        false
     }
 
     /// `windows_hotkey` binds key `windows`.
