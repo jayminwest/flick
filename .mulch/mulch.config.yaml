@@ -5,6 +5,7 @@ domains:
   platform: {}
   core: {}
   store: {}
+  events: {}
 governance:
   max_entries: 100
   warn_entries: 150
