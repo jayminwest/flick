@@ -1,64 +1,11 @@
-//! Result items and ranking. Pure Rust, no `AppKit`.
+//! Fuzzy ranking plus frecency.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Matcher, Utf32Str};
 
-use crate::windows::WindowAction;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Icon {
-    File(PathBuf),
-    Symbol(&'static str),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Action {
-    LaunchApp(PathBuf),
-    Window(WindowAction),
-    ClipboardHistory,
-    SwitchWindows,
-    /// Index into the window list captured when the switcher opened.
-    FocusWindow(usize),
-    /// Open quicklink `index`; `query` is None when the link still needs an argument.
-    Quicklink {
-        index: usize,
-        query: Option<String>,
-    },
-    PasteClip(i64),
-    OpenConfig,
-    ReloadConfig,
-    Quit,
-}
-
-#[derive(Clone, Debug)]
-pub struct Item {
-    /// Stable id used for frecency.
-    pub id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub accessory: String,
-    pub icon: Icon,
-    pub action: Action,
-    pub keywords: Vec<String>,
-}
-
-impl Action {
-    pub fn verb(&self) -> &'static str {
-        match self {
-            Action::LaunchApp(_) => "Open Application",
-            Action::Window(_) => "Move Window",
-            Action::ClipboardHistory | Action::SwitchWindows => "Open Command",
-            Action::FocusWindow(_) => "Switch to Window",
-            Action::Quicklink { query: None, .. } => "Enter Argument",
-            Action::Quicklink { .. } => "Open Quicklink",
-            Action::PasteClip(_) => "Paste",
-            Action::OpenConfig | Action::ReloadConfig | Action::Quit => "Run Command",
-        }
-    }
-}
+use super::Item;
 
 /// Usage counts and last-use timestamps (unix seconds), keyed by item id.
 pub type Usage = HashMap<String, (u32, i64)>;
@@ -133,17 +80,10 @@ impl Ranker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{Icon, ItemId};
 
     fn item(title: &str) -> Item {
-        Item {
-            id: title.into(),
-            title: title.into(),
-            subtitle: String::new(),
-            accessory: String::new(),
-            icon: Icon::Symbol("app"),
-            action: Action::Quit,
-            keywords: vec![],
-        }
+        Item::new(ItemId::new("test", title), title, "Run", Icon::Symbol("app"))
     }
 
     fn titles(items: &[Item]) -> Vec<&str> {

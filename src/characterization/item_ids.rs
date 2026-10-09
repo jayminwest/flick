@@ -2,8 +2,8 @@
 
 use crate::apps::App;
 use crate::config::{Config, Quicklink};
+use crate::core::Item;
 use crate::root::root_items;
-use crate::search::Item;
 
 fn app(name: &str, path: &str) -> App {
     App { name: name.into(), path: path.into() }

@@ -1,7 +1,11 @@
-//! Installed application index.
+//! Installed application index, and the module that lists and opens apps.
 
 use std::path::{Path, PathBuf};
 
+use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome};
+use crate::platform::workspace;
+
+#[derive(Clone)]
 pub struct App {
     pub name: String,
     pub path: PathBuf,
@@ -41,6 +45,50 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<App>) {
             }
         } else if depth > 0 && entry.file_type().is_ok_and(|t| t.is_dir()) {
             scan_dir(&path, depth - 1, out);
+        }
+    }
+}
+
+/// Module `app`: one root item per installed app; ids are `app:<bundle path>`.
+pub struct Apps {
+    apps: Vec<App>,
+}
+
+impl Apps {
+    pub fn new(apps: Vec<App>) -> Apps {
+        Apps { apps }
+    }
+}
+
+impl Module for Apps {
+    fn id(&self) -> &'static str {
+        "app"
+    }
+
+    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
+        self.apps
+            .iter()
+            .map(|a| Item {
+                accessory: "Application".into(),
+                ..Item::new(
+                    ItemId::new("app", a.path.display()),
+                    a.name.clone(),
+                    "Open Application",
+                    Icon::File(a.path.clone()),
+                )
+            })
+            .collect()
+    }
+
+    fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        cx.hide();
+        workspace::open_file(Path::new(id.key()));
+        Outcome::Hide
+    }
+
+    fn on_event(&mut self, event: Event, _cx: &mut Cx) {
+        if event == Event::LauncherOpened {
+            self.apps = scan();
         }
     }
 }
