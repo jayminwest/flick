@@ -83,6 +83,13 @@ impl Form {
     }
 
     /// Same module and name.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no module needs it yet; the app manager (flick-78f6, flick-4077) may"
+        )
+    )]
     pub fn is(&self, module: &str, name: &str) -> bool {
         self.module == module && self.name == name
     }

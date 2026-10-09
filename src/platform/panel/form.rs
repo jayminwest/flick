@@ -156,7 +156,6 @@ pub(super) fn list_mode(ui: &super::Ui, title: Option<&str>) {
 }
 
 /// Draw a form. A field's text is only replaced when it differs, so typing keeps its caret.
-#[expect(dead_code, reason = "the controller starts rendering forms in flick-1875")]
 pub fn render_form(frame: &FormFrame) {
     with_ui(|ui| {
         for row in &ui.rows {
@@ -186,7 +185,6 @@ pub fn render_form(frame: &FormFrame) {
 }
 
 /// The text in form field `index`, as typed so far.
-#[expect(dead_code, reason = "the controller reads form fields in flick-1875")]
 pub fn field_value(index: usize) -> String {
     with_ui(|ui| ui.form.inputs.get(index).map(|f| f.stringValue().to_string()))
         .flatten()
@@ -194,7 +192,6 @@ pub fn field_value(index: usize) -> String {
 }
 
 /// The form field being edited, which a mouse click can change behind the controller's back.
-#[expect(dead_code, reason = "the controller syncs form focus in flick-1875")]
 pub fn focused_field() -> Option<usize> {
     with_ui(|ui| ui.form.inputs.iter().position(|f| f.currentEditor().is_some())).flatten()
 }

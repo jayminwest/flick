@@ -14,11 +14,9 @@ pub enum Outcome {
     Push(ListView),
     /// Show a module's form. Like `Push`, a request by name: the registry asks `module` to
     /// build form `name`, so any module may open any other module's form.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
     Form { module: &'static str, name: String },
     /// Ask the user to confirm; on confirm the registry hands `token` back to the owning
     /// module (`Confirm::module`).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used from flick-1875 on"))]
     Confirm(Confirm),
     /// Load config.toml again, rebind hotkeys, then back to root search with the result.
     ReloadConfig,

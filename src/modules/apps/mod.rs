@@ -1,12 +1,14 @@
-//! Installed application index, and the module that lists and opens apps.
+//! Installed application index, and the module that lists, opens, reveals and quits apps.
 
+mod actions;
 mod leftovers;
 mod running;
+mod uninstall;
 
 use std::path::{Path, PathBuf};
 
-use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::workspace;
+use crate::core::{Action, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use crate::platform::{app, files, workspace};
 
 #[derive(Clone)]
 pub struct App {
@@ -20,6 +22,13 @@ const ROOTS: [&str; 4] = [
     "/System/Applications/Utilities",
     "/Applications/Utilities",
 ];
+
+/// `command` verbs that take an app name.
+const NAME_VERBS: [&str; 4] = ["open", "reveal", "quit", "force-quit"];
+
+/// How uninstall removes a path. Tests get one that refuses, so no test can reach the Trash.
+const TRASH: fn(&Path) -> Result<PathBuf, String> =
+    if cfg!(test) { |_| Err("tests never use the Trash".into()) } else { files::trash };
 
 /// Scan the standard app folders, one level into subfolders (e.g. "/Applications/Adobe Photoshop/").
 pub fn scan() -> Vec<App> {
@@ -54,13 +63,27 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<App>) {
 
 /// Module `app`: one root item per installed app; ids are `app:<bundle path>`. Root item
 /// `app:quit` opens the Quit Applications view (`running`).
+#[expect(clippy::struct_field_names, reason = "`apps` is the index; renaming it churns every use")]
 pub struct Apps {
     apps: Vec<App>,
+    /// Flick's own bundle, which offers no Quit or Uninstall.
+    own: Option<PathBuf>,
+    /// The user's home, whose `~/Library` holds the leftovers an uninstall finds.
+    home: PathBuf,
+    /// The uninstall waiting for its confirmation; its paths are exactly what was shown.
+    pending: Option<uninstall::Plan>,
 }
 
 impl Apps {
     pub fn new(apps: Vec<App>) -> Apps {
-        Apps { apps }
+        let home = dirs::home_dir().unwrap_or_default();
+        Apps { apps, own: app::own_bundle(), home, pending: None }
+    }
+
+    /// The indexed app named `name`, any case.
+    fn named(&self, name: &str) -> Result<&App, String> {
+        let app = self.apps.iter().find(|a| a.name.eq_ignore_ascii_case(name));
+        app.ok_or_else(|| format!("app: no app named \"{name}\""))
     }
 }
 
@@ -92,7 +115,7 @@ impl Module for Apps {
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         if view.name == running::VIEW {
-            running::refresh(view, &running::running(), cx);
+            running::refresh(view, &running::running(self.own.as_deref()), cx);
         }
     }
 
@@ -102,11 +125,23 @@ impl Module for Apps {
             return Outcome::Push(running::view());
         }
         if id.arg() == Some(running::QUIT_ARG) {
-            return running::quit_running(Path::new(id.key()));
+            return Outcome::Stay(Some(self.quit(Path::new(id.key()), false).unwrap_or_else(|e| e)));
         }
         cx.hide();
         workspace::open_file(Path::new(id.key()));
         Outcome::Hide
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.menu(Path::new(id.key()))
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        self.run_action(Path::new(id.key()), key, cx)
+    }
+
+    fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
+        self.confirm_uninstall(token, TRASH)
     }
 
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
@@ -128,11 +163,13 @@ impl Module for Apps {
     }
 
     fn verbs(&self) -> &'static str {
-        "app list | app open <name> | app running"
+        "app list | app open|quit|force-quit|reveal <name> | app running | app uninstall <name> --dry-run|--yes"
     }
 
-    /// `list`: `<name>\t<path>` per app. `open <name>`: open the app with that name, any case.
-    /// `running`: `<pid>\t<name>\t<path>` per running app.
+    /// `list`: `<name>\t<path>` per app. `open|quit|force-quit|reveal <name>`: act on the app
+    /// with that name, any case; `quit` prints the status, e.g. "Asked Safari to quit".
+    /// `running`: `<pid>\t<name>\t<path>` per running app. `uninstall <name> --dry-run|--yes`:
+    /// see `uninstall_command`.
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {
             [verb] if verb == "list" => Ok(self
@@ -141,12 +178,18 @@ impl Module for Apps {
                 .map(|a| format!("{}\t{}", a.name, a.path.display()))
                 .collect::<Vec<_>>()
                 .join("\n")),
-            [verb] if verb == "running" => Ok(running::lines(&running::running())),
-            [verb, name @ ..] if verb == "open" && !name.is_empty() => {
-                let name = name.join(" ");
-                let app = self.apps.iter().find(|a| a.name.eq_ignore_ascii_case(&name));
-                let app = app.ok_or_else(|| format!("app: no app named \"{name}\""))?;
-                workspace::open_file(&app.path);
+            [verb] if verb == "running" => Ok(running::lines(&running::running(self.own.as_deref()))),
+            [verb, rest @ ..] if verb == "uninstall" => self.uninstall_command(rest, TRASH),
+            [verb, name @ ..] if !name.is_empty() && NAME_VERBS.contains(&verb.as_str()) => {
+                let path = self.named(&name.join(" "))?.path.clone();
+                match verb.as_str() {
+                    "open" => workspace::open_file(&path),
+                    "reveal" => workspace::reveal(&path),
+                    quit => {
+                        let force = quit == "force-quit";
+                        return self.quit(&path, force).map_err(|e| format!("app: {e}"));
+                    }
+                }
                 Ok(String::new())
             }
             _ => Err(unknown_verb("app", args)),
@@ -217,7 +260,12 @@ mod tests {
             assert!(apps.open("other", cx).is_none());
             // A quit for an app that does not run asks nothing of anyone.
             let id = ItemId::new("app", "/nonexistent/flick/Nope.app").with_arg("quit");
-            assert!(matches!(apps.activate(&id, cx), Outcome::Stay(Some(_))));
+            assert!(matches!(apps.activate(&id, cx), Outcome::Stay(Some(s)) if s == "Nope is not running"));
+            // Enter on Flick's own row (were it listed) never quits Flick.
+            let own = "/nonexistent/flick/Flick.app";
+            let mut flick = Apps { own: Some(own.into()), ..Apps::new(vec![]) };
+            let id = ItemId::new("app", own).with_arg("quit");
+            assert!(matches!(flick.activate(&id, cx), Outcome::Stay(Some(s)) if s.contains("is Flick")));
             assert!(apps.on_event(Event::AppActivated { pid: 1 }, cx));
             assert!(apps.command(&["running".into()], cx).is_ok());
         });

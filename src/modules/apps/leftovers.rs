@@ -4,7 +4,6 @@
 //! Matching is conservative: exact, case-sensitive bundle-id names only, direct children of a
 //! fixed set of `~/Library` folders, and never through a symlink. A missed leftover is harmless;
 //! a wrong one would trash another app's data.
-#![cfg_attr(not(test), expect(dead_code, reason = "the uninstall step (flick-4077) uses it"))]
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};

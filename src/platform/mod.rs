@@ -6,6 +6,8 @@
 
 pub mod app;
 pub mod ax;
+pub mod axwatch;
+pub mod clock;
 pub mod events;
 pub mod files;
 pub mod hid;
@@ -16,6 +18,7 @@ pub mod panel;
 pub mod pasteboard;
 pub mod screens;
 pub mod spaces;
+pub mod status_item;
 pub mod timer;
 pub mod workspace;
 

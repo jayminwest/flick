@@ -42,10 +42,14 @@ modules! {
         pub mod quicklinks => "quicklink", quicklinks::Quicklinks::default;
         mod flick => "builtin", || flick::Flick;
         mod clipboard => "clip", || clipboard::Clipboard;
+        mod activity => "activity", activity::Activity::default;
         mod keys => "keys", keys::Keys::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
     }
 }
+
+// Not registered yet: its `modules!` line lands with the module itself (flick-6d92).
+mod herdr;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;
