@@ -10,7 +10,8 @@ mod ui;
 mod windows;
 
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSRunningApplication};
+use objc2_foundation::NSBundle;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -30,6 +31,10 @@ fn main() {
     }
 
     let mtm = MainThreadMarker::new().expect("must start on the main thread");
+    if already_running() {
+        eprintln!("flick: already running");
+        return;
+    }
     let ns_app = NSApplication::sharedApplication(mtm);
     // No Dock icon or menu bar.
     ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
@@ -52,4 +57,10 @@ fn main() {
     ui::every(0.5, app::poll_clipboard);
 
     ns_app.run();
+}
+
+/// Another Flick.app is running (e.g. opened by hand next to the login agent's copy).
+fn already_running() -> bool {
+    let Some(id) = NSBundle::mainBundle().bundleIdentifier() else { return false };
+    NSRunningApplication::runningApplicationsWithBundleIdentifier(&id).count() > 1
 }
