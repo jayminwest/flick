@@ -1,4 +1,4 @@
-//! Result items and ranking. Pure Rust, no AppKit.
+//! Result items and ranking. Pure Rust, no `AppKit`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -23,7 +23,10 @@ pub enum Action {
     /// Index into the window list captured when the switcher opened.
     FocusWindow(usize),
     /// Open quicklink `index`; `query` is None when the link still needs an argument.
-    Quicklink { index: usize, query: Option<String> },
+    Quicklink {
+        index: usize,
+        query: Option<String>,
+    },
     PasteClip(i64),
     OpenConfig,
     ReloadConfig,
@@ -64,7 +67,7 @@ pub type Usage = HashMap<String, (u32, i64)>;
 pub fn frecency(usage: &Usage, id: &str, now: i64) -> f64 {
     let Some(&(count, last)) = usage.get(id) else { return 0.0 };
     let age_days = (now - last).max(0) as f64 / 86_400.0;
-    let weight = count as f64 * 0.5f64.powf(age_days / 14.0);
+    let weight = f64::from(count) * 0.5f64.powf(age_days / 14.0);
     25.0 * (1.0 + weight).ln()
 }
 
@@ -83,7 +86,12 @@ impl Ranker {
     }
 
     /// Filter and sort `items` for `query`. An empty query sorts by `bonus`, then title.
-    pub fn rank(&mut self, query: &str, items: Vec<Item>, bonus: impl Fn(&Item) -> f64) -> Vec<Item> {
+    pub fn rank(
+        &mut self,
+        query: &str,
+        items: Vec<Item>,
+        bonus: impl Fn(&Item) -> f64,
+    ) -> Vec<Item> {
         let query = query.trim();
         let mut scored: Vec<(f64, Item)> = if query.is_empty() {
             items.into_iter().map(|i| (bonus(&i), i)).collect()
@@ -92,16 +100,17 @@ impl Ranker {
             items
                 .into_iter()
                 .filter_map(|item| {
-                    let title = self.score(&pattern, &item.title).map(|s| s as f64);
+                    let title = self.score(&pattern, &item.title).map(f64::from);
                     let keyword = item
                         .keywords
                         .iter()
                         .filter_map(|k| self.score(&pattern, k))
                         .max()
-                        .map(|s| s as f64 * 0.8);
-                    let best = title.into_iter().chain(keyword).fold(None, |a: Option<f64>, s| {
-                        Some(a.map_or(s, |a| a.max(s)))
-                    })?;
+                        .map(|s| f64::from(s) * 0.8);
+                    let best = title
+                        .into_iter()
+                        .chain(keyword)
+                        .fold(None, |a: Option<f64>, s| Some(a.map_or(s, |a| a.max(s))))?;
                     Some((best + bonus(&item), item))
                 })
                 .collect()
@@ -110,7 +119,11 @@ impl Ranker {
         let by_len = !query.is_empty();
         scored.sort_by(|(a, x), (b, y)| {
             b.total_cmp(a)
-                .then(if by_len { x.title.len().cmp(&y.title.len()) } else { std::cmp::Ordering::Equal })
+                .then(if by_len {
+                    x.title.len().cmp(&y.title.len())
+                } else {
+                    std::cmp::Ordering::Equal
+                })
                 .then_with(|| x.title.to_lowercase().cmp(&y.title.to_lowercase()))
         });
         scored.into_iter().map(|(_, i)| i).collect()
@@ -155,7 +168,8 @@ mod tests {
     #[test]
     fn bonus_breaks_ties_and_orders_empty_query() {
         let items = vec![item("Slack"), item("Spotify")];
-        let out = Ranker::new().rank("", items.clone(), |i| if i.title == "Spotify" { 10.0 } else { 0.0 });
+        let out = Ranker::new()
+            .rank("", items.clone(), |i| if i.title == "Spotify" { 10.0 } else { 0.0 });
         assert_eq!(titles(&out), ["Spotify", "Slack"]);
         let out = Ranker::new().rank("", vec![item("Zed"), item("Apps")], |_| 0.0);
         assert_eq!(titles(&out), ["Apps", "Zed"]);
@@ -172,6 +186,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::float_cmp, reason = "an unknown id scores exactly zero")]
     fn frecency_decays() {
         let mut usage = Usage::new();
         usage.insert("a".into(), (10, 0));

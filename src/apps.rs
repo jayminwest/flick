@@ -22,7 +22,10 @@ pub fn scan() -> Vec<App> {
     for root in roots {
         scan_dir(&root, 1, &mut apps);
     }
-    apps.push(App { name: "Finder".into(), path: "/System/Library/CoreServices/Finder.app".into() });
+    apps.push(App {
+        name: "Finder".into(),
+        path: "/System/Library/CoreServices/Finder.app".into(),
+    });
     apps.sort_by(|a, b| a.path.cmp(&b.path));
     apps.dedup_by(|a, b| a.name == b.name);
     apps

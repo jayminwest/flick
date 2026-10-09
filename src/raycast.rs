@@ -43,7 +43,8 @@ pub struct Import {
 
 /// Convert `json`, skipping links whose name or URL is already in `existing` (or earlier in the file).
 fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
-    let links: Vec<RaycastLink> = serde_json::from_str(json).map_err(|e| format!("not a Raycast quicklinks export: {e}"))?;
+    let links: Vec<RaycastLink> =
+        serde_json::from_str(json).map_err(|e| format!("not a Raycast quicklinks export: {e}"))?;
     let mut seen: Vec<(String, String)> =
         existing.iter().map(|q| (q.name.to_lowercase(), q.url.clone())).collect();
     let mut import = Import { added: vec![], duplicates: 0, warnings: vec![] };
@@ -64,6 +65,11 @@ fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
 }
 
 /// Append the quicklinks in Raycast export `path` to the config file.
+#[expect(
+    clippy::items_after_statements,
+    clippy::format_push_string,
+    reason = "pre-gate code; behavior frozen until flick-ea94"
+)]
 pub fn import_file(path: &Path) -> Result<String, String> {
     let json = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let config = config::load()?;
@@ -75,7 +81,8 @@ pub fn import_file(path: &Path) -> Result<String, String> {
     }
     let config_path = config::config_path();
     if !import.added.is_empty() {
-        let toml = toml::to_string(&Section { quicklinks: &import.added }).map_err(|e| e.to_string())?;
+        let toml =
+            toml::to_string(&Section { quicklinks: &import.added }).map_err(|e| e.to_string())?;
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&config_path)
@@ -102,16 +109,23 @@ mod tests {
     #[test]
     fn converts_placeholders() {
         assert_eq!(convert_link("https://x.com/?q={argument}").0, "https://x.com/?q={query}");
-        assert_eq!(convert_link(r#"https://x.com/{argument name="repo" default="a"}"#).0, "https://x.com/{query}");
+        assert_eq!(
+            convert_link(r#"https://x.com/{argument name="repo" default="a"}"#).0,
+            "https://x.com/{query}"
+        );
         assert_eq!(convert_link("https://x.com/?q={Query}").0, "https://x.com/?q={query}");
         let (url, unsupported) = convert_link("https://x.com/?q={clipboard}");
-        assert_eq!((url.as_str(), unsupported), ("https://x.com/?q={clipboard}", vec!["{clipboard}".to_string()]));
+        assert_eq!(
+            (url.as_str(), unsupported),
+            ("https://x.com/?q={clipboard}", vec!["{clipboard}".to_string()])
+        );
         assert_eq!(convert_link("http://localhost:3000/").0, "http://localhost:3000/");
     }
 
     #[test]
     fn skips_duplicates_by_name_or_url() {
-        let existing = vec![Quicklink { name: "Docs".into(), url: "https://docs.rs".into(), keyword: None }];
+        let existing =
+            vec![Quicklink { name: "Docs".into(), url: "https://docs.rs".into(), keyword: None }];
         let json = r#"[
             {"name": "docs", "link": "https://other.com"},
             {"name": "Rust Docs", "link": "https://docs.rs"},

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Runs the full check:all before every commit. If a gate is too slow for this hook,
+# make the gate faster; do not skip it here. Install with scripts/setup.sh.
+# It checks the working tree, not only the staged changes.
+set -euo pipefail
+
+# git exports GIT_DIR, GIT_INDEX_FILE and others to hooks. Clear them so cargo and
+# any git calls inside the gates see this checkout the normal way.
+for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+
+cd "$(dirname "$0")/../.."
+exec scripts/check-all.sh
