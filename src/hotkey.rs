@@ -12,6 +12,7 @@ use crate::windows::WindowAction;
 #[derive(Clone, Copy)]
 enum Binding {
     Toggle,
+    DesktopToggle,
     Window(WindowAction),
 }
 
@@ -41,6 +42,11 @@ fn dispatch(id: u32) {
     match binding {
         Some(Binding::Toggle) => crate::app::toggle(),
         Some(Binding::Window(action)) => crate::app::window_action(action),
+        Some(Binding::DesktopToggle) => {
+            if let Err(e) = crate::spaces::toggle() {
+                eprintln!("flick: desktop toggle: {e}");
+            }
+        }
         None => {}
     }
 }
@@ -48,6 +54,9 @@ fn dispatch(id: u32) {
 /// Replace all hotkeys with the ones in `config`. Registers what it can and reports the rest.
 pub fn register(config: &Config) -> Result<(), String> {
     let mut wanted = vec![(config.hotkey.as_str(), Ok(Binding::Toggle))];
+    if let Some(spec) = &config.desktop_toggle {
+        wanted.push((spec.as_str(), Ok(Binding::DesktopToggle)));
+    }
     for (name, spec) in &config.window_keys {
         let binding = WindowAction::from_slug(name).map(Binding::Window).ok_or(format!("Unknown window action \"{name}\""));
         wanted.push((spec.as_str(), binding));
@@ -84,7 +93,7 @@ mod tests {
 
     #[test]
     fn parses_hotkey_specs() {
-        for spec in ["alt+Space", "cmd+KeyH", "cmd+shift+KeyK", "ctrl+alt+ArrowLeft", "cmd+ctrl+alt+shift+KeyL"] {
+        for spec in ["alt+Space", "cmd+KeyH", "cmd+shift+KeyK", "ctrl+alt+ArrowLeft", "cmd+ctrl+alt+shift+KeyL", "cmd+Backquote"] {
             assert!(spec.parse::<HotKey>().is_ok(), "{spec}");
         }
         assert_ne!("cmd+KeyK".parse::<HotKey>().unwrap().id(), "cmd+shift+KeyK".parse::<HotKey>().unwrap().id());

@@ -10,6 +10,10 @@ const DEFAULT_CONFIG: &str = r#"# Flick config. Edit, then run "Reload Flick Con
 # Modifiers: cmd, alt, ctrl, shift. Keys: Space, KeyA..KeyZ, Digit0..Digit9, F1..F12, ArrowLeft, ...
 hotkey = "alt+shift+Space"
 
+# Switch to the most recently used app on another desktop (macOS then switches
+# desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
+# desktop_toggle = "cmd+Backquote"
+
 # Global window hotkeys: <action> = "<hotkey>". Actions are the window command
 # titles in kebab case: left-half, right-half, top-half, bottom-half,
 # top-left-quarter, ..., first-third, center-third, last-third, first-two-thirds,
@@ -46,6 +50,8 @@ url = "~/Projects"
 pub struct Config {
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Hotkey that switches to the most recent app on another desktop.
+    pub desktop_toggle: Option<String>,
     #[serde(default)]
     pub window_keys: BTreeMap<String, String>,
     #[serde(default)]

@@ -4,6 +4,7 @@ mod config;
 mod hotkey;
 mod raycast;
 mod search;
+mod spaces;
 mod store;
 mod ui;
 mod windows;
@@ -45,6 +46,7 @@ fn main() {
     }
     eprintln!("flick: press {} to open", config.hotkey);
 
+    spaces::init();
     ui::init(mtm);
     app::init(config, store);
     ui::every(0.5, app::poll_clipboard);

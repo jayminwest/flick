@@ -260,6 +260,19 @@ pub fn send_paste() {
     }
 }
 
+/// Activate app `pid` through Accessibility. Returns false if that failed.
+pub fn make_frontmost(pid: i32) -> bool {
+    if !is_trusted(false) {
+        return false;
+    }
+    let app_el = Cf(unsafe { AXUIElementCreateApplication(pid) });
+    let attr = NSString::from_str("AXFrontmost");
+    // NSNumber's YES is the kCFBooleanTrue singleton.
+    let yes = NSNumber::new_bool(true);
+    let value = Retained::as_ptr(&yes) as CFTypeRef;
+    unsafe { AXUIElementSetAttributeValue(app_el.0, cfstr(&attr), value) == 0 }
+}
+
 fn focused_window() -> Option<Cf> {
     let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
     let pid = app.processIdentifier();
