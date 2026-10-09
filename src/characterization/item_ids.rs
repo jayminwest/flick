@@ -68,8 +68,18 @@ fn window_ids_are_the_command_title() {
 #[test]
 fn quicklink_ids_are_the_name() {
     let links = [
-        Quicklink { name: "Google".into(), url: "https://g.co/?q={query}".into(), keyword: None },
-        Quicklink { name: "My Repo".into(), url: "~/Projects".into(), keyword: Some("r".into()) },
+        Quicklink {
+            name: "Google".into(),
+            url: "https://g.co/?q={query}".into(),
+            keyword: None,
+            app: None,
+        },
+        Quicklink {
+            name: "My Repo".into(),
+            url: "~/Projects".into(),
+            keyword: Some("r".into()),
+            app: None,
+        },
     ];
     let items = root_items(&[], &links);
     let quick: Vec<&str> =
@@ -104,7 +114,12 @@ fn builtin_ids_are_the_title() {
 #[test]
 fn root_items_are_apps_then_windows_then_quicklinks_then_builtins() {
     let apps = [app("Zed", "/Applications/Zed.app")];
-    let links = [Quicklink { name: "Docs".into(), url: "https://docs.rs".into(), keyword: None }];
+    let links = [Quicklink {
+        name: "Docs".into(),
+        url: "https://docs.rs".into(),
+        keyword: None,
+        app: None,
+    }];
     let items = root_items(&apps, &links);
     // Only these modules' items; a new module's root items are its own to pin.
     let known = ["app", "window", "quicklink", "builtin"];

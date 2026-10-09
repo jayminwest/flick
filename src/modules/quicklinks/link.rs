@@ -8,6 +8,9 @@ pub struct Quicklink {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keyword: Option<String>,
+    /// The app that opens the link instead of the default one: a name, `.app` path or bundle id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
 }
 
 impl Quicklink {
@@ -54,10 +57,10 @@ mod tests {
     #[test]
     fn expands_query_and_paths() {
         let q =
-            Quicklink { name: "G".into(), url: "https://x.com/?q={query}".into(), keyword: None };
+            Quicklink { name: "G".into(), url: "https://x.com/?q={query}".into(), keyword: None, app: None };
         assert!(q.takes_query());
         assert_eq!(q.expand("rust lang&co"), "https://x.com/?q=rust%20lang%26co");
-        let p = Quicklink { name: "P".into(), url: "/tmp".into(), keyword: None };
+        let p = Quicklink { name: "P".into(), url: "/tmp".into(), keyword: None, app: None };
         assert_eq!(p.expand(""), "file:///tmp");
     }
 
