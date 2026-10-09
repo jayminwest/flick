@@ -155,9 +155,16 @@ impl Wire {
         Wire { sys, started: false, engine, tap: false, remapped: false }
     }
 
-    /// Install `rules` (and the remap if `remap`) from now on.
+    /// Install `rules` (and the remap if `remap`) from now on. Without `remap`, also clear
+    /// Flick's Caps Lock entry left set by an earlier run that crashed: nothing else would.
     pub fn start(&mut self, rules: &Rules, remap: bool) -> Vec<(u16, bool)> {
         self.started = true;
+        if !remap {
+            match (self.sys.remap_is_set)() {
+                Ok(set) => self.remapped = set,
+                Err(e) => eprintln!("flick: keys: caps lock remap: {e}"),
+            }
+        }
         self.apply(rules, remap)
     }
 
@@ -257,6 +264,8 @@ pub mod tests {
         pub static SECURE: RefCell<bool> = const { RefCell::new(false) };
         pub static RUNNING: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
         pub static HOTKEYS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        /// What the stub `remap_is_set` answers.
+        pub static REMAP_SET: RefCell<Result<bool, String>> = const { RefCell::new(Ok(false)) };
     }
 
     fn call(s: String) {
@@ -286,7 +295,7 @@ pub mod tests {
             call("clear_remap".into());
             Err("hidutil failed".into())
         },
-        remap_is_set: || Ok(true),
+        remap_is_set: || REMAP_SET.with(|r| r.borrow().clone()),
         app_running: |id| RUNNING.with(|r| r.borrow().contains(&id)),
         hotkeys: || HOTKEYS.with(|h| h.borrow().clone()),
     };
@@ -367,11 +376,39 @@ pub mod tests {
     }
 
     #[test]
+    fn start_clears_a_remap_left_by_a_crash_unless_hyper_is_caps_lock() {
+        calls();
+        REMAP_SET.with(|r| *r.borrow_mut() = Ok(true));
+        // Hyper is caps_lock: `set_remap` keeps the existing entry; nothing to clear.
+        Wire::with(&STUB).start(&rules(), true);
+        assert_eq!(calls(), ["start", "set_remap"]);
+        // No caps_lock hyper (or no rules at all): the stale entry is cleared.
+        Wire::with(&STUB).start(&Rules::default(), false);
+        assert_eq!(calls(), ["clear_remap"]);
+        let mut rules = rules();
+        rules.hyper = None;
+        Wire::with(&STUB).start(&rules, false);
+        assert_eq!(calls(), ["start", "clear_remap"]);
+        // A failing read is logged and leaves the mapping alone.
+        REMAP_SET.with(|r| *r.borrow_mut() = Err("no hidutil".into()));
+        Wire::with(&STUB).start(&Rules::default(), false);
+        assert!(calls().is_empty());
+        REMAP_SET.with(|r| *r.borrow_mut() = Ok(false));
+        Wire::with(&STUB).start(&Rules::default(), false);
+        assert!(calls().is_empty());
+    }
+
+    #[test]
     fn status_and_conflicts() {
         let wire = Wire::with(&STUB);
         assert_eq!(wire.tap_state(), "Accessibility needed");
         assert!(!wire.secure_input());
+        assert_eq!(wire.remap_state(), "not set");
+        REMAP_SET.with(|r| *r.borrow_mut() = Ok(true));
         assert_eq!(wire.remap_state(), "set");
+        REMAP_SET.with(|r| *r.borrow_mut() = Err("no hidutil".into()));
+        assert_eq!(wire.remap_state(), "no hidutil");
+        REMAP_SET.with(|r| *r.borrow_mut() = Ok(false));
         let mut rules = rules();
         rules.chords.push(Chord { mods: flags::FN, key: Some(4) });
         assert!(wire.conflicts(&rules, true, &["ptt", "h"]).is_empty());
