@@ -1,11 +1,12 @@
-//! Installed application index, and the module that lists and opens apps.
+//! Installed application index, and the module that lists, opens, reveals and quits apps.
 
+mod actions;
 mod leftovers;
 
 use std::path::{Path, PathBuf};
 
-use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
-use crate::platform::workspace;
+use crate::core::{Action, Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
+use crate::platform::{app, workspace};
 
 #[derive(Clone)]
 pub struct App {
@@ -19,6 +20,9 @@ const ROOTS: [&str; 4] = [
     "/System/Applications/Utilities",
     "/Applications/Utilities",
 ];
+
+/// `command` verbs that take an app name.
+const NAME_VERBS: [&str; 4] = ["open", "reveal", "quit", "force-quit"];
 
 /// Scan the standard app folders, one level into subfolders (e.g. "/Applications/Adobe Photoshop/").
 pub fn scan() -> Vec<App> {
@@ -54,11 +58,19 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<App>) {
 /// Module `app`: one root item per installed app; ids are `app:<bundle path>`.
 pub struct Apps {
     apps: Vec<App>,
+    /// Flick's own bundle, which offers no Quit.
+    own: Option<PathBuf>,
 }
 
 impl Apps {
     pub fn new(apps: Vec<App>) -> Apps {
-        Apps { apps }
+        Apps { apps, own: app::own_bundle() }
+    }
+
+    /// The indexed app named `name`, any case.
+    fn named(&self, name: &str) -> Result<&App, String> {
+        let app = self.apps.iter().find(|a| a.name.eq_ignore_ascii_case(name));
+        app.ok_or_else(|| format!("app: no app named \"{name}\""))
     }
 }
 
@@ -88,6 +100,14 @@ impl Module for Apps {
         Outcome::Hide
     }
 
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.menu(Path::new(id.key()))
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        self.run_action(Path::new(id.key()), key, cx)
+    }
+
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
     /// keystroke, so no view goes stale.
@@ -104,10 +124,11 @@ impl Module for Apps {
     }
 
     fn verbs(&self) -> &'static str {
-        "app list | app open <name>"
+        "app list | app open|quit|force-quit|reveal <name>"
     }
 
-    /// `list`: `<name>\t<path>` per app. `open <name>`: open the app with that name, any case.
+    /// `list`: `<name>\t<path>` per app. `open|quit|force-quit|reveal <name>`: act on the app
+    /// with that name, any case; `quit` prints the status, e.g. "Asked Safari to quit".
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         match args {
             [verb] if verb == "list" => Ok(self
@@ -116,11 +137,16 @@ impl Module for Apps {
                 .map(|a| format!("{}\t{}", a.name, a.path.display()))
                 .collect::<Vec<_>>()
                 .join("\n")),
-            [verb, name @ ..] if verb == "open" && !name.is_empty() => {
-                let name = name.join(" ");
-                let app = self.apps.iter().find(|a| a.name.eq_ignore_ascii_case(&name));
-                let app = app.ok_or_else(|| format!("app: no app named \"{name}\""))?;
-                workspace::open_file(&app.path);
+            [verb, name @ ..] if !name.is_empty() && NAME_VERBS.contains(&verb.as_str()) => {
+                let path = self.named(&name.join(" "))?.path.clone();
+                match verb.as_str() {
+                    "open" => workspace::open_file(&path),
+                    "reveal" => workspace::reveal(&path),
+                    quit => {
+                        let force = quit == "force-quit";
+                        return self.quit(&path, force).map_err(|e| format!("app: {e}"));
+                    }
+                }
                 Ok(String::new())
             }
             _ => Err(unknown_verb("app", args)),

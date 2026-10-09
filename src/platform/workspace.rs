@@ -140,7 +140,7 @@ pub(super) fn open_running(app: &NSRunningApplication) -> bool {
 
 /// The bundle identifier of the app bundle at `path` ("com.apple.Safari"); `None` when it is
 /// not a bundle or declares none. Reads its Info.plist, so call it per action, not per scan.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
+#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the uninstall (flick-4077)"))]
 pub fn bundle_id(path: &Path) -> Option<String> {
     let bundle = NSBundle::bundleWithPath(&NSString::from_str(&path.display().to_string()))?;
     bundle.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty())
@@ -148,7 +148,6 @@ pub fn bundle_id(path: &Path) -> Option<String> {
 
 /// Pids of the running apps launched from the bundle at `path`, in the system's order.
 /// Matches the bundle's location, so a second copy of the same app is not included.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn running_for_bundle(path: &Path) -> Vec<i32> {
     let want = canonical(path);
     NSWorkspace::sharedWorkspace()
@@ -169,7 +168,6 @@ fn canonical(path: &Path) -> PathBuf {
 
 /// Ask app `pid` to quit, like cmd+Q: it may ask to save or refuse. Asynchronous; `true` only
 /// means the request was sent. `false` when `pid` is not a running app.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn terminate(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.terminate())
@@ -177,7 +175,6 @@ pub fn terminate(pid: i32) -> bool {
 
 /// Force app `pid` to quit, like Force Quit: unsaved work is lost. `false` when `pid` is not a
 /// running app or the request failed.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn force_terminate(pid: i32) -> bool {
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.forceTerminate())
@@ -185,7 +182,6 @@ pub fn force_terminate(pid: i32) -> bool {
 
 /// Show the file, folder or bundle at `path` selected in a Finder window. Untested: it opens
 /// Finder.
-#[expect(dead_code, reason = "first caller is the app actions (flick-78f6)")]
 pub fn reveal(path: &Path) {
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
     NSWorkspace::sharedWorkspace()

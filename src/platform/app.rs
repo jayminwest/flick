@@ -72,7 +72,6 @@ pub fn already_running() -> bool {
 
 /// The `.app` bundle Flick runs from, so callers can protect it (e.g. from uninstall). `None`
 /// for a bare binary such as `cargo run` or the tests.
-#[cfg_attr(not(test), expect(dead_code, reason = "first caller is the app actions (flick-78f6)"))]
 pub fn own_bundle() -> Option<PathBuf> {
     let path = PathBuf::from(NSBundle::mainBundle().bundlePath().to_string());
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case("app")).then_some(path)
