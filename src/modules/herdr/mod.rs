@@ -4,9 +4,9 @@
 //!
 //! Ids are `herdr:<key>` (`views.rs`): the root item `herdr:agents` (the only id that
 //! reaches the usage table); in views `herdr:agent/<machine>/<pane id>`,
-//! `herdr:machine/<machine>` and `herdr:line/<n>`. Views: `agents` (every agent, Enter
-//! jumps, ⌘K Show Output) and `agent` (Jump plus the agent's last output lines, held in
-//! memory only).
+//! `herdr:machine/<machine>`, `herdr:reply` and `herdr:line/<n>`. Views: `agents` (every
+//! agent, Enter jumps, Tab or ⌘K Show Output) and `agent` (Jump, Copy Reply, and the
+//! agent's last reply as a text block (`reply.rs`), held in memory only).
 //!
 //! Table `[herdr]`: `herdr` (the CLI; default `herdr` on `PATH`, then
 //! /opt/homebrew/bin), `socket` (default `~/.config/herdr/herdr.sock`), `machines`
@@ -14,7 +14,8 @@
 //! this Mac's server), `remote_refresh_secs` (default 0: remote machines refresh only
 //! while the launcher is open; at least 15 to poll in the background too), `terminal`
 //! (the app brought to the front on a jump; default `WezTerm`), `hotkey` (opens the agents
-//! view), `preview_lines` (default 6) and `notify` (default `["blocked"]`: statuses that
+//! view), `preview_lines` (default 6: lines shown when the output has no reply to cut
+//! out, e.g. a shell) and `notify` (default `["blocked"]`: statuses that
 //! post a notification when an agent enters them; `"done"` too, or `[]` for none).
 //!
 //! All herdr I/O runs on the threads in `io.rs`; they post `ModuleChanged`. The local
@@ -30,6 +31,7 @@ mod io;
 pub mod local;
 pub mod model;
 pub mod remote;
+mod reply;
 #[cfg(test)]
 mod testkit;
 mod views;
@@ -47,6 +49,9 @@ use io::{Hooks, LOCAL, Shared, Transport, lock};
 use local::Local;
 use remote::Remote;
 use views::{ID, Key};
+
+/// Most `preview_lines`.
+const PREVIEW_MAX: usize = 40;
 
 /// While the launcher is open, a remote machine is read again after this long.
 const VISIBLE_EVERY: u64 = 15;
@@ -81,8 +86,8 @@ impl Default for Settings {
 
 impl Settings {
     fn check(self) -> Result<Settings, String> {
-        if !(1..=io::READ_LINES as usize).contains(&self.preview_lines) {
-            return Err(format!("[herdr]: preview_lines must be 1 to {}", io::READ_LINES));
+        if !(1..=PREVIEW_MAX).contains(&self.preview_lines) {
+            return Err(format!("[herdr]: preview_lines must be 1 to {PREVIEW_MAX}"));
         }
         if (1..VISIBLE_EVERY).contains(&self.remote_refresh_secs) {
             return Err(format!("[herdr]: remote_refresh_secs must be 0 or at least {VISIBLE_EVERY}"));
@@ -308,9 +313,11 @@ impl Module for Herdr {
         let items = if view.name == "agent" {
             let agent = self.detail.as_ref().and_then(|(m, p)| fleet.agent(m, p));
             view.footer = agent.map_or("Agent gone".into(), |a| format!("{} · {}  ·  esc to go back", a.label(), a.machine));
-            views::detail_items(agent, lock(&self.shared.preview).as_ref(), now)
+            let (items, text) = views::detail(agent, lock(&self.shared.preview).as_ref(), now);
+            view.text = text;
+            items
         } else {
-            view.footer = format!("{}  ·  ⌘K Show Output  ·  esc to go back", views::summary_line(&fleet));
+            view.footer = format!("{}  ·  ⇥ Show Output  ·  esc to go back", views::summary_line(&fleet));
             views::agents_items(&fleet, now)
         };
         drop(fleet);
@@ -328,6 +335,18 @@ impl Module for Herdr {
                 let fleet = lock(&self.shared.fleet);
                 let note = fleet.machine(m).and_then(|s| views::machine_note(s, self.now()));
                 Outcome::Stay(note.map(|n| format!("{m}: {n}")))
+            }
+            Some(Key::Reply) => {
+                let preview = lock(&self.shared.preview);
+                let fleet = lock(&self.shared.fleet);
+                let agent = self.detail.as_ref().and_then(|(m, p)| fleet.agent(m, p));
+                match agent.and_then(|a| views::loaded_reply(a, preview.as_ref())) {
+                    Some(text) => {
+                        (self.hooks.copy)(text);
+                        Outcome::Stay(Some("Copied the reply".into()))
+                    }
+                    None => Outcome::Stay(None),
+                }
             }
             Some(Key::Line) => match self.detail.clone() {
                 Some((machine, pane_id)) => self.jump(&machine, &pane_id, cx),

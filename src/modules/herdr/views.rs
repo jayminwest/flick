@@ -2,12 +2,13 @@
 //! Pure: no locks, no clock (callers pass `now`), no I/O.
 //!
 //! Item keys: `agents` (the root item; permanent, it keys the usage table), and in views
-//! (`record_use = false`, never stored) `agent/<machine>/<pane id>`, `machine/<machine>`
-//! and `line/<n>`.
+//! (`record_use = false`, never stored) `agent/<machine>/<pane id>`, `machine/<machine>`,
+//! `reply` (copies the agent's last reply) and `line/<n>` (why there is no reply yet).
 
 use super::io::Preview;
 use super::model::{Agent, Fleet, MachineState, Status};
-use crate::core::{Icon, Item, ItemId};
+use super::reply;
+use crate::core::{Icon, Item, ItemId, Tab};
 
 pub const ID: &str = "herdr";
 
@@ -17,6 +18,7 @@ pub enum Key<'a> {
     Agents,
     Agent { machine: &'a str, pane_id: &'a str },
     Machine(&'a str),
+    Reply,
     Line,
 }
 
@@ -31,6 +33,9 @@ impl Key<'_> {
         }
         if let Some(machine) = key.strip_prefix("machine/") {
             return Some(Key::Machine(machine));
+        }
+        if key == "reply" {
+            return Some(Key::Reply);
         }
         key.starts_with("line/").then_some(Key::Line)
     }
@@ -112,7 +117,8 @@ pub fn agent_subtitle(agent: &Agent) -> String {
     parts.join(" · ")
 }
 
-/// One row: `<name or kind> · <machine>`. Enter jumps.
+/// One row: `<name or kind> · <machine>`. Enter jumps, Tab shows its output (action
+/// `output`).
 pub fn agent_item(agent: &Agent, now: u64) -> Item {
     let mut keywords = vec![agent.machine.clone(), agent.status.as_str().to_string()];
     keywords.extend(agent.kind.clone());
@@ -122,6 +128,7 @@ pub fn agent_item(agent: &Agent, now: u64) -> Item {
         subtitle: agent_subtitle(agent),
         accessory: if agent.changed_at == 0 { String::new() } else { age(now.saturating_sub(agent.changed_at)) },
         keywords,
+        tab: Tab::Act("output"),
         ..Item::new(
             ItemId::new(ID, agent_key(&agent.machine, &agent.pane_id)),
             format!("{} · {}", agent.label(), agent.machine),
@@ -167,28 +174,44 @@ pub fn agents_items(fleet: &Fleet, now: u64) -> Vec<Item> {
     items
 }
 
-/// View `agent`: `Jump` first, then the output preview (or why it is missing).
-pub fn detail_items(agent: Option<&Agent>, preview: Option<&Preview>, now: u64) -> Vec<Item> {
+/// The reply `preview` holds for `agent`, if it has loaded.
+pub fn loaded_reply<'a>(agent: &Agent, preview: Option<&'a Preview>) -> Option<&'a str> {
+    let mine = preview.filter(|p| p.machine == agent.machine && p.pane_id == agent.pane_id)?;
+    match &mine.reply {
+        Some(Ok(text)) if !text.is_empty() => Some(text),
+        _ => None,
+    }
+}
+
+/// View `agent`: `Jump` and `Copy Reply` (or why there is no reply), and the reply's
+/// wrapped tail for `ListView::text`.
+pub fn detail(agent: Option<&Agent>, preview: Option<&Preview>, now: u64) -> (Vec<Item>, String) {
     let Some(agent) = agent else {
-        return vec![];
+        return (vec![], String::new());
     };
     let jump = Item {
         title: format!("Jump to {}", agent.label()),
+        tab: Tab::None,
         ..agent_item(agent, now)
     };
-    let line = |n: usize, text: String, icon: &'static str| Item {
-        ..Item::new(ItemId::new(ID, format!("line/{n}")), text, "Jump to Agent", Icon::Symbol(icon))
+    let line = |text: String, icon: &'static str| {
+        Item::new(ItemId::new(ID, "line/0"), text, "Jump to Agent", Icon::Symbol(icon))
     };
     let mine = preview.filter(|p| p.machine == agent.machine && p.pane_id == agent.pane_id);
-    let rest = match mine.and_then(|p| p.lines.as_ref()) {
-        None => vec![line(0, "Loading output…".into(), "hourglass")],
-        Some(Err(e)) => vec![line(0, e.clone(), "exclamationmark.triangle")],
-        Some(Ok(lines)) if lines.is_empty() => vec![line(0, "No output".into(), "text.alignleft")],
-        Some(Ok(lines)) => {
-            lines.iter().enumerate().map(|(n, l)| line(n, l.clone(), "text.alignleft")).collect()
+    let (second, text) = match (mine.and_then(|p| p.reply.as_ref()), loaded_reply(agent, preview)) {
+        (_, Some(text)) => {
+            let lines = text.lines().count();
+            let copy = Item {
+                subtitle: format!("{lines} line{}", if lines == 1 { "" } else { "s" }),
+                ..Item::new(ItemId::new(ID, "reply"), "Copy Reply", "Copy Reply", Icon::Symbol("doc.on.doc"))
+            };
+            (copy, reply::tail(text, reply::WIDTH, reply::ROWS))
         }
+        (None, _) => (line("Loading output…".into(), "hourglass"), String::new()),
+        (Some(Err(e)), _) => (line(e.clone(), "exclamationmark.triangle"), String::new()),
+        (Some(Ok(_)), None) => (line("No reply".into(), "text.alignleft"), String::new()),
     };
-    std::iter::once(jump).chain(rest).collect()
+    (vec![jump, second], text)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # Herdr
 
-The `herdr` module lists the coding agents (claude, pi, codex, ...) that run in herdr, on this Mac and on the machines in `herdr machine list`. **Herdr Agents** in the launcher shows one row per agent: blocked first (an approval or a question waits on you), then done, idle and working. ↵ focuses the agent's herdr pane and brings the terminal to the front. ⌘K **Show Output** shows the agent's last lines. Flick only reads and focuses; it never sends input to an agent.
+The `herdr` module lists the coding agents (claude, pi, codex, ...) that run in herdr, on this Mac and on the machines in `herdr machine list`. **Herdr Agents** in the launcher shows one row per agent: blocked first (an approval or a question waits on you), then done, idle and working. ↵ focuses the agent's herdr pane and brings the terminal to the front. ⇥ (or **Show Output** in the ⌘K menu) shows the agent's last reply as one block of wrapped text; ↵ on **Copy Reply** copies all of it. herdr has no transcript API, so Flick cuts the reply out of the terminal text: after the last prompt line (`❯`, `>`, `›`), from the last bullet (`⏺`, `●`, `•`), above the input box. A working agent in an alternate screen cannot be read until it is idle. Flick only reads and focuses; it never sends input to an agent.
 
 ```toml
 [herdr]
@@ -8,7 +8,7 @@ machines = ["local", "mbp-server"] # default []: local plus every enabled `herdr
 remote_refresh_secs = 60           # default 0: remote machines refresh only while the launcher is open
 terminal = "WezTerm"               # the app brought to the front on a jump
 hotkey = "cmd+ctrl+alt+shift+KeyA" # opens the agents view; unbound by default
-preview_lines = 6                  # lines in Show Output (1 to 40)
+preview_lines = 6                  # lines in Show Output when no reply is found, e.g. a shell (1 to 40)
 notify = ["blocked", "done"]       # default ["blocked"]; [] for no notifications
 ```
 
@@ -89,5 +89,9 @@ flick --json herdr ls | jq '.ok.machines | keys'
     nothing.
 15. **Idle CPU.** With agents idle and the launcher closed, Flick stays at about 0% CPU over
     60 s in Activity Monitor.
-16. **Off.** `[herdr] enabled = false` and a reload: **Herdr Agents** is gone, and no
+16. **Show Output.** ⇥ on an idle Claude Code or Codex agent row opens its output view: **Jump**,
+    **Copy Reply** (`<n> lines`), and the agent's last reply below as wrapped text, without
+    the prompt, tool calls, spinner or input box. A long reply shows its tail after `…`. ↵ on
+    **Copy Reply** says `Copied the reply` and the pasteboard holds the whole reply.
+17. **Off.** `[herdr] enabled = false` and a reload: **Herdr Agents** is gone, and no
     `herdr-*` thread remains (`sample Flick 1 | grep herdr` prints nothing).

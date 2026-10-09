@@ -24,6 +24,7 @@ pub const HOOKS: Hooks = Hooks {
     listen: |ask| LISTENS.with_borrow_mut(|l| l.push(ask)),
     clicks: || CLICKS.with_borrow_mut(std::mem::take),
     notifications: || "test".into(),
+    copy: |text| COPIED.with_borrow_mut(|c| c.push(text.to_string())),
 };
 
 thread_local! {
@@ -33,6 +34,8 @@ thread_local! {
     pub static LISTENS: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
     /// Clicked notification ids the next `ModuleChanged` on this thread reads.
     pub static CLICKS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Text "copied" on this thread. Never the real pasteboard.
+    pub static COPIED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Wait up to 5 s for `cond`.

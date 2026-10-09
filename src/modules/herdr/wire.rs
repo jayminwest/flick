@@ -8,7 +8,7 @@ use super::io::{Hooks, lock};
 use super::unix_now;
 use super::views::ID;
 use crate::core::Event;
-use crate::platform::{events, notify, panel, workspace};
+use crate::platform::{events, notify, panel, pasteboard, workspace};
 
 /// Clicked notification ids, from `notify::on_click` until the next `ModuleChanged`.
 static CLICKED: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -54,4 +54,5 @@ pub const HOOKS: Hooks = Hooks {
             None => "permission not answered yet".into(),
         }
     },
+    copy: pasteboard::set_text,
 };

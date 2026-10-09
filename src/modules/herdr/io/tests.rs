@@ -115,14 +115,14 @@ fn a_preview_keeps_the_last_lines_of_the_agent_it_was_asked_for() {
     let t = transport(&server, &cli);
     let sh = shared(&[LOCAL, "hub"]);
     fetch_preview(&sh, &t, LOCAL, "w1:p1", 6, HOOKS);
-    let lines = |sh: &Shared| lock(&sh.preview).as_ref().and_then(|p| p.lines.clone());
+    let lines = |sh: &Shared| lock(&sh.preview).as_ref().and_then(|p| p.reply.clone());
     wait("local preview", || lines(&sh).is_some());
-    assert_eq!(lines(&sh), Some(Ok(vec!["one".to_string(), "two".to_string()])));
+    assert_eq!(lines(&sh), Some(Ok("one\ntwo".to_string())));
     assert!(server.calls().contains(&"agent.read w1:p1".to_string()));
 
     fetch_preview(&sh, &t, "hub", "w1:p1", 1, HOOKS);
     wait("remote preview", || lines(&sh).is_some());
-    assert_eq!(lines(&sh), Some(Ok(vec!["remote two".to_string()])));
+    assert_eq!(lines(&sh), Some(Ok("remote two".to_string())));
 }
 
 #[test]
