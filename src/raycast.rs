@@ -65,30 +65,46 @@ fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
     Ok(import)
 }
 
+/// `[[quicklink.links]]` entries, as appended to config.toml.
+#[derive(Serialize)]
+struct Appended<'a> {
+    quicklink: Links<'a>,
+}
+
+#[derive(Serialize)]
+struct Links<'a> {
+    links: &'a [Quicklink],
+}
+
+/// The text to append to config file `text` for `links`, checked to leave a loadable file
+/// (an inline `links = [...]` array can't take `[[quicklink.links]]` after it).
+fn appendix(text: &str, links: &[Quicklink]) -> Result<String, String> {
+    let toml =
+        toml::to_string(&Appended { quicklink: Links { links } }).map_err(|e| e.to_string())?;
+    let extra = format!("\n# Imported from Raycast\n{toml}");
+    config::parse(&format!("{text}{extra}"))
+        .and_then(|c| quicklinks::links(&c))
+        .map_err(|e| format!("can't add the imported quicklinks: {e}"))?;
+    Ok(extra)
+}
+
 /// Append the quicklinks in Raycast export `path` to the config file.
-#[expect(
-    clippy::items_after_statements,
-    clippy::format_push_string,
-    reason = "pre-gate code; behavior frozen until flick-ea94"
-)]
 pub fn import_file(path: &Path) -> Result<String, String> {
     let json = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let config = config::load()?;
     let import = convert(&json, &quicklinks::links(&config)?)?;
 
-    #[derive(Serialize)]
-    struct Section<'a> {
-        quicklinks: &'a [Quicklink],
-    }
     let config_path = config::config_path();
     if !import.added.is_empty() {
-        let toml =
-            toml::to_string(&Section { quicklinks: &import.added }).map_err(|e| e.to_string())?;
+        let text = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("{}: {e}", config_path.display()))?;
+        let extra = appendix(&text, &import.added)
+            .map_err(|e| format!("{}: {e}", config_path.display()))?;
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&config_path)
             .map_err(|e| format!("{}: {e}", config_path.display()))?;
-        write!(file, "\n# Imported from Raycast\n{toml}").map_err(|e| e.to_string())?;
+        file.write_all(extra.as_bytes()).map_err(|e| e.to_string())?;
     }
 
     let mut report = format!(
@@ -97,9 +113,7 @@ pub fn import_file(path: &Path) -> Result<String, String> {
         config_path.display(),
         import.duplicates
     );
-    for w in &import.warnings {
-        report.push_str(&format!("\n  warning: {w}"));
-    }
+    report.extend(import.warnings.iter().map(|w| format!("\n  warning: {w}")));
     Ok(report)
 }
 
@@ -139,5 +153,32 @@ mod tests {
         assert_eq!(names, ["Open WebUI", "Search"]);
         assert_eq!(import.duplicates, 3);
         assert!(import.added[1].takes_query());
+    }
+
+    #[test]
+    fn appends_module_table_entries_that_load() {
+        let added = vec![
+            Quicklink {
+                name: "Search".into(),
+                url: "https://x.com/?q={query}".into(),
+                keyword: None,
+            },
+            Quicklink { name: "Home".into(), url: "~/".into(), keyword: Some("h".into()) },
+        ];
+        assert_eq!(
+            appendix("", &added).unwrap(),
+            "\n# Imported from Raycast\n\
+             [[quicklink.links]]\nname = \"Search\"\nurl = \"https://x.com/?q={query}\"\n\n\
+             [[quicklink.links]]\nname = \"Home\"\nurl = \"~/\"\nkeyword = \"h\"\n"
+        );
+        // Legacy files still load, with the imported links after their own.
+        let legacy = "hotkey = \"cmd+K\"\n[[quicklinks]]\nname = \"Old\"\nurl = \"/\"\n";
+        let config = config::parse(&format!("{legacy}{}", appendix(legacy, &added).unwrap()));
+        let names: Vec<_> =
+            quicklinks::links(&config.unwrap()).unwrap().into_iter().map(|q| q.name).collect();
+        assert_eq!(names, ["Search", "Home", "Old"]);
+        // A file whose links can't take more is left alone.
+        let inline = "[quicklink]\nlinks = []\n";
+        assert!(appendix(inline, &added).unwrap_err().starts_with("can't add the imported"));
     }
 }
