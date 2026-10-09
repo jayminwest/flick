@@ -83,7 +83,7 @@ the release:
 The gates keep AGENTS.md honest (`check:agents`), so this pass is prose only:
 
 - `README.md`: features, configuration examples and install steps match what
-  ships.
+  ships. Never add line counts or binary sizes to the README (user request).
 - `ARCHITECTURE.md` and `AGENTS.md` only if layers, contracts or commands changed
   and the change missed them.
 

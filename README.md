@@ -14,7 +14,7 @@
 
 ## A keyboard-first launcher and window manager for macOS.
 
-Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls of its own. The app is about 3,200 lines of Rust, not counting tests, and a binary under 4 MB.
+Flick replaces a launcher, a window snapper, and a window switcher with one small native app. It is Rust on AppKit: no web view, no JavaScript runtime, no account, no network calls of its own.
 
 <p align="center">
   <img src="docs/screenshots/launcher.png" alt="The Flick launcher over a blurred desktop: an empty search field and suggestions ranked by recent use: commands, quicklinks, and applications" width="750">
@@ -43,6 +43,8 @@ Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
 - **Herdr agents.** Coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones waiting on you first. ↵ jumps to the agent's pane; a notification tells you when one starts to wait.
 - **Screenshots and drawing.** Capture an area, a window or a screen to a PNG file and the clipboard, mark it up with arrows, boxes, a pen, a highlighter, text and redaction, and draw on the screen with a cursor halo. It replaces Shottr and Presentify.
+- **Key triggers.** Caps Lock as Hyper, and key chords that run an HTTP request or a shell command on key down and up (push-to-talk).
+- **Activity and tasks.** Opt-in time tracking per app, kept on this Mac, and a short task list with one running timer.
 - **Quicklinks.** URLs and paths with an optional `{query}` argument. Type `<keyword> <text>` to run one from the root search. Import your Raycast quicklinks with one command.
 
 ## See it
@@ -477,7 +479,7 @@ flick --host mac-studio events # only with [remote] events = true there
 
 | Path | Role |
 |---|---|
-| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, activity, tasks, capture. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
+| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, keys, activity, tasks, herdr, capture, feedback, remote. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
 | [`core/`](src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
@@ -502,13 +504,12 @@ Flick keeps usage, clipboard and activity data in `~/Library/Application Support
 ## Roadmap
 
 - **Mouse support.** Hover and click on results.
-- **Actions menu.** `⌘K` on a result: copy path, reveal in Finder, quit app.
 - **Clipboard images.**
 - **Script commands.** Shell scripts with Raycast-style metadata as launcher commands.
 
 ## Status
 
-Early (`0.0.1`). The author uses Flick as a daily driver on an Apple Silicon laptop. The pure logic has unit tests: ranking, frecency, window geometry, config, storage, and import. The AppKit and Accessibility layers have no automated tests.
+Early (`0.0.2`). The author uses Flick as a daily driver on an Apple Silicon laptop. The pure logic has unit tests: ranking, frecency, window geometry, config, storage, and import. The AppKit and Accessibility layers have no automated tests.
 
 ## License
 
