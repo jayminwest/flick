@@ -226,7 +226,6 @@ impl Canvas {
 
     /// Drop finished shapes (and undone ones) started `fade_secs` or more before `now`. A
     /// `fade_secs` of 0 or less never expires anything. Returns whether a visible shape went.
-    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 4 (flick-ee1d)"))]
     pub fn expire(&mut self, now: f64, fade_secs: f32) -> bool {
         if fade_secs <= 0.0 {
             return false;
