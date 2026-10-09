@@ -329,7 +329,9 @@ impl Activity {
         let only_uncategorized =
             r.by_category.iter().all(|t| t.name == report::UNCATEGORIZED);
         let categories = if only_uncategorized { &[][..] } else { &r.by_category[..] };
-        [("category", categories), ("project", &r.by_project[..]), ("app", &r.by_app[..])]
+        // Domains: browser time by web host, from the URLs `urls = true` stores.
+        let domains = ("domain", &r.top_domains[..]);
+        [("category", categories), ("project", &r.by_project[..]), ("app", &r.by_app[..]), domains]
             .into_iter()
             .flat_map(|(kind, totals)| {
                 totals.iter().map(move |t| Item {
@@ -383,17 +385,18 @@ impl Module for Activity {
             .collect()
     }
 
-    /// View `today`: time per category, project and app since local midnight.
+    /// View `today`: time per category, project, app and web domain since local midnight.
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
         (view == "today").then(|| ListView {
             placeholder: "Search today's activity…".into(),
-            footer: "Activity Today  ·  esc to go back".into(),
+            footer: self.today_footer(),
             ..ListView::new("activity", view)
         })
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         let items = self.today_items(cx.store);
+        view.footer = self.today_footer();
         let count = items.len() as f64;
         let order: Vec<String> = items.iter().map(|i| i.id.to_string()).collect();
         view.items = cx.ranker.rank(cx.query, items, |i| {
