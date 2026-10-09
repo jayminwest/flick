@@ -256,6 +256,8 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   only Flick's entry. The mapping outlives the process. The first time Flick sets it, it
   installs `app::on_terminate` (clear on quit) and `app::quit_on_sigterm` (SIGTERM quits
   through `terminate:`, so the hook runs). Before that, SIGTERM has its default action.
+  A crash skips the hook, so at `Started` without `hyper = "caps_lock"`, `Wire::start` reads
+  the list and clears Flick's entry if an earlier run left it set.
 - Conflict checks (Hyperkey with the remap, Hammerspoon with chords, a global hotkey on the
   hyper key or a chord key) run in `flick keys status` and at `Started`. At `Started`,
   hotkeys are not bound yet, so the log misses the hotkey conflicts.
