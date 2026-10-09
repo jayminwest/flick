@@ -288,12 +288,15 @@ pub enum Command {
     Save,
     /// Esc: close without saving.
     Cancel,
+    /// `?`: show or hide the key legend.
+    Help,
 }
 
 /// Map a key press to a command. `chars` is `charactersIgnoringModifiers` (shift may make it
 /// upper case); `cmd` and `shift` are the modifier flags. Keys: a r p h t x pick arrow, rect,
 /// pen, highlight, text, redact; 1-5 pick a color; Delete clears; Return is done; Esc
-/// cancels; cmd+z undo, cmd+shift+z redo, cmd+c copy, cmd+s save.
+/// cancels; ? (or /) shows or hides the key legend; cmd+z undo, cmd+shift+z redo, cmd+c
+/// copy, cmd+s save.
 pub fn key_command(chars: &str, cmd: bool, shift: bool) -> Option<Command> {
     let key = chars.to_ascii_lowercase();
     if cmd {
@@ -322,6 +325,7 @@ pub fn key_command(chars: &str, cmd: bool, shift: bool) -> Option<Command> {
         // Return and keypad Enter.
         "\r" | "\u{3}" => Command::Done,
         "\u{1b}" => Command::Cancel,
+        "?" | "/" => Command::Help,
         _ => return None,
     })
 }
