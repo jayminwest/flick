@@ -56,6 +56,23 @@ hotkey = "alt+shift+Space"
 # on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
 # on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
 
+# Activity: records which app is in front as time spans in flick.db, on this Mac only.
+# Off until you run "Start Activity Recording" or "flick activity on"; a menu bar dot
+# shows while it records. titles = true also stores window titles (needs Accessibility).
+# exclude: bundle ids or app names never recorded; setting it replaces the default list
+# (1Password, Keychain Access). Rules name a category and project at report time; app and
+# title are case-insensitive regexes, and the first matching rule wins.
+# [activity]
+# titles = false
+# exclude = ["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess"]
+# hotkey = "cmd+ctrl+alt+shift+KeyR"
+# merge_secs = 2
+#
+# [[activity.rules]]
+# app = "wezterm|zed"
+# project = "flick"
+# category = "code"
+
 # Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
 # source: the checkout; default: the one this app was built from. check_on_open: check
 # it for newer commits when the launcher opens. gates: run scripts/check-all.sh first.
@@ -271,20 +288,39 @@ mod tests {
         assert_eq!(links(&c), ["Google", "GitHub Search", "YouTube", "Projects"]);
         assert!(keys(&c).is_empty());
         assert!(c.section("keys").unwrap().unwrap().get::<Table>().unwrap().is_empty());
+        assert!(c.section("activity").unwrap().unwrap().get::<Table>().unwrap().is_empty());
+    }
+
+    /// The commented example in `DEFAULT_CONFIG` from `marker` to the next blank line, with
+    /// the comment marks removed.
+    fn uncommented(marker: &str) -> String {
+        let start = DEFAULT_CONFIG.find(marker).unwrap();
+        let end = start + DEFAULT_CONFIG[start..].find("\n\n").unwrap();
+        DEFAULT_CONFIG[start..end]
+            .lines()
+            .map(|l| l.trim_start_matches('#').trim_start())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
     fn default_config_keys_example_parses_uncommented() {
-        let start = DEFAULT_CONFIG.find("# [keys]").unwrap();
-        let end = start + DEFAULT_CONFIG[start..].find("\n\n").unwrap();
-        let example: String = DEFAULT_CONFIG[start..end]
-            .lines()
-            .map(|l| l.trim_start_matches('#').trim_start())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let example = uncommented("# [keys]");
         let keys: Table = parse(&example).unwrap().section("keys").unwrap().unwrap().get().unwrap();
         assert_eq!(keys.get("hyper").and_then(Value::as_str), Some("caps_lock"));
         assert_eq!(keys.get("chord").and_then(Value::as_array).map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn default_config_activity_example_parses_uncommented() {
+        let example = uncommented("# [activity]");
+        let activity: Table =
+            parse(&example).unwrap().section("activity").unwrap().unwrap().get().unwrap();
+        assert_eq!(activity.get("titles").and_then(Value::as_bool), Some(false));
+        assert_eq!(activity.get("exclude").and_then(Value::as_array).map(Vec::len), Some(3));
+        let rules = activity.get("rules").and_then(Value::as_array).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].get("category").and_then(Value::as_str), Some("code"));
     }
 
     #[test]
