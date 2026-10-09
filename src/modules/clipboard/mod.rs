@@ -5,7 +5,7 @@ pub(super) mod store;
 
 use std::collections::HashMap;
 
-use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::{ax, pasteboard, timer};
 use crate::store::now;
 use store::{Clips, MIGRATIONS};
@@ -87,5 +87,51 @@ impl Module for Clipboard {
         let Some(text) = pasteboard::copied_text() else { return false };
         cx.store.add_clip(&text);
         true
+    }
+
+    /// `list`: `<id>\t<first line>`, newest first. `get <id>`: that clip's full text.
+    fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
+        match args {
+            [verb] if verb == "list" => Ok(cx
+                .store
+                .clips()
+                .iter()
+                .map(|c| format!("{}\t{}", c.id, c.text.trim().lines().next().unwrap_or("")))
+                .collect::<Vec<_>>()
+                .join("\n")),
+            [verb, id] if verb == "get" => id
+                .parse()
+                .ok()
+                .and_then(|id| cx.store.clip_text(id))
+                .ok_or_else(|| format!("clip: no clip {id}")),
+            _ => Err(unknown_verb("clip", args)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::test_cx;
+
+    #[test]
+    fn commands_list_and_get_clips() {
+        test_cx("", |cx| {
+            cx.store.migrate("clip", MIGRATIONS).unwrap();
+            cx.store.add_clip("one\nmore");
+            cx.store.add_clip("two");
+            let mut run = |w: &[&str]| {
+                Clipboard.command(&w.iter().map(|s| (*s).to_string()).collect::<Vec<_>>(), cx)
+            };
+            let list = run(&["list"]).unwrap();
+            assert_eq!(
+                list.lines().map(|l| l.split('\t').nth(1).unwrap()).collect::<Vec<_>>(),
+                ["two", "one"]
+            );
+            let id = list.lines().nth(1).unwrap().split('\t').next().unwrap().to_string();
+            assert_eq!(run(&["get", &id]).unwrap(), "one\nmore");
+            assert_eq!(run(&["get", "x"]).unwrap_err(), "clip: no clip x");
+            assert_eq!(run(&["paste"]).unwrap_err(), "clip: unknown command \"paste\"");
+        });
     }
 }
