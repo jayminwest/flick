@@ -58,10 +58,11 @@ pub enum WindowAction {
     Center,
     NextDisplay,
     PreviousDisplay,
+    Minimize,
 }
 
 impl WindowAction {
-    pub const ALL: [WindowAction; 18] = [
+    pub const ALL: [WindowAction; 19] = [
         Self::LeftHalf,
         Self::RightHalf,
         Self::TopHalf,
@@ -80,6 +81,7 @@ impl WindowAction {
         Self::Center,
         Self::NextDisplay,
         Self::PreviousDisplay,
+        Self::Minimize,
     ];
 
     pub fn title(self) -> &'static str {
@@ -102,6 +104,7 @@ impl WindowAction {
             Self::Center => "Center",
             Self::NextDisplay => "Next Display",
             Self::PreviousDisplay => "Previous Display",
+            Self::Minimize => "Minimize",
         }
     }
 
@@ -122,6 +125,7 @@ impl WindowAction {
             Self::AlmostMaximize => "rectangle.dashed",
             Self::Center => "rectangle.center.inset.filled",
             Self::NextDisplay | Self::PreviousDisplay => "display.2",
+            Self::Minimize => "minus.square",
         }
     }
 
@@ -135,7 +139,7 @@ impl WindowAction {
     }
 
     /// Target frame within the screen's usable `area`, given the window's `current` frame.
-    /// Display moves are handled by `apply`, so here they keep the frame.
+    /// Display moves and minimize are handled by `apply`, so here they keep the frame.
     pub fn target(self, a: Rect, current: Rect) -> Rect {
         let (hw, hh, tw) = (a.w / 2.0, a.h / 2.0, a.w / 3.0);
         let r = |x: f64, y: f64, w: f64, h: f64| Rect { x: a.x + x, y: a.y + y, w, h };
@@ -159,7 +163,7 @@ impl WindowAction {
                 let (w, h) = (current.w.min(a.w), current.h.min(a.h));
                 r((a.w - w) / 2.0, (a.h - h) / 2.0, w, h)
             }
-            Self::NextDisplay | Self::PreviousDisplay => current,
+            Self::NextDisplay | Self::PreviousDisplay | Self::Minimize => current,
         }
     }
 
@@ -347,6 +351,10 @@ pub fn apply(action: WindowAction, mtm: MainThreadMarker) -> Result<(), &'static
         return Err("Flick needs Accessibility permission");
     }
     let win = focused_window().ok_or("No focused window")?;
+    if action == WindowAction::Minimize {
+        set_bool_attr(win.0, "AXMinimized", true);
+        return Ok(());
+    }
     let current = window_frame(&win).ok_or("Can't read window frame")?;
     let areas = screen_areas(mtm);
     let index = areas.iter().position(|a| a.contains(current.center())).unwrap_or(0);

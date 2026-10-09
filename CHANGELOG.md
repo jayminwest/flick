@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Minimize window action.
+- `flick snapshot` renders the launcher to a PNG without showing it.
+- Fix: a second Flick started by launchd no longer runs next to an existing one.
+
 ## 0.0.1 — 2026-10-09
 
 First release.
