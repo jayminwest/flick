@@ -149,7 +149,6 @@ pub fn bundle_id(path: &Path) -> Option<String> {
 /// The bundle identifier ("com.apple.Safari") and display name ("Safari") of running app
 /// `pid`. `None` when no app runs with that pid; the id is `None` for an app without one.
 /// The by-pid sibling of `bundle_id`: cheap enough to call on every activation.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-a513 step 6 (flick-a30b)"))]
 pub fn app_identity(pid: i32) -> Option<(Option<String>, String)> {
     let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
     let id = app.bundleIdentifier().map(|id| id.to_string()).filter(|id| !id.is_empty());
