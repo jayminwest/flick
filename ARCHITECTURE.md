@@ -9,14 +9,14 @@ this file in the same commit.
 
 | Layer | Path | Role |
 |---|---|---|
-| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard` (text, and PNG with TIFF through `set_png`), `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `hud` (the `message` card: a non-activating corner panel that never becomes key; click, Esc through a key monitor installed only while it shows, and a timeout dismiss it), `clock` (local UTC offset), `notify` (`UNUserNotificationCenter`), `capture` (`/usr/sbin/screencapture`, PNG size, the Screen Recording check and prompt), `ink` (annotation: the pure shape model `ink::model` with a 100% coverage floor, the `FlickInkView` canvas, the editor window and the per-display draw overlay with the cursor halo). Every function runs on the main thread, except `keytap`'s (any thread) and `capture::run`, which blocks until screencapture exits: launcher and hotkey captures run it on a worker thread, never an area or window selection on the main thread. |
+| platform | `src/platform/` | All `unsafe`, objc2, `AppKit`, CF, AX, `CoreGraphics` and Carbon code. Exposes safe functions: `workspace`, `files` (Trash; the only removal path), `pasteboard` (text, and PNG with TIFF through `set_png`), `ax`, `spaces`, `screens`, `hotkeys`, `keytap` (the shared keyboard event tap), `hid` (Caps Lock to F18 via `hidutil`), `timer`, `panel`, `events`, `app`, `axwatch` (one AX observer for window and title changes), `status_item` (the menu bar item), `hud` (the `message` card: a non-activating corner panel that never becomes key; click, Esc through a key monitor installed only while it shows, and a timeout dismiss it), `clock` (local UTC offset), `notify` (`UNUserNotificationCenter`), `capture` (`/usr/sbin/screencapture`, PNG size, the Screen Recording check and prompt), `ink` (annotation: the pure shape model `ink::model` with a 100% coverage floor, the key legend `ink::legend` (pure, 100% floor; the `help` module lists its keys too) and `ink::hud` that draws it, the `FlickInkView` canvas, the editor window and the per-display draw overlay with the cursor halo), `poll` (`poll(2)` on sockets, for the network accept threads). Every function runs on the main thread, except `keytap`'s and `poll`'s (any thread) and `capture::run`, which blocks until screencapture exits: launcher and hotkey captures run it on a worker thread, never an area or window selection on the main thread. |
 | core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`), the span clock (`core::track`: idle backdating, pause/resume, title normalization, flicker merge, local-day split). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Knows no feature. |
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/core/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server and the network transport over Tailscale (`control::net`). Runs requests on the main thread. Streams events. |
-| cli | `src/cli/` | Argument parsing and the socket client. `snapshot` and `import-raycast` run in-process. |
+| cli | `src/cli/` | Argument parsing and the socket client. `snapshot`, `import-raycast` and `config example` run in-process. |
 
 There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code that uses
 `crate::modules::quicklinks` directly.
@@ -47,12 +47,12 @@ the main thread.
 | `items(&mut Cx) -> Vec<Item>` | each root refresh | Root search items. Ranked by fuzzy score plus frecency. |
 | `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink and script `<keyword> <text>`). |
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
-| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). |
-| `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab`) | Run an item this module created. |
+| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font (it shows what fits, so keep the tail). |
+| `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab` is `Tab::Activate`) | Run an item this module created. |
 | `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
 | `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. |
 | `actions(&ItemId, &mut Cx) -> Vec<Action>` | each render of a list, ⌘K | The item's action menu, in display order. Asked again each time, so keep it cheap and current (e.g. "Quit" only while running). Empty: no menu, and no "Actions ⌘K" hint. |
-| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
+| `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu; Tab on a list item whose `tab` is `Tab::Act(key)` | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
 | `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
 | `on_event(Event, &mut Cx) -> bool` | each event | `true`: this module's views show stale data. A visible view of that module then refreshes. |
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
@@ -111,6 +111,9 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
 - `List(ListView)`: a module's view. There is no `Pop`: Escape and Backspace in an empty field
   go back to root search; a view with `escape_hides = true` hides the launcher on Escape
   instead. A pushed view replaces the current one: one level of views, not a stack.
+  Tab on a selected item of `Root` or `List` does what its `Item::tab` says: `None` nothing,
+  `Activate` the same as Enter (a quicklink's argument), `Act(key)` runs `act(id, key)` as the
+  action menu would, with the list's search text. The module names the Tab key in its footer.
 - `Actions { target, actions, back }`: ⌘K on a selected item of `Root` or `List` whose
   module returns a non-empty `actions(id)`. The footer of those lists shows
   `Actions  ⌘K` beside the Enter verb when the selected item has actions. In the menu, typing
@@ -121,9 +124,11 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
   field (read-only); `Confirm::rows` are read-only rows (Up/Down scroll). Non-destructive:
   Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
   `Press ⌘↵ to <label>`. Escape cancels back to `back` and the module hears nothing.
-- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled fields (`FORM_FIELDS` in the panel),
-  focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵ submits,
-  Escape goes back to root search. A blank required field is an inline
+- `Form(Form)`: from `Outcome::Form`. Up to 6 labelled field rows (`FORM_FIELDS` in the
+  panel); a `Field::multiline()` field takes 3 rows and wraps, and fields past the last row are
+  not shown. Focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵
+  submits; in a multiline field Return inserts a newline and only ⌘↵ submits, and the footer
+  shows `⌘↵` (`Form::submit_hint`). Escape goes back to root search. A blank required field is an inline
   `<Label> is required` error, and `submit` is not called.
 
 `Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it. Module
@@ -286,7 +291,16 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 ## Config
 
 `src/config.rs`. File: `$FLICK_CONFIG`, else `~/.config/flick/config.toml`. The first run
-writes a commented default.
+writes a commented default (`DEFAULT_CONFIG`).
+
+- `config.example.toml` (repo root, embedded by `src/config/example.rs`, printed by `flick
+  config example`) lists every table and key, commented out, with its default. A setting line
+  is `#` then a letter or `[`; a note is `# `. Tests keep it exact: each module with settings
+  calls `config::example::assert_documents::<Settings>("<id>")` (also for nested array
+  tables, e.g. `"keys.chord"`), which compares the table's keys with the type's serde
+  fields; `src/characterization/config_example.rs` checks one table per module id and that
+  every module's `configure` accepts the uncommented file. A new or renamed key goes in the
+  example in the same commit.
 
 - Top-level `hotkey` is the launcher hotkey. The controller owns it.
 - Every other top-level key is a module table, `[<module id>]`. `Config::section(id)` returns
@@ -354,15 +368,21 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   Tailscale peer address and a `tailscale whois` name in `peers`; any failure closes the
   connection and is kept as `NetStatus::last`. Each request is `split_flags`, then forced
   `remote = true`, then checked by `net_policy`. Limits: 64 KiB lines, 30 s idle, 10 s writes,
-  16 open connections. Stop: a flag, a self-connect to wake each `accept`, then shutdown of
-  every open network connection. `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
+  16 open connections. Each address binds once (duplicates from `tailscale ip` are dropped);
+  a bind that finds the address in use retries for about 0.5 s, and its error names the
+  address and, from `lsof`, the process that holds the port. Accept threads wait in
+  `platform::poll` on the listener and the read end of a socket pair. Stop: a flag, then
+  close the write end of the pair to wake every accept thread, join them (so every listener
+  is closed and its port free before a restart binds), then shutdown of every open network
+  connection. Stop never connects to a listener: on macOS a connection to this Mac's own
+  Tailscale IPv6 address times out (flick-3d4c). `src/control/tailscale.rs` is the `Tailnet` seam: the CLI
   (Homebrew or the app binary) under a 2 s budget, whois cached per address (60 s, errors
   5 s). Tests use fakes and never run the CLI.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
-  `quicklink add|remove`, `capture` (any verb) or `feedback add|resolve`, and of `remote` only
-  `remote status`. `["events"]` needs `[remote] events = true`. Everything else reaches the
-  module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
+  `quicklink add|remove`, `capture` (any verb), `feedback resolve` or `task rm`, and of
+  `remote` only `remote status`. `["events"]` needs `[remote] events = true`. Everything
+  else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
   `message` (all verbs, notably `post`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
@@ -380,13 +400,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `$FLICK_REMOTE` set and not empty, the client sends `--remote` before `--json` (`flick
   events` ignores it). Exit 0 for `ok`, 1 for
   an error or no connection, 2 for usage errors. `flick events` prints the stream.
-  `flick snapshot` and `flick import-raycast` do not use the socket.
+  `flick snapshot`, `flick import-raycast` and `flick config example` do not use the socket.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
   to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
-  runs in this process (launcher, help, snapshot, import-raycast) is a usage error;
+  runs in this process (launcher, help, snapshot, import-raycast, config example) is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 
 ## Build stamp, install and rebuild
@@ -449,7 +469,9 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
    `crate::config::Section` and `crate::core::store`. Never import another module.
 3. Settings: a private `Settings` type with `#[derive(Default, Deserialize)]` and
    `#[serde(default)]`, read in `configure` with `table.get()?`. Keep runtime state outside
-   `Settings` because `configure` runs again on reload.
+   `Settings` because `configure` runs again on reload. Add a commented `#[toy]` table with
+   every key and its default to `config.example.toml` (even with no settings: `#enabled =
+   true`), and a test calling `crate::config::example::assert_documents::<Settings>("toy")`.
 4. Items: build ids with `ItemId::new("toy", key)`. Treat the key format as permanent once
    shipped. In `activate`, match on `id.key()`.
 5. Views: return a `ListView` from `open` for each view name you own. Fill `view.items` in
@@ -466,8 +488,8 @@ The example adds module `toy` with a hotkey-opened view and a `ping` verb.
    in-memory store, and `crate::config::parse` plus `section("toy")` for config.
 10. Run `scripts/check-all.sh`.
 
-Nothing else changes: `git diff --stat` shows `src/modules/toy/` and one line in
-`src/modules/mod.rs`. The characterization tests pin only the modules they name (root item
+Nothing else changes: `git diff --stat` shows `src/modules/toy/`, one line in
+`src/modules/mod.rs` and the `[toy]` table in `config.example.toml`. The characterization tests pin only the modules they name (root item
 prefixes, ranking, tables, hotkey owners, `flick help` verbs), so a new default-enabled module does not break them. A new
 table must start with its module id, or `schema_is_usage_and_clips` fails.
 

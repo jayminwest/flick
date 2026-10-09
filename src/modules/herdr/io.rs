@@ -17,6 +17,7 @@
 
 use super::local::{Closer, Local, Pong, Subscription};
 use super::model::{self, Fleet};
+use super::reply;
 use super::remote::Remote;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -26,8 +27,8 @@ use std::time::Duration;
 /// The fleet's name for the herdr server on this Mac.
 pub const LOCAL: &str = "local";
 
-/// Lines asked of `agent.read`; the preview keeps the last `preview_lines` non-empty ones.
-pub const READ_LINES: u32 = 40;
+/// Lines asked of `agent.read`: enough for a long reply. `reply::last_reply` cuts it out.
+pub const READ_LINES: u32 = 200;
 
 /// What threads need from the outside world; tests swap in no-ops.
 #[derive(Clone, Copy)]
@@ -51,6 +52,8 @@ pub struct Hooks {
     pub clicks: fn() -> Vec<String>,
     /// Whether notifications can show: `on`, `not permitted`, ... (main thread).
     pub notifications: fn() -> String,
+    /// Put text on the pasteboard (main thread).
+    pub copy: fn(&str),
 }
 
 /// One agent's output, for the detail view. In memory only.
@@ -58,8 +61,8 @@ pub struct Hooks {
 pub struct Preview {
     pub machine: String,
     pub pane_id: String,
-    /// `None` while it loads.
-    pub lines: Option<Result<Vec<String>, String>>,
+    /// The agent's last reply (`reply::last_reply`; empty: none). `None` while it loads.
+    pub reply: Option<Result<String, String>>,
 }
 
 /// Facts for `flick herdr status`.
@@ -339,16 +342,17 @@ pub struct Transport {
     pub remote: Remote,
 }
 
-/// Load `pane_id`'s output on `machine` into `Shared::preview`, keeping `lines` lines.
+/// Load `pane_id`'s last reply on `machine` into `Shared::preview`; `fallback` lines when
+/// the output shows no reply.
 pub fn fetch_preview(
     shared: &Arc<Shared>,
     t: &Transport,
     machine: &str,
     pane_id: &str,
-    lines: usize,
+    fallback: usize,
     hooks: Hooks,
 ) {
-    let want = Preview { machine: machine.into(), pane_id: pane_id.into(), lines: None };
+    let want = Preview { machine: machine.into(), pane_id: pane_id.into(), reply: None };
     *lock(&shared.preview) = Some(want.clone());
     let (sh, t) = (Arc::clone(shared), t.clone());
     let _ = thread::Builder::new().name("herdr-read".into()).spawn(move || {
@@ -361,7 +365,7 @@ pub fn fetch_preview(
         // Another agent's view opened meanwhile: drop this one.
         if preview.as_ref().is_some_and(|p| p.machine == want.machine && p.pane_id == want.pane_id)
         {
-            *preview = Some(Preview { lines: Some(text.map(|t| model::preview(&t, lines))), ..want });
+            *preview = Some(Preview { reply: Some(text.map(|t| reply::last_reply(&t, fallback))), ..want });
         }
         drop(preview);
         (hooks.post)();

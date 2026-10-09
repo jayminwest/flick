@@ -67,9 +67,9 @@ fn root_items_run_at_once_or_ask_for_the_argument() {
     let items = test_cx("", |cx| m.items(cx));
     let ids: Vec<_> = items.iter().map(|i| i.id.as_str()).collect();
     assert_eq!(ids, ["script:Ask KOTA", "script:Lock"]);
-    assert!(items[0].tab && items[0].id.arg().is_none());
+    assert!(items[0].tab == Tab::Activate && items[0].id.arg().is_none());
     assert_eq!((items[0].subtitle.as_str(), items[0].keywords.as_slice()), ("k", &["k".to_string()][..]));
-    assert!(!items[1].tab);
+    assert_eq!(items[1].tab, Tab::None);
     assert!(matches!(activate(&mut m, &items[1].id), Outcome::Hide));
     assert_eq!(runs(), [("Lock".to_string(), "pmset displaysleepnow".to_string())]);
     match activate(&mut m, &items[0].id) {
@@ -130,4 +130,10 @@ fn bad_tables_name_the_command() {
     assert!(err("[[script.commands]]\nname = \"A\"\n").starts_with("[script]: missing field `shell`"));
     assert_eq!(configured("").unwrap().commands.len(), 0);
     assert_eq!(Scripts::default().id(), "script");
+}
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("script");
+    crate::config::example::assert_documents::<Script>("script.commands");
 }

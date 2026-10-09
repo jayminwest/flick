@@ -19,6 +19,7 @@ use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 
+use super::legend::Mode;
 use super::model::{Command, Style};
 use super::view::FlickInkView;
 use crate::platform::{Rect, pasteboard, screens, timer};
@@ -139,6 +140,7 @@ pub fn edit(src: &Path, dest: &Path, opts: EditOpts, on_done: fn(Done)) -> bool 
     window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
 
     let view = FlickInkView::new(mtm, frame, opts.style, Some(command));
+    view.set_legend(Some(Mode::Editor { copy: opts.copy }));
     view.set_background(Some(&image));
     window.setContentView(Some(&view));
     window.center();
@@ -191,9 +193,12 @@ fn finish_for(cmd: Command, copy: bool) -> Option<Finish> {
         Command::Copy => Some(Finish::Write { copy: true }),
         Command::Save => Some(Finish::Write { copy: false }),
         Command::Cancel => Some(Finish::Cancel),
-        Command::Tool(_) | Command::Color(_) | Command::Undo | Command::Redo | Command::Clear => {
-            None
-        }
+        Command::Tool(_)
+        | Command::Color(_)
+        | Command::Undo
+        | Command::Redo
+        | Command::Clear
+        | Command::Help => None,
     }
 }
 
@@ -255,6 +260,7 @@ mod tests {
             Command::Undo,
             Command::Redo,
             Command::Clear,
+            Command::Help,
         ] {
             assert_eq!(finish_for(cmd, true), None);
         }

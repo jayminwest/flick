@@ -24,7 +24,7 @@ pub use confirm::ConfirmRow;
 pub use event::{Event, RecentPids};
 pub use form::Field;
 pub use form::Form;
-pub use item::{Icon, Item, ItemId};
+pub use item::{Icon, Item, ItemId, Tab};
 #[cfg(test)]
 pub use module::test_cx;
 pub use module::{Binding, Cx, Module, unknown_verb};

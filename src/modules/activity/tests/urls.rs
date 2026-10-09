@@ -83,6 +83,32 @@ fn an_answer_names_the_span_and_a_new_url_splits_it() {
     });
 }
 
+#[test]
+fn the_today_view_lists_browser_time_by_domain() {
+    with_cx(|cx| {
+        FRONT.with(|f| f.set(Some(BRAVE)));
+        let mut a = activity(ON);
+        run(&mut a, cx, "on").unwrap();
+        answer(&mut a, cx, T + 1, "https://www.github.com/a");
+        at(T + 30);
+        a.on_event(Event::AppActivated { pid: 2 }, cx);
+        at(T + 40);
+        let mut view = a.open("today", cx).unwrap();
+        a.refresh(&mut view, cx);
+        let rows = view.items.iter().map(|i| (i.id.to_string(), i.subtitle.as_str())).collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            [
+                ("activity:row/app/Brave Browser".into(), "App"),
+                ("activity:row/app/Mail".into(), "App"),
+                ("activity:row/domain/github.com".into(), "Domain"),
+            ]
+        );
+        assert_eq!(view.items[2].accessory, "30s  ·  75%");
+        assert_eq!(view.footer, "Activity Today  ·  esc to go back");
+    });
+}
+
 fn json(a: &mut Activity, cx: &mut Cx, words: &str) -> String {
     cx.json = true;
     let reply = run(a, cx, words).unwrap();
@@ -147,6 +173,9 @@ fn denied_automation_shows_in_status_until_a_read_works() {
         answer_nth(&mut a, cx, T + 1, 0, TabUrl::Denied);
         assert!(run(&mut a, cx, "status").unwrap().contains("\nurls: no Automation permission for Brave Browser\n"));
         assert_eq!(urled(cx), [brave(T, T + 1, None)]);
+        // The Today view says why browser time has no domain.
+        let footer = a.open("today", cx).unwrap().footer;
+        assert!(footer.contains("no URLs from Brave Browser: allow Flick in Privacy & Security > Automation"), "{footer}");
         at(T + 5);
         a.on_event(Event::WindowChanged { pid: BRAVE }, cx);
         answer_nth(&mut a, cx, T + 6, 0, TabUrl::Failed);

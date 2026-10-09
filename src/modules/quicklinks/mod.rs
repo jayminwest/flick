@@ -12,7 +12,7 @@ pub use link::Quicklink;
 use serde::Deserialize;
 
 use crate::config::{Config, Section};
-use crate::core::{Action, Cx, Form, Icon, Item, ItemId, ListView, Module, Outcome};
+use crate::core::{Action, Cx, Form, Icon, Item, ItemId, ListView, Module, Outcome, Tab};
 use crate::platform::workspace;
 
 /// Table `[quicklink]`: `[[quicklink.links]]` (legacy: top-level `[[quicklinks]]`), unique names.
@@ -59,7 +59,7 @@ fn item(q: &Quicklink, arg: Option<String>) -> Item {
     let tab = arg.is_none();
     Item {
         accessory: "Quicklink".into(),
-        tab,
+        tab: if tab { Tab::Activate } else { Tab::None },
         ..Item::new(
             match arg {
                 Some(arg) => id.with_arg(arg),
@@ -234,5 +234,11 @@ mod tests {
         let out = crate::core::test_cx("", |cx| m.activate(&id, cx));
         let msg = "No app \"No Such App 7f3e\" to open Docs";
         assert!(matches!(out, Outcome::Stay(Some(s)) if s == msg));
+    }
+
+    #[test]
+    fn the_example_config_lists_every_key() {
+        crate::config::example::assert_documents::<Settings>("quicklink");
+        crate::config::example::assert_documents::<Quicklink>("quicklink.links");
     }
 }

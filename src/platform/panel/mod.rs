@@ -12,11 +12,12 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl, NSControlTextEditingDelegate,
-    NSEvent, NSEventModifierFlags, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSPanel,
-    NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
-    NSWindow, NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
+    NSApplication, NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl,
+    NSControlTextEditingDelegate, NSEvent, NSEventModifierFlags, NSFocusRingType, NSFont,
+    NSFontWeightMedium, NSImage, NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField,
+    NSTextFieldDelegate, NSTextView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+    NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowCollectionBehavior,
+    NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
@@ -26,7 +27,7 @@ use objc2_foundation::{
 pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
 pub use rows::{Frame, Icon, Row, render};
-use rows::{RowViews, label, make_row, ns, separator, top_rect};
+use rows::{RowViews, label, make_row, make_text, ns, separator, top_rect};
 
 const W: f64 = 750.0;
 const H: f64 = 474.0;
@@ -78,17 +79,23 @@ define_class!(
         }
 
         // ⌘K and ⌘↵ reach the window before the field editor sees them. Only handled keys
-        // return true (as a tail expression: see mx-43d3f4), so ⌘C, ⌘V and ⌘A still work.
+        // return true (as a tail expression: see mx-43d3f4). Flick has no main menu, so the
+        // edit keys (⌘X, ⌘C, ⌘V, ⌘A, ⌘Z, ⇧⌘Z) go to the first responder here (flick-ab04).
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             let flags = event.modifierFlags();
             let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
-            let key = key_equivalent(
-                command_only(flags),
-                chars.as_deref().unwrap_or(""),
-                event.keyCode(),
-            );
+            let chars = chars.as_deref().unwrap_or("");
+            let key = key_equivalent(command_only(flags), chars, event.keyCode());
             key.is_some_and(send_key)
+                || edit_action(command_only(flags), command_shift(flags), chars).is_some_and(
+                    |action| {
+                        let app = NSApplication::sharedApplication(self.mtm());
+                        // SAFETY: a standard edit action, a nil target (the responder chain)
+                        // and the panel as sender.
+                        unsafe { app.sendAction_to_from(action, None, Some(self)) }
+                    },
+                )
                 // SAFETY: the superclass method, with the argument it was called with.
                 || unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
@@ -141,9 +148,10 @@ define_class!(
         }
 
         #[unsafe(method(control:textView:doCommandBySelector:))]
-        fn do_command(&self, _control: &NSControl, _view: &NSTextView, sel: Sel) -> bool {
+        fn do_command(&self, control: &NSControl, view: &NSTextView, sel: Sel) -> bool {
             // Unknown selectors fall through to the text view's default handling.
-            key_for(sel).is_some_and(send_key)
+            form::newline(std::ptr::from_ref(control).cast(), view, sel)
+                || key_for(sel).is_some_and(send_key)
         }
 
         #[unsafe(method(windowDidResignKey:))]
@@ -181,6 +189,31 @@ fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key>
     }
 }
 
+/// Whether ⌘ and ⇧ are the only modifiers held.
+fn command_shift(flags: NSEventModifierFlags) -> bool {
+    let held = flags
+        & (NSEventModifierFlags::Shift
+            | NSEventModifierFlags::Control
+            | NSEventModifierFlags::Option
+            | NSEventModifierFlags::Command);
+    held == NSEventModifierFlags::Command | NSEventModifierFlags::Shift
+}
+
+/// The standard edit action for a key equivalent. An app without a main menu has no Edit menu
+/// to send these, so the panel sends them itself.
+fn edit_action(command_only: bool, command_shift: bool, chars: &str) -> Option<Sel> {
+    let c = chars.to_ascii_lowercase();
+    Some(match (command_only, command_shift, c.as_str()) {
+        (true, _, "x") => sel!(cut:),
+        (true, _, "c") => sel!(copy:),
+        (true, _, "v") => sel!(paste:),
+        (true, _, "a") => sel!(selectAll:),
+        (true, _, "z") => sel!(undo:),
+        (_, true, "z") => sel!(redo:),
+        _ => return None,
+    })
+}
+
 fn key_for(sel: Sel) -> Option<Key> {
     Some(if sel == sel!(moveUp:) {
         Key::Up
@@ -206,6 +239,7 @@ struct Ui {
     field: Retained<NSTextField>,
     rows: Vec<RowViews>,
     empty: Retained<NSTextField>,
+    text: Retained<NSTextField>,
     footer_left: Retained<NSTextField>,
     footer_action: Retained<NSTextField>,
     form: FormViews,
@@ -282,6 +316,8 @@ pub fn init(handlers: Handlers) {
     empty.setAlignment(NSTextAlignment::Center);
     empty.setFrame(top_rect(H, 0.0, f64::midpoint(H - FOOTER_H, SEARCH_H) - 10.0, W, 20.0));
     root.addSubview(&empty);
+    let text = make_text(mtm);
+    root.addSubview(&text);
 
     root.addSubview(&separator(mtm, top_rect(H, 0.0, H - FOOTER_H, W, 1.0)));
     let footer_left = label(mtm, 12.0, &NSColor::secondaryLabelColor());
@@ -303,6 +339,7 @@ pub fn init(handlers: Handlers) {
         field,
         rows,
         empty,
+        text,
         footer_left,
         footer_action,
         form,
@@ -424,11 +461,31 @@ mod tests {
         assert_eq!(key_equivalent(true, "K", 40), Some(Key::CmdK));
         assert_eq!(key_equivalent(true, "\r", 36), Some(Key::CmdEnter));
         assert_eq!(key_equivalent(true, "\u{3}", 76), Some(Key::CmdEnter));
-        // ⌘C, ⌘V and ⌘A stay with the field editor.
+        // ⌘C, ⌘V and ⌘A are edit actions, not key commands.
         for c in ["c", "v", "a"] {
             assert_eq!(key_equivalent(true, c, 0), None);
         }
         assert_eq!(key_equivalent(false, "k", 40), None);
         assert_eq!(key_equivalent(false, "\r", 36), None);
+    }
+
+    #[test]
+    fn edit_keys_send_the_standard_edit_actions() {
+        use NSEventModifierFlags as F;
+        assert!(command_shift(F::Command | F::Shift | F::CapsLock));
+        assert!(!command_shift(F::Command));
+        assert!(!command_shift(F::Command | F::Shift | F::Option));
+
+        let pairs = [("x", sel!(cut:)), ("c", sel!(copy:)), ("v", sel!(paste:))];
+        for (c, action) in pairs {
+            assert_eq!(edit_action(true, false, c), Some(action));
+        }
+        assert_eq!(edit_action(true, false, "a"), Some(sel!(selectAll:)));
+        assert_eq!(edit_action(true, false, "z"), Some(sel!(undo:)));
+        assert_eq!(edit_action(false, true, "Z"), Some(sel!(redo:)));
+        // Without ⌘ alone (or ⇧⌘ for redo) the key types, and other letters are not edits.
+        assert_eq!(edit_action(false, false, "v"), None);
+        assert_eq!(edit_action(false, true, "v"), None);
+        assert_eq!(edit_action(true, false, "k"), None);
     }
 }

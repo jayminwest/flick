@@ -10,7 +10,7 @@ cd flick
 ./scripts/bundle.sh --install
 ```
 
-The script builds `~/Applications/Flick.app` and starts it. Press `⌥⇧Space` to open the launcher.
+The script builds `~/Applications/Flick.app` and starts it. If the build fails, the script exits non-zero and does not install or restart anything. Without `cargo` it stops with "cargo not found: install Rust with rustup"; install Rust from [rustup.rs](https://rustup.rs). Press `⌥⇧Space` to open the launcher.
 
 Window management, the window switcher, and auto-paste need Accessibility permission. macOS asks the first time you use one of them. Turn Flick on in **System Settings → Privacy & Security → Accessibility**.
 
@@ -42,7 +42,7 @@ launchd.agents.flick = {
 };
 ```
 
-`bundle.sh --install` and the in-app rebuild install through `scripts/relaunch.sh`. It copies the new bundle next to the old one, checks its signature, and swaps the two with renames, so a failed install leaves the old app in place. Then it stops Flick, waits until the old process exits, and starts Flick through this agent when it exists (`launchctl kickstart -k`), else with `open`.
+`bundle.sh --install` and the in-app rebuild install through `scripts/relaunch.sh`. It copies the new bundle next to the old one, checks its signature, and swaps the two with renames, so a failed install leaves the old app in place. It links the `flick` command, `~/.local/bin/flick`, to the app's binary (set `FLICK_CLI_DIR` for another folder, or `FLICK_CLI_DIR=` to skip). A `flick` already there that is not a link to a Flick.app stays as it is, and the script warns when the folder is not on your `PATH`. Then it stops Flick, waits until the old process exits, and starts Flick through this agent when it exists (`launchctl kickstart -k`), else with `open`.
 
 ## Rebuild from the checkout
 
@@ -65,7 +65,7 @@ flick flick cancel                     # stop the build that runs
 
 Details:
 
-- The build runs `scripts/bundle.sh` with `cargo build --release --locked --offline` through your login shell (`$SHELL -lc`), so `cargo` must be on your login-shell `PATH`. If it is not, the build fails with "cargo not found on login-shell PATH".
+- The build runs `scripts/bundle.sh` with `cargo build --release --locked --offline` through your login shell (`$SHELL -lc`), so `cargo` must be on your login-shell `PATH`. If it is not, the build fails with "cargo not found on login-shell PATH: install Rust with rustup".
 - The build is offline. If the checkout needs a crate that cargo has not downloaded, the build fails with a hint: run `cargo fetch` in the checkout, then rebuild.
 - Compiled output goes to `<checkout>/target/flick-rebuild`, apart from `target/`, so a rebuild does not wait on other cargo commands. It takes about 1 GB; `cargo clean --target-dir target/flick-rebuild` removes it. The exported tree is in `~/Library/Caches/Flick/rebuild`.
 - The log is `~/Library/Logs/Flick/rebuild.log`. The log of the build before it is `rebuild.log.1`.

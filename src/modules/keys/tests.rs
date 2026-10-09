@@ -206,3 +206,9 @@ fn started_keys_install_the_rules_and_run_chords() {
     // The stub's clear fails, so dropping the module tries once more.
     assert_eq!(calls(), ["clear_remap"]);
 }
+
+#[test]
+fn the_example_config_lists_every_key() {
+    crate::config::example::assert_documents::<Settings>("keys");
+    crate::config::example::assert_documents::<ChordSpec>("keys.chord");
+}

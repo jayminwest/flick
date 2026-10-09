@@ -234,3 +234,8 @@ fn rows_copy_reshow_and_open() {
     assert_eq!(kind(f.cx("", false, |cx| m.act(&gone, "show", cx))), "stay None");
     assert_eq!(kind(f.cx("", false, |cx| m.activate(&gone, cx))), "stay None");
 }
+
+#[test]
+fn the_config_example_documents_every_setting() {
+    crate::config::example::assert_documents::<Settings>("message");
+}

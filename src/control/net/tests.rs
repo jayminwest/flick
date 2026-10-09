@@ -326,3 +326,64 @@ fn apply_returns_at_once_and_the_latest_apply_wins() {
     net.wanted.fetch_add(1, Ordering::SeqCst);
     assert_eq!(net.apply_now(stale, Some(settings(&["a"], false))).unwrap().listening, []);
 }
+
+#[test]
+fn an_address_listed_twice_is_bound_once() {
+    static HUB: Hub = Hub::new();
+    let twice = Fake { ips: vec!["127.0.0.1", "127.0.0.1"], whois: Ok(vec!["a"]) };
+    let net = Net::loopback(Box::new(twice), handler, &HUB);
+    let status = net.sync(Some(settings(&["a"], false))).unwrap();
+    assert_eq!(status.listening.len(), 1);
+    assert_eq!(status.error, None);
+    net.sync(None).unwrap();
+}
+
+#[test]
+fn stopping_frees_every_port_before_it_returns() {
+    static HUB: Hub = Hub::new();
+    let net = net(Ok(vec!["a"]), &HUB);
+    for _ in 0..3 {
+        let status = net.sync(Some(settings(&["a"], false))).unwrap();
+        let addr = status.listening[0];
+        // Restart on the same port, as a reload or a toggle does: no listener of the old
+        // run may still hold it.
+        let port = NetSettings { port: addr.port(), ..settings(&["a"], false) };
+        let again = net.sync(Some(port)).unwrap();
+        assert_eq!((again.listening.as_slice(), again.error), ([addr].as_slice(), None));
+        net.sync(None).unwrap();
+        // No retry here: the port is free the moment the stop returns.
+        drop(TcpListener::bind(addr).unwrap());
+    }
+}
+
+#[test]
+fn a_connection_left_in_time_wait_does_not_block_a_restart() {
+    static HUB: Hub = Hub::new();
+    let net = net(Ok(vec!["a"]), &HUB);
+    let status = net.sync(Some(settings(&["a"], false))).unwrap();
+    let addr = status.listening[0];
+    let mut c = connect(&status);
+    assert!(ask(&mut c, r#"["x"]"#).contains("remote=true"));
+    // The server closes first, so its end of the connection waits in TIME_WAIT on `addr`.
+    net.sync(None).unwrap();
+    let mut rest = String::new();
+    assert_eq!(c.read_to_string(&mut rest).unwrap_or(0), 0);
+    drop(c);
+    let port = NetSettings { port: addr.port(), ..settings(&["a"], false) };
+    assert_eq!(net.sync(Some(port)).unwrap().listening, [addr]);
+    net.sync(None).unwrap();
+}
+
+#[test]
+fn an_address_in_use_is_named_and_the_others_still_listen() {
+    static HUB: Hub = Hub::new();
+    let both = Fake { ips: vec!["127.0.0.1", "::1"], whois: Ok(vec!["a"]) };
+    let net = Net::loopback(Box::new(both), handler, &HUB);
+    let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let _held = TcpListener::bind(("::1", port)).unwrap();
+    let status = net.sync(Some(NetSettings { port, ..settings(&["a"], false) })).unwrap();
+    assert_eq!(status.listening, [SocketAddr::from(([127, 0, 0, 1], port))]);
+    let e = status.error.unwrap();
+    assert!(e.starts_with(&format!("[::1]:{port}: port {port} is in use by ")), "{e}");
+    net.sync(None).unwrap();
+}
