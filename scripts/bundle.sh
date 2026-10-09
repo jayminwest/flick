@@ -39,8 +39,9 @@ version="$(awk -F'"' '/^version/ {print $2; exit}' Cargo.toml)"
 bundle_version="$version+${FLICK_BUILD_SHA:0:7}"
 [[ "$FLICK_BUILD_DIRTY" == 1 ]] && bundle_version="$bundle_version-dirty"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$target/release/flick" "$app/Contents/MacOS/Flick"
+cp assets/icon/Flick.icns "$app/Contents/Resources/Flick.icns"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,6 +51,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.jayminwest.flick</string>
   <key>CFBundleExecutable</key><string>Flick</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>Flick</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$bundle_version</string>
   <key>LSUIElement</key><true/>
