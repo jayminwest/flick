@@ -1,6 +1,6 @@
 # Command line
 
-A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mode 0600; set `FLICK_SOCKET` to use another path). The `flick` binary is its client:
+A running Flick listens on `~/Library/Application Support/Flick/flick.sock` (mode 0600; set `FLICK_SOCKET` to use another path). The `flick` binary is its client. `bundle.sh --install` and the in-app rebuild link it as `~/.local/bin/flick`; by hand: `ln -s ~/Applications/Flick.app/Contents/MacOS/Flick ~/.local/bin/flick`.
 
 ```bash
 flick app list                 # <name>\t<path> per app

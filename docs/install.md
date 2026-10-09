@@ -42,7 +42,7 @@ launchd.agents.flick = {
 };
 ```
 
-`bundle.sh --install` and the in-app rebuild install through `scripts/relaunch.sh`. It copies the new bundle next to the old one, checks its signature, and swaps the two with renames, so a failed install leaves the old app in place. Then it stops Flick, waits until the old process exits, and starts Flick through this agent when it exists (`launchctl kickstart -k`), else with `open`.
+`bundle.sh --install` and the in-app rebuild install through `scripts/relaunch.sh`. It copies the new bundle next to the old one, checks its signature, and swaps the two with renames, so a failed install leaves the old app in place. It links the `flick` command, `~/.local/bin/flick`, to the app's binary (set `FLICK_CLI_DIR` for another folder, or `FLICK_CLI_DIR=` to skip). A `flick` already there that is not a link to a Flick.app stays as it is, and the script warns when the folder is not on your `PATH`. Then it stops Flick, waits until the old process exits, and starts Flick through this agent when it exists (`launchctl kickstart -k`), else with `open`.
 
 ## Rebuild from the checkout
 
