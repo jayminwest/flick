@@ -59,11 +59,17 @@ hotkey = "alt+shift+Space"
 # Activity: records which app is in front as time spans in flick.db, on this Mac only.
 # Off until you run "Start Activity Recording" or "flick activity on"; a menu bar dot
 # shows while it records. titles = true also stores window titles (needs Accessibility).
+# urls = true also stores the front tab URL of Brave, Chrome, Edge or Chromium, never from
+# a private window (each browser asks once for Automation permission). Agent sessions see
+# titles only with remote_titles = true, and URLs and domains only with remote_urls = true.
 # exclude: bundle ids or app names never recorded; setting it replaces the default list
 # (1Password, Keychain Access). Rules name a category and project at report time; app and
 # title are case-insensitive regexes, and the first matching rule wins.
 # [activity]
 # titles = false
+# urls = false
+# remote_titles = false
+# remote_urls = false
 # exclude = ["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess"]
 # hotkey = "cmd+ctrl+alt+shift+KeyR"
 # merge_secs = 2
@@ -375,6 +381,9 @@ mod tests {
         let activity: Table =
             parse(&example).unwrap().section("activity").unwrap().unwrap().get().unwrap();
         assert_eq!(activity.get("titles").and_then(Value::as_bool), Some(false));
+        for key in ["urls", "remote_titles", "remote_urls"] {
+            assert_eq!(activity.get(key).and_then(Value::as_bool), Some(false), "{key}");
+        }
         assert_eq!(activity.get("exclude").and_then(Value::as_array).map(Vec::len), Some(3));
         let rules = activity.get("rules").and_then(Value::as_array).unwrap();
         assert_eq!(rules.len(), 1);
