@@ -17,7 +17,7 @@ hotkey = "alt+shift+Space"
 
 # Each module reads its own [<module>] table. "enabled = false" turns a module off:
 # no items, no views, no hotkeys. Modules: app, desktop, switcher, window, quicklink,
-# builtin, clip.
+# builtin, clip, flick.
 
 # Switch to the most recently used app on another desktop (macOS then switches
 # desktops). Backquote replaces macOS's "cycle windows of this app" shortcut.
@@ -37,6 +37,14 @@ hotkey = "alt+shift+Space"
 # left-half = "ctrl+alt+ArrowLeft"
 # right-half = "ctrl+alt+ArrowRight"
 # maximize = "ctrl+alt+Enter"
+
+# Rebuild Flick from its local checkout (no git fetch or pull; cargo runs --offline).
+# source: the checkout; default: the one this app was built from. check_on_open: check
+# it for newer commits when the launcher opens. gates: run scripts/check-all.sh first.
+[flick]
+# source = "~/Projects/flick"
+# check_on_open = true
+# gates = false
 
 # Quicklinks open a URL or a path. "{query}" makes the link take an argument.
 # Typing "<keyword> <text>" runs a link straight from the root search.
