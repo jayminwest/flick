@@ -7,26 +7,41 @@
 //! (`task_state`); the time Flick was down is not counted.
 //! Every change of the running task posts `Event::TaskChanged`, also at `Started`, so other
 //! modules (activity) learn it without reading this module's tables.
-//! Verbs only for now (`flick task ...`); no items, views or config keys.
+//! Launcher: root items Start/Stop/Switch Task and Tasks Today, views `task/pick` and
+//! `task/today` (`view.rs`, ids there), a task row's ⌘K menu (Start, Mark Done, Stop).
+//! Durations are computed when a list refreshes. Table `[task]`: `hotkey` (unbound by
+//! default) opens `task/pick`.
 
 mod cli;
 mod store;
 #[cfg(test)]
 mod tests;
+mod view;
 mod wire;
 
-use serde::Serialize;
+use std::collections::HashMap;
 
-use crate::core::track::{Clock, Input, Op};
-use crate::core::{Cx, Event, Module};
+use serde::{Deserialize, Serialize};
+
+use crate::config::Section;
+use crate::core::track::{Clock, Input, Op, Span};
+use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
 use crate::store::Store;
 use cli::{Listing, Range, Report, Verb};
 use store::{MIGRATIONS, Status, Task, TaskStore};
 use wire::Env;
 
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct Settings {
+    /// Opens `task/pick`.
+    hotkey: Option<String>,
+}
+
 #[derive(Default)]
 pub struct Tasks {
     env: Env,
+    settings: Settings,
     /// Runs while a task runs; its subject is the task id.
     clock: Clock<i64>,
     /// Row id of the open `task_time` row.
@@ -193,10 +208,29 @@ impl Tasks {
         })
     }
 
-    fn ls(&self, all: bool, project: Option<&str>, store: &Store, now: i64) -> Listing {
+    /// Today's range and time rows clipped to it, the open row counted up to `now`.
+    fn today(&self, store: &Store, now: i64) -> Option<(Range, Vec<Span<i64>>)> {
         let offset = (self.env.utc_offset)(now);
-        let today = cli::parse_range("today", now, offset).map(|days| Range::new("today", days, offset));
-        let spans = today.map(|r| cli::clip(store.times(r.from, r.to), r.from, r.to)).unwrap_or_default();
+        let range = Range::new("today", cli::parse_range("today", now, offset)?, offset);
+        let mut spans = store.times(range.from, range.to);
+        if let Some(row) = self.open.and_then(|id| store.time_row(id)) {
+            spans.push(Span { start: row.end, end: now, subject: row.subject });
+        }
+        let spans = cli::clip(spans, range.from, range.to);
+        Some((range, spans))
+    }
+
+    /// Seconds per task today, counted up to `now`.
+    fn today_secs(&self, store: &Store, now: i64) -> HashMap<i64, i64> {
+        let mut secs = HashMap::new();
+        for s in self.today(store, now).map(|(_, spans)| spans).unwrap_or_default() {
+            *secs.entry(s.subject).or_insert(0) += s.secs();
+        }
+        secs
+    }
+
+    fn ls(&self, all: bool, project: Option<&str>, store: &Store, now: i64) -> Listing {
+        let spans = self.today(store, now).map(|(_, spans)| spans).unwrap_or_default();
         let tasks: Vec<Task> = store
             .task_list(all)
             .into_iter()
@@ -205,6 +239,35 @@ impl Tasks {
         let running = self.running.and_then(|id| store.task_get(id));
         let since = self.clock.open().map(|(_, start)| start);
         Listing::new(&tasks, &spans, running.as_ref().map(|t| (t, since)))
+    }
+
+    /// Start task `id` from the launcher and hide it.
+    fn start_id(&mut self, id: i64, store: &Store, now: i64) -> Outcome {
+        match store.task_get(id) {
+            Some(task) => {
+                self.start(&task, store, now);
+                Outcome::Hide
+            }
+            None => Outcome::Stay(Some(format!("task: no task {id}"))),
+        }
+    }
+
+    /// 'Start new task': the task with exactly this title and project, else a new one.
+    fn start_new(&mut self, query: &str, store: &Store, now: i64) -> Outcome {
+        let (title, project) = view::split_project(query);
+        let same = store.task_list(true).into_iter().find(|t| t.title == title && t.project == project);
+        match same.map_or_else(|| store.task_add(&title, project.as_deref(), now), |t| Ok(t.id)) {
+            Ok(id) => self.start_id(id, store, now),
+            Err(e) => Outcome::Stay(Some(e)),
+        }
+    }
+
+    /// Stop the running task; the status line.
+    fn stop_status(&mut self, store: &Store, now: i64) -> String {
+        match self.stop(store, now).and_then(|id| store.task_get(id)) {
+            Some(t) => format!("Stopped {}", cli::label(&t)),
+            None => "No task running".into(),
+        }
     }
 
     fn report(&self, range: &str, project: Option<&str>, store: &Store, now: i64) -> Result<Report, String> {
@@ -231,9 +294,93 @@ impl Module for Tasks {
         MIGRATIONS
     }
 
+    fn configure(&mut self, table: &Section) -> Result<(), String> {
+        self.settings = table.get::<Settings>()?;
+        Ok(())
+    }
+
+    fn items(&mut self, cx: &mut Cx) -> Vec<Item> {
+        let now = (self.env.now)();
+        let running = self.running.and_then(|id| cx.store.task_get(id));
+        let secs = running.as_ref().map_or(0, |t| self.today_secs(cx.store, now).get(&t.id).copied().unwrap_or(0));
+        view::root_items(running.as_ref().map(|t| (t, secs)))
+    }
+
+    fn open(&mut self, name: &str, _cx: &mut Cx) -> Option<ListView> {
+        match name {
+            view::PICK => Some(view::pick()),
+            view::TODAY => Some(view::today()),
+            _ => None,
+        }
+    }
+
+    fn refresh(&mut self, list: &mut ListView, cx: &mut Cx) {
+        let (store, now) = (cx.store, (self.env.now)());
+        list.items = if list.name == view::PICK {
+            let secs = self.today_secs(store, now);
+            view::pick_items(cx.query, &store.task_list(false), &secs, self.running, cx.ranker)
+        } else {
+            let running = self.running.and_then(|id| store.task_get(id));
+            self.today(store, now)
+                .map(|(range, spans)| Report::new(range, &spans, &store.task_list(true), None))
+                .map(|r| view::today_items(cx.query, &r, running.as_ref(), cx.ranker))
+                .unwrap_or_default()
+        };
+    }
+
+    fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        let (store, now) = (cx.store, (self.env.now)());
+        match id.key() {
+            "start" | "switch" => Outcome::Push(view::pick()),
+            view::TODAY => Outcome::Push(view::today()),
+            "stop" => Outcome::Stay(Some(self.stop_status(store, now))),
+            view::NEW => self.start_new(id.arg().unwrap_or_default(), store, now),
+            key => match view::task_id(key) {
+                Some(task) => self.start_id(task, store, now),
+                None => Outcome::Stay(None),
+            },
+        }
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        match view::task_id(id.key()) {
+            Some(task) => view::actions(self.running == Some(task)),
+            None => vec![],
+        }
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        let (store, now) = (cx.store, (self.env.now)());
+        let Some(task) = view::task_id(id.key()) else { return Outcome::Stay(None) };
+        match key {
+            "start" => self.start_id(task, store, now),
+            "stop" => Outcome::Stay(Some(self.stop_status(store, now))),
+            "done" => {
+                let changed = self.done(&task.to_string(), store, now);
+                Outcome::Stay(Some(self.answer(changed, false, store).unwrap_or_else(|e| e)))
+            }
+            _ => Outcome::Stay(None),
+        }
+    }
+
+    /// `hotkey` binds key `pick`.
+    fn hotkeys(&self) -> Vec<Binding> {
+        let spec = self.settings.hotkey.as_ref().filter(|s| !s.trim().is_empty());
+        spec.map(|spec| Binding { spec: spec.clone(), key: Ok(view::PICK.into()) }).into_iter().collect()
+    }
+
+    fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+        (key == view::PICK).then(view::pick)
+    }
+
+    /// `TaskChanged` (from the launcher, the CLI or a restart) makes the views stale.
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         let (store, now) = (cx.store, (self.env.now)());
         match event {
+            Event::TaskChanged { .. } => {
+                self.touch(store, now);
+                return true;
+            }
             Event::Started => self.start_up(store, now),
             Event::Sleep | Event::Locked => {
                 self.away.asleep |= event == Event::Sleep;
@@ -278,12 +425,9 @@ impl Module for Tasks {
                 self.answer(changed, cx.json, store)
             }
             Verb::Stop => {
-                let task = self.stop(store, now).and_then(|id| store.task_get(id));
-                let changed = match task {
-                    Some(t) => (format!("Stopped {}", cli::label(&t)), Some(t.id)),
-                    None => ("No task running".into(), None),
-                };
-                self.answer(Ok(changed), cx.json, store)
+                let task = self.running;
+                let message = self.stop_status(store, now);
+                self.answer(Ok((message, task)), cx.json, store)
             }
             Verb::Add { title, project } => {
                 let id = store.task_add(&title, project.as_deref(), now)?;
