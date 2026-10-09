@@ -53,7 +53,6 @@ fn main() {
 
     let launcher = config.hotkey.clone();
     let hotkeys = hotkey::init();
-    platform::workspace::track_recent();
     ui::init();
     app::init(config, store);
     if let Err(e) = hotkeys.and_then(|()| app::bind_hotkeys()) {
@@ -63,7 +62,7 @@ fn main() {
         "flick: press {launcher} to open (Accessibility: {})",
         if platform::ax::is_trusted(false) { "granted" } else { "NOT granted" }
     );
-    platform::timer::every(0.5, app::tick);
+    platform::events::start(app::on_event);
 
     macos::run();
 }
