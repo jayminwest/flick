@@ -101,6 +101,12 @@ pub trait Module {
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
         Err(unknown_verb(self.id(), args))
     }
+
+    /// `command`'s verbs for `flick help`, on one line, e.g. `toy ping | toy get <key>`.
+    /// Empty when the module has no verbs.
+    fn verbs(&self) -> &'static str {
+        ""
+    }
 }
 
 /// The error for a verb module `id` doesn't have.

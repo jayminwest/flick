@@ -12,10 +12,13 @@ const USAGE: &str = "usage: flick                              run the launcher
        flick reload                       reload config.toml
        flick events                       stream events as JSON lines
        flick snapshot <out.png> [query]
-       flick import-raycast <Quicklinks.json>
+       flick import-raycast <Quicklinks.json>";
 
-verbs: app list | app open <name> | clip list | clip get <id>
-       window list | window <action>, e.g. window left-half";
+/// `USAGE` plus every module's verbs (`Module::verbs`), one module per line.
+fn usage() -> String {
+    let verbs = crate::modules::verbs().join("\n       ");
+    format!("{USAGE}\n\nverbs: {verbs}")
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -69,11 +72,11 @@ pub fn run(command: Command) -> i32 {
         Command::Snapshot(args) => snapshot(&args),
         Command::ImportRaycast(path) => import_raycast(path.as_deref()),
         Command::Help => {
-            println!("{USAGE}");
+            println!("{}", usage());
             0
         }
         Command::Usage => {
-            eprintln!("{USAGE}");
+            eprintln!("{}", usage());
             2
         }
         Command::Events => client::events(&control::socket_path()),
@@ -157,5 +160,27 @@ mod tests {
         assert_eq!(parsed(&["events"]), Command::Events);
         assert_eq!(parsed(&["--json", "events"]), Command::Events);
         assert_eq!(parsed(&["--json"]), Command::Usage);
+    }
+
+    #[test]
+    fn usage_lists_module_verbs_in_registration_order() {
+        let text = usage();
+        let (head, verbs) = text.split_once("\n\nverbs: ").unwrap();
+        assert_eq!(head, USAGE);
+        // Only the modules pinned here; a new module's verb line is its own.
+        let known = ["app ", "window ", "clip "];
+        let lines: Vec<&str> = verbs
+            .lines()
+            .map(str::trim)
+            .filter(|l| known.iter().any(|k| l.starts_with(k)))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "app list | app open <name>",
+                "window list | window <action>, e.g. window left-half",
+                "clip list | clip get <id>",
+            ]
+        );
     }
 }
