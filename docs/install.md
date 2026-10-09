@@ -10,7 +10,7 @@ cd flick
 ./scripts/bundle.sh --install
 ```
 
-The script builds `~/Applications/Flick.app` and starts it. Press `⌥⇧Space` to open the launcher.
+The script builds `~/Applications/Flick.app` and starts it. If the build fails, the script exits non-zero and does not install or restart anything. Without `cargo` it stops with "cargo not found: install Rust with rustup"; install Rust from [rustup.rs](https://rustup.rs). Press `⌥⇧Space` to open the launcher.
 
 Window management, the window switcher, and auto-paste need Accessibility permission. macOS asks the first time you use one of them. Turn Flick on in **System Settings → Privacy & Security → Accessibility**.
 
@@ -65,7 +65,7 @@ flick flick cancel                     # stop the build that runs
 
 Details:
 
-- The build runs `scripts/bundle.sh` with `cargo build --release --locked --offline` through your login shell (`$SHELL -lc`), so `cargo` must be on your login-shell `PATH`. If it is not, the build fails with "cargo not found on login-shell PATH".
+- The build runs `scripts/bundle.sh` with `cargo build --release --locked --offline` through your login shell (`$SHELL -lc`), so `cargo` must be on your login-shell `PATH`. If it is not, the build fails with "cargo not found on login-shell PATH: install Rust with rustup".
 - The build is offline. If the checkout needs a crate that cargo has not downloaded, the build fails with a hint: run `cargo fetch` in the checkout, then rebuild.
 - Compiled output goes to `<checkout>/target/flick-rebuild`, apart from `target/`, so a rebuild does not wait on other cargo commands. It takes about 1 GB; `cargo clean --target-dir target/flick-rebuild` removes it. The exported tree is in `~/Library/Caches/Flick/rebuild`.
 - The log is `~/Library/Logs/Flick/rebuild.log`. The log of the build before it is `rebuild.log.1`.
