@@ -1,5 +1,6 @@
 //! What `activity` reads from and shows on the system: the clock, app identity, window
-//! titles (`platform::axwatch`), the menu bar indicator and the quit hook. `Env::default()`
+//! titles (`platform::axwatch`), browser tab URLs (`urls::ask`), the menu bar indicator and
+//! the quit hook. `Env::default()`
 //! is the real thing; tests swap in plain functions. Nothing here runs until the module calls
 //! it, and the module calls the title and indicator parts only while recording.
 
@@ -12,6 +13,7 @@ use crate::platform::{app, ax, axwatch, clock, events, status_item, workspace};
 use crate::core::store::{self, Store};
 
 use super::store::Spans;
+use super::urls::{self, Ask};
 
 /// What the module reads from the system and changes on it.
 pub struct Env {
@@ -31,6 +33,9 @@ pub struct Env {
     pub unfollow: fn(),
     /// Flick has Accessibility permission (titles need it).
     pub trusted: fn() -> bool,
+    /// Read a browser's front tab URL off the main thread; the answer lands in `Ask::inbox`,
+    /// followed by `ModuleChanged`. Never sends an Apple Event in tests.
+    pub ask_url: fn(Ask),
     /// Show (true) or hide the menu bar indicator.
     pub indicator: fn(bool),
     /// Close the store's open span when Flick quits. Called each time recording turns on.
@@ -51,6 +56,7 @@ impl Default for Env {
             },
             unfollow: axwatch::stop,
             trusted: || ax::is_trusted(false),
+            ask_url: urls::ask,
             indicator,
             on_quit,
         }

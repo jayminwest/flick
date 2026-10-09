@@ -1,6 +1,7 @@
-//! Table `[activity]`: privacy switches (`titles`, `remote_titles`, `exclude`), the
-//! recording `hotkey`, `merge_secs`, and `[[activity.rules]]`, which name a project and
-//! category for spans at report time (never stored, so editing a rule recategorizes history).
+//! Table `[activity]`: privacy switches (`titles`, `urls`, `remote_titles`, `remote_urls`,
+//! `exclude`), the recording `hotkey`, `merge_secs`, and `[[activity.rules]]`, which name a
+//! project and category for spans at report time (never stored, so editing a rule
+//! recategorizes history).
 
 use regex_lite::{Regex, RegexBuilder};
 use serde::Deserialize;
@@ -14,9 +15,12 @@ const EXCLUDE: [&str; 3] =
 
 #[derive(Deserialize)]
 #[serde(default)]
+#[expect(clippy::struct_excessive_bools, reason = "one bool per [activity] privacy key")]
 struct Settings {
     titles: bool,
+    urls: bool,
     remote_titles: bool,
+    remote_urls: bool,
     exclude: Vec<String>,
     hotkey: String,
     merge_secs: i64,
@@ -27,7 +31,9 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             titles: false,
+            urls: false,
             remote_titles: false,
+            remote_urls: false,
             exclude: EXCLUDE.map(String::from).to_vec(),
             hotkey: String::new(),
             merge_secs: MERGE_SECS,
@@ -62,11 +68,16 @@ impl Rule {
 }
 
 /// The parsed `[activity]` table.
+#[expect(clippy::struct_excessive_bools, reason = "one bool per [activity] privacy key")]
 pub struct Config {
     /// Read and store window titles (off: Flick never reads them).
     pub titles: bool,
+    /// Read and store a supported browser's front tab URL (off: Flick never asks).
+    pub urls: bool,
     /// Remote callers (`Cx::remote`) with a grant see window titles (off: titles dropped).
     pub remote_titles: bool,
+    /// Remote callers with a grant see URLs and domains (off: both dropped).
+    pub remote_urls: bool,
     /// Lowercased bundle ids and app names never recorded.
     exclude: Vec<String>,
     pub hotkey: Option<String>,
@@ -79,7 +90,9 @@ impl Default for Config {
         let s = Settings::default();
         Config {
             titles: s.titles,
+            urls: s.urls,
             remote_titles: s.remote_titles,
+            remote_urls: s.remote_urls,
             exclude: s.exclude.iter().map(|e| e.to_lowercase()).collect(),
             hotkey: None,
             merge_secs: s.merge_secs,
@@ -91,6 +104,11 @@ impl Default for Config {
 impl Config {
     pub fn parse(table: &Section) -> Result<Config, String> {
         compile(table.get()?).map_err(|e| format!("[activity]: {e}"))
+    }
+
+    /// The front app's window is followed for changes: titles or URLs are on.
+    pub fn follows(&self) -> bool {
+        self.titles || self.urls
     }
 
     /// App `app` (bundle id) named `name` is never recorded.
@@ -136,7 +154,9 @@ fn compile(s: Settings) -> Result<Config, String> {
         .collect::<Result<_, String>>()?;
     Ok(Config {
         titles: s.titles,
+        urls: s.urls,
         remote_titles: s.remote_titles,
+        remote_urls: s.remote_urls,
         exclude: s.exclude.iter().map(|e| e.to_lowercase()).collect(),
         hotkey: Some(s.hotkey).filter(|h| !h.trim().is_empty()),
         merge_secs: s.merge_secs,
@@ -157,6 +177,7 @@ mod tests {
     fn defaults_are_private() {
         let c = config("").unwrap();
         assert!(!c.titles, "titles stay off unless configured");
+        assert!(!c.urls && !c.remote_urls && !c.follows(), "URLs stay off unless configured");
         assert!(c.excludes("com.agilebits.onepassword7", "1Password 7"));
         assert!(c.excludes("COM.APPLE.KEYCHAINACCESS", "Keychain Access"));
         assert!(!c.excludes("com.apple.Safari", "Safari"));
@@ -171,6 +192,8 @@ mod tests {
         )
         .unwrap();
         assert!(c.titles && c.excludes("x", "mail") && !c.excludes("com.agilebits.onepassword7", ""));
+        let u = config("[activity]\nurls = true\nremote_urls = true").unwrap();
+        assert!(u.urls && u.remote_urls && !u.titles && u.follows());
         assert_eq!((c.hotkey.as_deref(), c.merge_secs), (Some("cmd+F9"), 0));
         let err = config("[activity]\nmerge_secs = -1").err().unwrap();
         assert_eq!(err, "[activity]: merge_secs must not be negative");

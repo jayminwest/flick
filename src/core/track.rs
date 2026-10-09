@@ -8,16 +8,20 @@
 pub const MERGE_SECS: i64 = 2;
 /// Longest stored title, in chars.
 pub const TITLE_MAX: usize = 256;
+/// Longest stored URL, in chars; a longer one is dropped, not cut.
+pub const URL_MAX: usize = 2048;
 
 /// What a span is about: an app (bundle id and display name), its window title when
-/// titles are on, and the running task, if any. Build it with `Subject::new` so the title
-/// is normalized and equal titles compare equal.
+/// titles are on, the browser's front tab URL when URLs are on, and the running task, if
+/// any. Build it with `Subject::new` so the title is normalized and equal titles compare
+/// equal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Subject {
     pub app: String,
     pub name: String,
     pub title: Option<String>,
     pub task: Option<i64>,
+    pub url: Option<String>,
 }
 
 impl Subject {
@@ -27,7 +31,15 @@ impl Subject {
             name: name.to_owned(),
             title: title.and_then(normalize_title),
             task,
+            url: None,
         }
+    }
+
+    /// This subject with front tab URL `url`, trimmed; blank or longer than `URL_MAX`: none.
+    #[must_use]
+    pub fn with_url(self, url: Option<&str>) -> Self {
+        let url = url.map(str::trim).filter(|u| !u.is_empty() && u.chars().count() <= URL_MAX);
+        Subject { url: url.map(str::to_owned), ..self }
     }
 }
 
@@ -291,6 +303,19 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a.title.as_deref(), Some("job"));
         assert_eq!(Subject::new("x", "X", Some("⠋"), None).title, None);
+    }
+
+    #[test]
+    fn with_url_trims_and_drops_blank_or_long_urls() {
+        let s = Subject::new("b", "B", None, None);
+        assert_eq!(s.url, None);
+        let u = s.clone().with_url(Some(" https://a.dev/x \n"));
+        assert_eq!(u.url.as_deref(), Some("https://a.dev/x"));
+        assert_ne!(u, s, "a URL change is a subject change");
+        assert_eq!(s.clone().with_url(Some("  ")).url, None);
+        assert_eq!(s.clone().with_url(None).url, None);
+        let long = format!("https://a.dev/{}", "x".repeat(URL_MAX));
+        assert_eq!(s.with_url(Some(&long)).url, None);
     }
 
     #[test]
