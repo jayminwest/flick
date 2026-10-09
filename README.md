@@ -202,6 +202,44 @@ Limits:
 
 [docs/keys.md](docs/keys.md) has the steps to move from Hyperkey and Hammerspoon, and a manual test checklist.
 
+### Activity
+
+The `activity` module records which app is in front, as time spans, and reports where your day went. It replaces trackers such as Rize, and it keeps the data on this Mac.
+
+Recording is off until you turn it on: run **Start Activity Recording** from the launcher, `flick activity on`, or the optional hotkey. While it records, a `●` shows in the menu bar; its menu has **Stop Recording**. The on/off state survives reloads and restarts. **Activity Today** in the launcher shows today's totals.
+
+```toml
+[activity]
+titles = false                     # the default; true also stores window titles
+exclude = ["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess"]
+hotkey = "cmd+ctrl+alt+shift+KeyR" # toggles recording; unbound by default
+merge_secs = 2                     # a span shorter than this is dropped when focus moves on (alt-tab)
+
+[[activity.rules]]                 # report-time grouping; the first match wins
+app = "wezterm|zed"                # regex on the bundle id or app name, any case
+title = "flick"                    # optional regex on the window title
+project = "flick"
+category = "code"
+```
+
+```bash
+flick activity status              # recording, titles, the open span
+flick activity today               # totals by category, project and app; `week` for 7 days
+flick activity spans --since 2026-10-01   # <start>\t<duration>\t<app>\t<bundle id>\t<title>
+flick --json activity today | jq .ok.by_app
+flick activity forget today --yes  # also: forget all --yes, forget app <bundle id> --yes
+```
+
+Privacy:
+
+- **What.** Each span is a start, an end, the app's bundle id and name and, only with `titles = true`, the focused window's title (spinner glyphs stripped, at most 256 characters). With `titles = false` Flick never reads a title and installs no Accessibility observer. Titles need Accessibility; without it `flick activity status` says `titles: no Accessibility permission` and spans stay per app.
+- **Not recorded.** Apps in `exclude` (matched by bundle id or name) leave a gap, not a row. Setting `exclude` replaces the default list, so keep the password managers in it. Idle time (60 s without input; the span ends at the last input), a locked screen and sleep are not recorded either.
+- **Where.** Tables `activity_spans` and `activity_state` in `~/Library/Application Support/Flick/flick.db`. The module has no network code. The only way in from outside is the mode-0600 control socket.
+- **Delete.** `flick activity forget today|all|app <bundle id> --yes`. `forget all` empties both tables, turns recording off and runs `VACUUM`, so the rows leave the file. Data stays until you delete it.
+- **Rules** apply when a report runs and are never stored, so a rule edit regroups past spans too.
+
+Limits: idle detection runs every 5 s, so it can lag by that much, and a long video with no input counts as idle. A crash loses the time since the last event. Quit (**Quit Flick**, SIGTERM from launchd or `kill`) closes the open span. [docs/activity.md](docs/activity.md) has a manual test checklist.
+
 ### Rebuild settings
 
 ```toml
@@ -260,7 +298,7 @@ The protocol is one JSON array of strings per line, `["<module>","<verb>",args..
 
 | Path | Role |
 |---|---|
-| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
+| [`modules/`](src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, activity. Registered in [`modules/mod.rs`](src/modules/mod.rs) |
 | [`core/`](src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
@@ -280,7 +318,7 @@ macOS has no public API for Spaces. Flick switches desktops by activating an app
 
 `flick snapshot <out.png> [query]` draws the launcher to a PNG without showing it. It uses the default config and an empty database, so the screenshots hold no personal data.
 
-Flick keeps usage and clipboard data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions.
+Flick keeps usage, clipboard and activity data in `~/Library/Application Support/Flick/flick.db`. It sends nothing over the network, except the HTTP requests that you configure as key trigger actions.
 
 ## Roadmap
 
