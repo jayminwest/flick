@@ -96,8 +96,10 @@ current one: there is one level of views, not a stack.
 ## Events and the main thread
 
 `Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
-`PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`. Each serializes as
-`{"event":"<snake_case>",...}`.
+`PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
+`ModuleChanged { module }`. Each serializes as `{"event":"<snake_case>",...}`.
+`ModuleChanged` is a module's background thread reporting progress (`events::post`); the
+named module's view is stale whatever its `on_event` returns.
 
 Sources:
 
