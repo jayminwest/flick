@@ -10,7 +10,13 @@
 //! default). Captures from items and hotkeys run on the worker thread (`run.rs`) and land
 //! on `ModuleChanged`; `flick capture screen|display|rect` run on the main thread and answer
 //! with the file.
+//!
+//! Annotation and drawing on the screen (`annotate.rs`) add `colors` (hex, up to 5), `width`,
+//! `fade_secs`, `halo_color`, `halo_radius` and `annotate_hotkey`, `draw_hotkey`,
+//! `cursor_hotkey`.
 
+mod annotate;
+mod args;
 mod name;
 mod run;
 mod store;
@@ -25,8 +31,9 @@ use crate::config::Section;
 use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::capture::{self, Error, Request, Shot, Target};
 use crate::platform::{clock, events, files, pasteboard, workspace};
-use crate::platform::Rect;
 use crate::store::{Store, now};
+use annotate::{INK_ENV, Ink, InkEnv};
+use args::{last, list, options, parse_limit, parse_rect};
 use run::{Job, Worker};
 use store::{MIGRATIONS, Row, Shots};
 
@@ -51,6 +58,14 @@ struct Settings {
     area_hotkey: Option<String>,
     window_hotkey: Option<String>,
     screen_hotkey: Option<String>,
+    colors: Vec<String>,
+    width: f32,
+    fade_secs: f32,
+    halo_color: String,
+    halo_radius: f64,
+    annotate_hotkey: Option<String>,
+    draw_hotkey: Option<String>,
+    cursor_hotkey: Option<String>,
 }
 
 impl Default for Settings {
@@ -67,6 +82,14 @@ impl Default for Settings {
             area_hotkey: None,
             window_hotkey: None,
             screen_hotkey: None,
+            colors: annotate::COLORS.map(String::from).to_vec(),
+            width: 4.0,
+            fade_secs: 0.0,
+            halo_color: annotate::HALO.into(),
+            halo_radius: 28.0,
+            annotate_hotkey: None,
+            draw_hotkey: None,
+            cursor_hotkey: None,
         }
     }
 }
@@ -87,6 +110,7 @@ struct Env {
     open: fn(&Path),
     reveal: fn(&Path),
     trash: fn(&Path) -> Result<PathBuf, String>,
+    ink: InkEnv,
 }
 
 const ENV: Env = Env {
@@ -100,6 +124,7 @@ const ENV: Env = Env {
     open: if cfg!(test) { |_| {} } else { workspace::open_file },
     reveal: if cfg!(test) { |_| {} } else { workspace::reveal },
     trash: if cfg!(test) { |_| Err("tests never use the Trash".into()) } else { files::trash },
+    ink: INK_ENV,
 };
 
 /// The real shutter: make the folder, then run screencapture.
@@ -126,13 +151,14 @@ pub struct Capture {
     dir: PathBuf,
     worker: Worker,
     env: Env,
+    ink: Ink,
 }
 
 impl Default for Capture {
     fn default() -> Self {
         let settings = Settings::default();
         let dir = name::expand(&settings.dir, dirs::home_dir().as_deref());
-        Capture { settings, dir, worker: Worker::default(), env: ENV }
+        Capture { settings, dir, worker: Worker::default(), env: ENV, ink: Ink::default() }
     }
 }
 
@@ -149,7 +175,7 @@ impl Capture {
     /// A job for `target`: into `out`, else a fresh name in `dir` (or the temp dir when
     /// `save` is off, unrecorded).
     fn job(&self, target: Target, out: Option<PathBuf>, copy: bool) -> Job {
-        let kind = kind(target);
+        let kind = args::kind(target);
         let record = self.settings.save || out.is_some();
         let path = out.unwrap_or_else(|| {
             let ts = now();
@@ -163,11 +189,12 @@ impl Capture {
         });
         let s = &self.settings;
         let req = Request { target, path, cursor: s.cursor, shadow: s.shadow, sound: s.sound };
-        Job { req, kind, copy, record, wait: Duration::ZERO }
+        Job { req, kind, copy, record, annotate: false, wait: Duration::ZERO }
     }
 
-    /// Start an interactive or screen capture on the worker, with the launcher hidden.
-    fn start(&mut self, target: Target, cx: &mut Cx) -> Outcome {
+    /// Start an interactive or screen capture on the worker, with the launcher hidden;
+    /// `annotate` opens the editor on the shot (which then copies it, not the shutter).
+    fn start(&mut self, target: Target, annotate: bool, cx: &mut Cx) -> Outcome {
         if let Err(e) = self.allowed() {
             return Outcome::Stay(Some(e));
         }
@@ -176,6 +203,7 @@ impl Capture {
         }
         cx.hide();
         let mut job = self.job(target, None, self.settings.copy);
+        job.annotate = annotate;
         if target == Target::Screen {
             // The worker cannot ask AppKit where the mouse is; the launcher must be gone
             // from the picture.
@@ -191,7 +219,8 @@ impl Capture {
     /// Copy and record a finished shot.
     fn finish(&self, job: &Job, result: Result<Shot, Error>, store: &Store) -> Result<Taken, Error> {
         let shot = result?;
-        let copied = job.copy && self.copy_image(&shot.path).is_ok();
+        // An editor opens on a shot to annotate; it copies the result instead.
+        let copied = job.copy && !job.annotate && self.copy_image(&shot.path).is_ok();
         if job.record {
             let row = Row {
                 id: 0,
@@ -217,9 +246,12 @@ impl Capture {
     /// `screen`, `display <n>` and `rect <x,y,w,h>`: capture on this thread and answer with
     /// the file.
     fn shoot_now(&self, target: Target, opts: &[String], cx: &mut Cx) -> Result<String, String> {
-        let (out, no_copy) = options(opts)?;
+        let opts = options(opts)?;
+        if opts.annotate {
+            return Err("capture: --annotate works with area and window".into());
+        }
         self.allowed().map_err(|e| format!("capture: {e}"))?;
-        let job = self.job(target, out, self.settings.copy && !no_copy);
+        let job = self.job(target, opts.out, self.settings.copy && !opts.no_copy);
         let result = (self.env.shoot)(&job.req);
         let taken = self.finish(&job, result, cx.store).map_err(|e| format!("capture: {e}"))?;
         if cx.json {
@@ -230,84 +262,15 @@ impl Capture {
 
     /// `area` and `window`: start the selection and answer at once.
     fn shoot_later(&self, target: Target, opts: &[String]) -> Result<String, String> {
-        let (out, no_copy) = options(opts)?;
+        let opts = options(opts)?;
         self.allowed().map_err(|e| format!("capture: {e}"))?;
-        let job = self.job(target, out, self.settings.copy && !no_copy);
+        let mut job = self.job(target, opts.out, self.settings.copy && !opts.no_copy);
+        job.annotate = opts.annotate;
         self.worker.start(job, self.env.shoot, self.env.notify).map_err(|e| format!("capture: {e}"))?;
         Ok(if target == Target::Area { "Select an area" } else { "Select a window" }.into())
     }
-
 }
 
-/// `ls [--limit n]` and `last`.
-fn list(limit: u32, cx: &Cx) -> Result<String, String> {
-    let rows = view::live_shots(cx.store, limit);
-    if cx.json {
-        return serde_json::to_string(&rows).map_err(|e| format!("capture: {e}"));
-    }
-    let line = |r: &Row| format!("{}\t{}\t{}x{}", r.id, r.path, r.width, r.height);
-    Ok(rows.iter().map(line).collect::<Vec<_>>().join("\n"))
-}
-
-/// `last`: the newest capture.
-fn last(cx: &Cx) -> Result<String, String> {
-    let row = view::live_shots(cx.store, 1).into_iter().next().ok_or("capture: no captures yet")?;
-    if cx.json {
-        return serde_json::to_string(&row).map_err(|e| format!("capture: {e}"));
-    }
-    Ok(row.path)
-}
-
-/// The store's name for what `target` captures.
-fn kind(target: Target) -> &'static str {
-    match target {
-        Target::Area => "area",
-        Target::Window => "window",
-        Target::Screen => "screen",
-        Target::Display(_) => "display",
-        Target::Rect(_) => "rect",
-    }
-}
-
-/// `--out <absolute path>` and `--no-copy`.
-fn options(args: &[String]) -> Result<(Option<PathBuf>, bool), String> {
-    let (mut out, mut no_copy) = (None, false);
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--no-copy" => no_copy = true,
-            "--out" => {
-                let path = args.next().ok_or("capture: --out needs a path")?;
-                let path = name::expand(path, dirs::home_dir().as_deref());
-                if !path.is_absolute() {
-                    return Err("capture: --out needs an absolute path".into());
-                }
-                out = Some(path);
-            }
-            other => return Err(format!("capture: unknown option {other:?}")),
-        }
-    }
-    Ok((out, no_copy))
-}
-
-/// `x,y,w,h` in points, top-left origin; width and height above zero.
-fn parse_rect(text: &str) -> Result<Rect, String> {
-    let bad = || format!("capture: bad rect {text:?} (want x,y,w,h)");
-    let nums: Vec<f64> = text.split(',').map(|n| n.trim().parse().map_err(|_| bad())).collect::<Result<_, _>>()?;
-    match nums[..] {
-        [x, y, w, h] if w > 0.0 && h > 0.0 => Ok(Rect { x, y, w, h }),
-        _ => Err(bad()),
-    }
-}
-
-/// `--limit n` (default 20).
-fn parse_limit(args: &[String]) -> Result<u32, String> {
-    match args {
-        [] => Ok(20),
-        [flag, n] if flag == "--limit" => n.parse().map_err(|_| format!("capture: bad limit {n:?}")),
-        _ => Err("capture: usage: capture ls [--limit n]".into()),
-    }
-}
 
 impl Module for Capture {
     fn id(&self) -> &'static str {
@@ -327,13 +290,14 @@ impl Module for Capture {
         if !settings.save && !settings.copy {
             return Err("[capture]: save and copy are both off, so a capture would go nowhere".into());
         }
+        self.ink = Ink::new(&settings)?;
         self.dir = name::expand(&settings.dir, dirs::home_dir().as_deref());
         self.settings = settings;
         Ok(())
     }
 
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
-        view::root_items(&self.dir)
+        view::root_items(&self.dir, self.ink_items())
     }
 
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
@@ -346,10 +310,20 @@ impl Module for Capture {
 
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
         match id.key() {
-            "area" => self.start(Target::Area, cx),
-            "window" => self.start(Target::Window, cx),
-            "screen" => self.start(Target::Screen, cx),
+            "area" => self.start(Target::Area, false, cx),
+            "area-annotate" => self.start(Target::Area, true, cx),
+            "window" => self.start(Target::Window, false, cx),
+            "screen" => self.start(Target::Screen, false, cx),
             "recent" => Outcome::Push(view::recent()),
+            "draw" | "cursor" | "clear" => {
+                cx.hide();
+                match id.key() {
+                    "draw" => self.set_drawing(!(self.env.ink.drawing)()),
+                    "cursor" => self.set_cursor(!(self.env.ink.cursor)()),
+                    _ => (self.env.ink.clear)(),
+                }
+                Outcome::Hide
+            }
             key => match view::shot_id(key).and_then(|id| cx.store.shot(id)) {
                 Some(row) => {
                     cx.hide();
@@ -385,6 +359,13 @@ impl Module for Capture {
                 Outcome::Hide
             }
             "trash" => Outcome::Confirm(view::confirm_trash(&row)),
+            "annotate" => match self.edit(path, Some(annotate::annotated(path)), self.settings.copy) {
+                Ok(()) => {
+                    cx.hide();
+                    Outcome::Hide
+                }
+                Err(e) => Outcome::Stay(Some(e)),
+            },
             _ => Outcome::Stay(None),
         }
     }
@@ -401,24 +382,41 @@ impl Module for Capture {
         }
     }
 
-    /// Finished captures from the worker: copy and record them; Recent Captures is stale.
+    /// Finished captures from the worker: copy and record them, and open the editor on those
+    /// to annotate; a closed editor's copy is recorded. Recent Captures is stale.
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
+        if event == Event::DisplaysChanged {
+            (self.env.ink.relayout)();
+        }
         if event != (Event::ModuleChanged { module: "capture" }) {
             return false;
         }
         for done in self.worker.drain() {
-            match self.finish(&done.job, done.result, cx.store) {
-                Ok(_) | Err(Error::Cancelled) => {}
-                Err(Error::Failed(e)) => eprintln!("flick: capture: {e}"),
+            let shot = self.finish(&done.job, done.result, cx.store);
+            let edit = match shot {
+                Ok(taken) if done.job.annotate => self.edit(Path::new(&taken.path), None, done.job.copy),
+                Ok(_) | Err(Error::Cancelled) => Ok(()),
+                Err(Error::Failed(e)) => Err(format!("capture: {e}")),
+            };
+            if let Err(e) = edit {
+                eprintln!("flick: {e}");
             }
         }
+        self.edited(cx.store);
         true
     }
 
     fn hotkeys(&self) -> Vec<Binding> {
         let s = &self.settings;
-        [("area", &s.area_hotkey), ("window", &s.window_hotkey), ("screen", &s.screen_hotkey)]
-            .into_iter()
+        [
+            ("area", &s.area_hotkey),
+            ("window", &s.window_hotkey),
+            ("screen", &s.screen_hotkey),
+            ("annotate", &s.annotate_hotkey),
+            ("draw", &s.draw_hotkey),
+            ("cursor", &s.cursor_hotkey),
+        ]
+        .into_iter()
             .filter_map(|(key, spec)| {
                 let spec = spec.as_ref().filter(|s| !s.trim().is_empty())?;
                 Some(Binding { spec: spec.clone(), key: Ok(key.into()) })
@@ -426,22 +424,31 @@ impl Module for Capture {
             .collect()
     }
 
-    /// Starts a capture; the launcher stays as it is (hidden).
+    /// Starts a capture or toggles drawing or the halo; the launcher stays as it is (hidden).
     fn hotkey(&mut self, key: &str, cx: &mut Cx) -> Option<ListView> {
-        let target = match key {
-            "area" => Target::Area,
-            "window" => Target::Window,
-            "screen" => Target::Screen,
+        let (target, annotate) = match key {
+            "area" => (Target::Area, false),
+            "annotate" => (Target::Area, true),
+            "window" => (Target::Window, false),
+            "screen" => (Target::Screen, false),
+            "draw" => {
+                self.set_drawing(!(self.env.ink.drawing)());
+                return None;
+            }
+            "cursor" => {
+                self.set_cursor(!(self.env.ink.cursor)());
+                return None;
+            }
             _ => return None,
         };
-        if let Outcome::Stay(Some(e)) = self.start(target, cx) {
+        if let Outcome::Stay(Some(e)) = self.start(target, annotate, cx) {
             eprintln!("flick: capture: {e}");
         }
         None
     }
 
     fn verbs(&self) -> &'static str {
-        "capture area|window|screen [--out <path>] [--no-copy] | capture display <n> | capture rect <x,y,w,h> | capture ls [--limit n] | capture last"
+        "capture area|window [--annotate] | capture screen [--out <path>] [--no-copy] | capture display <n> | capture rect <x,y,w,h> | capture ls [--limit n] | capture last | capture draw on|off|toggle|clear | capture cursor on|off|toggle | capture annotate <path>"
     }
 
     /// `--json` (`cx.json`) makes `screen`, `display`, `rect` answer `{"path","width",
@@ -459,6 +466,9 @@ impl Module for Capture {
             [v, xywh, rest @ ..] if v == "rect" => self.shoot_now(Target::Rect(parse_rect(xywh)?), rest, cx),
             [v, rest @ ..] if v == "ls" => list(parse_limit(rest)?, cx),
             [v] if v == "last" => last(cx),
+            [v, arg] if v == "draw" => self.draw_verb(arg),
+            [v, arg] if v == "cursor" => self.cursor_verb(arg),
+            [v, path] if v == "annotate" => self.annotate_verb(path),
             _ => Err(unknown_verb("capture", args)),
         }
     }

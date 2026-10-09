@@ -18,6 +18,8 @@ pub struct Job {
     pub copy: bool,
     /// Record a row in `capture_shots` (false for a clipboard-only temp file).
     pub record: bool,
+    /// Open the annotation editor on the shot once it lands.
+    pub annotate: bool,
     /// Pause before the shutter, so a launcher hidden just now is off the screen.
     pub wait: Duration,
 }
@@ -97,7 +99,7 @@ mod tests {
             shadow: true,
             sound: false,
         };
-        Job { req, kind: "area", copy: true, record: true, wait: Duration::ZERO }
+        Job { req, kind: "area", copy: true, record: true, annotate: false, wait: Duration::ZERO }
     }
 
     fn settle(w: &Worker) {

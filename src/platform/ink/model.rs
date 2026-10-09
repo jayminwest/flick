@@ -120,13 +120,13 @@ impl Canvas {
     }
 
     /// Finished shapes, oldest first.
-    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)"))]
+    #[cfg(test)]
     pub fn shapes(&self) -> &[Shape] {
         &self.shapes
     }
 
     /// The shape being dragged, if any.
-    #[cfg_attr(not(test), expect(dead_code, reason = "wired in flick-abc0 step 6 (flick-2759)"))]
+    #[cfg(test)]
     pub fn active(&self) -> Option<&Shape> {
         self.drag.as_ref()
     }

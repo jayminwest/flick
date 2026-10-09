@@ -139,7 +139,17 @@ fn capture_ids_are_fixed_keys() {
     let items = root_items(&[], &[]);
     let capture: Vec<&str> =
         ids(&items).into_iter().filter(|id| id.starts_with("capture:")).collect();
-    assert_eq!(capture, ["capture:area", "capture:window", "capture:screen", "capture:recent"]);
+    let want = [
+        "capture:area",
+        "capture:window",
+        "capture:screen",
+        "capture:area-annotate",
+        "capture:draw",
+        "capture:cursor",
+        "capture:recent",
+    ];
+    assert_eq!(capture, want);
+    // `capture:clear` (Clear Drawing) shows only while shapes are on the screen.
     // Recent Captures rows are `capture:shot/<row id>`.
     let file = std::env::temp_dir().join(format!("flick-char-{}-shot.png", std::process::id()));
     std::fs::write(&file, b"png").unwrap();
