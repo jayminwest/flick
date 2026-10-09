@@ -3,10 +3,6 @@
 
 use super::{Action, Confirm, Cx, Form, ItemId, Outcome, Registry};
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the controller shows forms, actions and confirms in flick-1875")
-)]
 impl Registry {
     /// Build form `name` of `module`. An unknown module has no forms.
     pub fn form(&mut self, module: &str, name: &str, cx: &mut Cx) -> Option<Form> {

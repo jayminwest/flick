@@ -16,6 +16,7 @@ pub struct Action {
 
 impl Action {
     /// An action with no shortcut hint.
+    #[cfg_attr(not(test), expect(dead_code, reason = "modules call it from flick-37d5 on"))]
     pub fn new(key: &'static str, title: impl Into<String>, icon: Icon) -> Action {
         Action { key, title: title.into(), icon, shortcut_hint: "" }
     }
