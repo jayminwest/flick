@@ -606,8 +606,14 @@ writes a commented default (`DEFAULT_CONFIG`).
   replaces the base's only when the overlay sets it. No overlay file: the result is exactly
   `parse(config.toml)`. Overlay errors name the overlay path; module-table errors name
   `Config::files` (`config.toml + config.<host>.toml`). No file watching: reload re-reads
-  both. `config::edit` and the Raycast import write config.toml only. `flick config path`
-  (in-process) prints both paths (`overlay::report`).
+  both. `flick config path` (in-process) prints both paths (`overlay::report`).
+- Which file (`src/config/target.rs`): `entries_file(base, host, module, key)` is the overlay
+  when it exists and sets `[<module>] <key>` (after legacy mapping) or does not load, else
+  config.toml; `config::edit::edit_entries`/`edit_in` and the Raycast import write there.
+  `files_to_open` (Open Flick Config) is config.toml then the overlay if present, each
+  resolved through symlinks. `writable` refuses a file that resolves under `/nix/store`
+  (home-manager `source =`) or is read-only, with an error naming both paths; a link chain
+  through the store that ends outside it (`mkOutOfStoreSymlink`) writes the real file.
 
 - `config.example.toml` (repo root, embedded by `src/config/example.rs`, printed by `flick
   config example`) lists every table and key, commented out, with its default. A setting line
@@ -650,7 +656,7 @@ writes a commented default (`DEFAULT_CONFIG`).
   blank lines and key order outside that entry do not change. Replace and remove also look in
   the legacy array that `LEGACY` maps there; append always writes the table form. It re-reads
   the file each time, refuses a file or a result that `parse` rejects, writes through a
-  symlink, and replaces the file atomically (temp file, fsync, rename). It does not reload:
+  symlink (unless `target::writable` refuses it), and replaces the file atomically (temp file, fsync, rename). It does not reload:
   the caller updates its own state.
 
 ## Control socket and CLI
