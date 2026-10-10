@@ -27,7 +27,7 @@ The [fleet](sys.md) reads a `via = "flick"` machine through that Mac's Flick, so
 peers = ["jaymins-macbook-pro"]   # the laptop's Tailscale machine name (`tailscale status`)
 ```
 
-Then reload and run `flick remote on` there once (the switch survives restarts). mbp-server's Flick must be new enough to have `sys snapshot`. Until then, or while its network access is off, the laptop falls back to ssh when the machine has `ssh` set. When one `config.toml` is shared between both Macs, list both names (`peers = ["mbp-server", "jaymins-macbook-pro"]`): naming itself does no harm, and network access stays off on each Mac until `flick remote on` there. A peer only reads the fleet's data: `sys tail` and `sys restart` are refused over the network, and the laptop runs them over ssh.
+Then reload and run `flick remote on` there once (the switch survives restarts). mbp-server's Flick must be new enough to have `sys snapshot`. Until then, or while its network access is off, the laptop falls back to ssh when the machine has `ssh` set. When one `config.toml` is shared between both Macs, list both names (`peers = ["mbp-server", "jaymins-macbook-pro"]`), or give each Mac its own `peers` in its [per-host overlay](configuration.md#per-host-overlay): naming itself does no harm, and network access stays off on each Mac until `flick remote on` there. A peer only reads the fleet's data: `sys tail` and `sys restart` are refused over the network, and the laptop runs them over ssh.
 
 ## Setup and manual tests
 

@@ -61,7 +61,7 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
 
 /// The modules `config` sets up; an error names the file and the bad table.
 fn registry(config: &Config) -> Result<Registry, String> {
-    modules::registry(config).map_err(|e| format!("{}: {e}", config::config_path().display()))
+    modules::registry(config).map_err(|e| format!("{}: {e}", config.files(&config::config_path())))
 }
 
 /// The modules `build` sets up from `config`. A bad module table means defaults, like a
@@ -269,7 +269,7 @@ impl State {
     fn reload(&mut self) -> Result<String, String> {
         let config = config::load()?;
         let started = modules::reload(&mut self.registry, &config)
-            .map_err(|e| format!("{}: {e}", config::config_path().display()))?;
+            .map_err(|e| format!("{}: {e}", config.files(&config::config_path())))?;
         self.env.config = config;
         if let Err(e) = self.registry.migrate(&self.env.store) {
             eprintln!("flick: store migration failed: {e}");

@@ -183,10 +183,10 @@ fn a_missing_file_gets_the_default_and_a_bad_one_names_its_path() {
     let dir = std::env::temp_dir().join(format!("flick-config-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("sub/config.toml");
-    assert_eq!(load_from(&path).unwrap().hotkey, "alt+shift+Space");
+    assert_eq!(load_from(&path, None).unwrap().hotkey, "alt+shift+Space");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_CONFIG);
     std::fs::write(&path, "hotkey = 1").unwrap();
-    let err = load_from(&path).unwrap_err();
+    let err = load_from(&path, None).unwrap_err();
     assert!(err.starts_with(&path.display().to_string()), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -198,4 +198,20 @@ fn the_config_path_is_flick_config_or_under_dot_config() {
         Some(env) => assert_eq!(path.as_os_str(), env),
         None => assert!(path.ends_with(".config/flick/config.toml"), "{}", path.display()),
     }
+}
+
+#[test]
+fn load_merges_the_hosts_overlay_from_disk() {
+    let dir = std::env::temp_dir().join(format!("flick-config-overlay-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("config.toml");
+    std::fs::write(&path, "hotkey = \"cmd+K\"\n[kota]\nhost = \"a\"").unwrap();
+    std::fs::write(dir.join("config.mbp.toml"), "[kota]\nhost = \"b\"").unwrap();
+    let host =
+        |c: &Config| c.section("kota").unwrap().unwrap().get::<Table>().unwrap()["host"].clone();
+    assert_eq!(host(&load_from(&path, Some("mbp")).unwrap()), Value::from("b"));
+    assert_eq!(host(&load_from(&path, Some("other")).unwrap()), Value::from("a"));
+    assert_eq!(host(&load_from(&path, None).unwrap()), Value::from("a"));
+    let _ = std::fs::remove_dir_all(&dir);
 }
