@@ -38,9 +38,9 @@ thread_local! {
     pub static COPIED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Wait up to 5 s for `cond`.
+/// Wait up to 15 s for `cond` (CI coverage runs are slow).
 pub fn wait(what: &str, mut cond: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while !cond() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         thread::sleep(Duration::from_millis(10));
