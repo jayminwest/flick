@@ -192,10 +192,12 @@ fn plain_text() {
               + three [](https://u.v) and [not a link] and [a](b\n#tag stays\n### \n__done__\n\n";
     assert_eq!(
         plain(md),
-        "Deploy\n\nShip v2 to prod?\n\n• one\n  • two docs\n• three https://u.v and [not a link] \
-         and [a](b\n#tag stays\n\ndone"
+        "Deploy\n\nShip v2 to prod?\n\n• one\n  • two docs (https://x.y)\n• three https://u.v and \
+         [not a link] and [a](b\n#tag stays\n\ndone"
     );
-    assert_eq!(plain("[x [y](z)"), "[x y");
+    assert_eq!(plain("[x [y](z)"), "[x y (z)");
+    assert_eq!(plain("[**a** b](u) c [u](u)"), "a b (u) c u");
+    assert_eq!(plain("see https://a.b/c."), "see https://a.b/c.");
     assert_eq!(plain("é- not a bullet"), "é- not a bullet");
     assert_eq!(plain(""), "");
     assert_eq!(
