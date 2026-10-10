@@ -235,3 +235,22 @@ fn script_ids_are_the_name() {
     assert_eq!(script(test_cx("", |cx| registry.items(cx))), ["script:Ask KOTA", "script:Lock"]);
     assert_eq!(script(test_cx("k hi", |cx| registry.direct(cx))), ["script:Ask KOTA"]);
 }
+
+#[test]
+fn sys_ids_are_fixed_keys() {
+    // Hidden with no [[sys.machine]] (the default), so root search above is unchanged; with
+    // machines it is `sys:fleet` (flick-9eb1). Rows in `sys/fleet` and `sys/machine` are
+    // `sys:machine/<name>`, `sys:service/<machine>/<service>`, `sys:head`, `sys:fact/<n>`,
+    // `sys:check/<service>` and `sys:agents`; those views do not record use.
+    let sys = |items: Vec<Item>| {
+        items
+            .into_iter()
+            .map(|i| i.id.to_string())
+            .filter(|id| id.starts_with("sys:"))
+            .collect::<Vec<_>>()
+    };
+    assert!(sys(root_items(&[], &[])).is_empty());
+    let text = "[[sys.machine]]\nname = \"laptop\"\nvia = \"local\"\n";
+    let mut registry = with_apps(&crate::config::parse(text).unwrap(), vec![]).unwrap();
+    assert_eq!(sys(test_cx("", |cx| registry.items(cx))), ["sys:fleet"]);
+}
