@@ -118,7 +118,30 @@ impl Settings {
         }
         Ok(found)
     }
+
+    /// The private server called `name`, or the first private one for `None`. Never a normal
+    /// server: with no private server the private chat refuses instead of falling back.
+    #[cfg_attr(not(test), expect(dead_code, reason = "the private chat opens on it (flick-c325)"))]
+    pub fn private(&self, name: Option<&str>) -> Result<&Server, String> {
+        let mut private = self.servers.iter().filter(|s| s.private);
+        let found = match name.filter(|n| !n.is_empty()) {
+            None => private.next().ok_or(NO_PRIVATE)?,
+            Some(n) => match self.servers.iter().find(|s| s.name == n) {
+                None => return Err(format!("llm: no server \"{n}\"")),
+                Some(s) if !s.private => {
+                    return Err(format!("llm: {n} is not private; the private chat never uses it"));
+                }
+                Some(s) => s,
+            },
+        };
+        Ok(found)
+    }
 }
+
+/// Why the private chat cannot start with no private server.
+#[cfg_attr(not(test), expect(dead_code, reason = "the private chat shows it (flick-c325)"))]
+pub const NO_PRIVATE: &str = "llm: no private server, so private chat is off; add a [[llm.servers]] \
+    table with private = true (it never falls back to a normal server)";
 
 #[cfg(test)]
 mod tests {
@@ -168,6 +191,21 @@ mod tests {
         assert_eq!(settings(private_only).unwrap().normal(None).unwrap_err(), "llm: every server is private");
         let named = settings(&format!("[llm]\ndefault_server = \"mlx\"\n{TWO}")).unwrap();
         assert_eq!(named.normal(None).unwrap().name, "mlx");
+    }
+
+    #[test]
+    fn private_picks_only_a_private_server_and_never_falls_back() {
+        let s = settings(TWO).unwrap();
+        assert_eq!(s.private(None).unwrap().name, "vault");
+        assert_eq!(s.private(Some("")).unwrap().name, "vault");
+        assert_eq!(s.private(Some("vault")).unwrap().name, "vault");
+        assert_eq!(s.private(Some("mlx")).unwrap_err(), "llm: mlx is not private; the private chat never uses it");
+        assert_eq!(s.private(Some("nope")).unwrap_err(), "llm: no server \"nope\"");
+        // Normal servers only, a default_server set, or none at all: refused, no fallback.
+        let normal = "[llm]\ndefault_server = \"mlx\"\n[[llm.servers]]\nname = \"mlx\"\nurl = \"http://h:1\"\n";
+        assert_eq!(settings(normal).unwrap().private(None).unwrap_err(), NO_PRIVATE);
+        assert_eq!(settings("").unwrap().private(None).unwrap_err(), NO_PRIVATE);
+        assert!(NO_PRIVATE.contains("private = true") && !NO_PRIVATE.contains("  "));
     }
 
     #[test]

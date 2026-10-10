@@ -151,7 +151,7 @@ struct Says<'a> {
     state: BubbleState,
 }
 
-fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says) -> Bubble {
+fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says, selectable: bool) -> Bubble {
     let Says { side, header, time, md, state } = *says;
     let dim = badge(state).dim || side == Side::System;
     let color = if dim { NSColor::secondaryLabelColor() } else { NSColor::labelColor() };
@@ -163,7 +163,7 @@ fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says) -> Bubble {
         Side::System => NSColor::clearColor(),
     };
     let back = filled(mtm, &fill, 10.0);
-    let view = render::text_view(mtm, &string, true);
+    let view = render::text_view(mtm, &string, selectable);
     let (meta, meta_w) = meta(mtm, header, time);
     let badge = badge_view(mtm, state);
     for v in [&*back as &NSView, &view, &meta].into_iter().chain(badge.as_deref()) {
@@ -173,13 +173,14 @@ fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says) -> Bubble {
     Bubble { side, back, view, string, meta, meta_w, badge, measured }
 }
 
-fn build(mtm: MainThreadMarker, doc: &NSView, row: Owned) -> Built {
+/// Row `row` in `doc`; bubble text is `selectable` (copy, links) unless the surface is private.
+fn build(mtm: MainThreadMarker, doc: &NSView, row: Owned, selectable: bool) -> Built {
     let view = flipped(mtm);
     doc.addSubview(&view);
     let parts = match &row {
         Owned::Bubble { side, header, time, md, state, .. } => {
             let says = Says { side: *side, header, time, md, state: *state };
-            Parts::Bubble(bubble(mtm, &view, &says))
+            Parts::Bubble(bubble(mtm, &view, &says, selectable))
         }
         Owned::Card { .. } => {
             let back = filled(mtm, &NSColor::quaternaryLabelColor(), 10.0);
@@ -281,10 +282,13 @@ pub(super) struct Transcript {
     /// Rows from the last `set`, waiting for the coalesced `flush`.
     pending: RefCell<Option<Vec<Owned>>>,
     coalesce: Cell<Coalesce>,
+    /// Bubble text can be selected and copied, and its links clicked: not in a private
+    /// surface, where copying goes through the module (concealed).
+    selectable: bool,
 }
 
 impl Transcript {
-    pub(super) fn new(mtm: MainThreadMarker) -> Transcript {
+    pub(super) fn new(mtm: MainThreadMarker, selectable: bool) -> Transcript {
         let scroll = NSScrollView::initWithFrame(NSScrollView::alloc(mtm), NSRect::ZERO);
         scroll.setDrawsBackground(false);
         scroll.setBorderType(NSBorderType::NoBorder);
@@ -299,6 +303,7 @@ impl Transcript {
             rows: none,
             pending: RefCell::default(),
             coalesce: Cell::default(),
+            selectable,
         }
     }
 
@@ -370,8 +375,10 @@ impl Transcript {
             .into_iter()
             .zip(plans)
             .map(|(row, plan)| match plan {
-                Plan::Keep(i) => old[i].take().unwrap_or_else(|| build(mtm, &self.doc, row)),
-                Plan::Build => build(mtm, &self.doc, row),
+                Plan::Keep(i) => {
+                    old[i].take().unwrap_or_else(|| build(mtm, &self.doc, row, self.selectable))
+                }
+                Plan::Build => build(mtm, &self.doc, row, self.selectable),
             })
             .collect();
         for gone in old.into_iter().flatten() {

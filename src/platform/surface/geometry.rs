@@ -76,6 +76,8 @@ const DOT: f64 = 8.0;
 pub const CHIP_H: f64 = 22.0;
 const CHIP_GAP: f64 = 6.0;
 const NOTICE_H: f64 = 16.0;
+/// The private banner's strip under the header rule.
+const BANNER_H: f64 = 22.0;
 /// Input heights: one line, or about four.
 const SINGLE_H: f64 = 24.0;
 const MULTI_H: f64 = 76.0;
@@ -87,6 +89,8 @@ pub struct Parts<'a> {
     pub chips: &'a [f64],
     pub notice: bool,
     pub multi: bool,
+    /// A private surface's banner strip under the header.
+    pub banner: bool,
 }
 
 /// Frames of a surface's parts, top-down in a content view.
@@ -98,6 +102,8 @@ pub struct Layout {
     pub dot: Rect,
     /// The 1pt rule under the header.
     pub rule: Rect,
+    /// The private banner, full width under the rule.
+    pub banner: Option<Rect>,
     /// The rows area between header and the bottom parts; height 0 when there is no room.
     pub body: Rect,
     pub notice: Option<Rect>,
@@ -137,12 +143,15 @@ pub fn layout(size: Size, parts: Parts) -> Layout {
     }
 
     let text_w = (inner - DOT - GAP).max(0.0);
+    let banner = parts.banner.then(|| Rect::new(0.0, HEADER_H + 1.0, size.w, BANNER_H));
+    let top = banner.map_or(HEADER_H + 1.0, |b| b.y + b.h);
     Layout {
         title: Rect::new(PAD, TITLE_TOP, text_w, TITLE_H),
         subtitle: Rect::new(PAD, SUBTITLE_TOP, text_w, SUBTITLE_H),
         dot: Rect::new(size.w - PAD - DOT, TITLE_TOP + (TITLE_H - DOT) / 2.0, DOT, DOT),
         rule: Rect::new(0.0, HEADER_H, size.w, 1.0),
-        body: Rect::new(0.0, HEADER_H + 1.0, size.w, (bottom - HEADER_H - 1.0).max(0.0)),
+        banner,
+        body: Rect::new(0.0, top, size.w, (bottom - top).max(0.0)),
         notice,
         chips,
         input,
@@ -203,8 +212,10 @@ mod tests {
 
     #[test]
     fn single_line_layout_without_chips_or_notice() {
-        let l =
-            layout(Size { w: 400.0, h: 500.0 }, Parts { chips: &[], notice: false, multi: false });
+        let l = layout(
+            Size { w: 400.0, h: 500.0 },
+            Parts { chips: &[], notice: false, multi: false, banner: false },
+        );
         assert_eq!(l.input, Rect::new(14.0, 462.0, 372.0, 24.0));
         assert_eq!(l.body, Rect::new(0.0, 53.0, 400.0, 401.0));
         assert_eq!(l.title, Rect::new(14.0, 10.0, 356.0, 18.0));
@@ -212,12 +223,26 @@ mod tests {
         assert_eq!(l.dot, Rect::new(378.0, 15.0, 8.0, 8.0));
         assert_eq!(l.rule, Rect::new(0.0, 52.0, 400.0, 1.0));
         assert_eq!(l.notice, None);
+        assert_eq!(l.banner, None);
         assert!(l.chips.is_empty());
     }
 
     #[test]
+    fn a_private_banner_sits_under_the_rule_and_shortens_the_body() {
+        let parts = Parts { chips: &[], notice: false, multi: false, banner: true };
+        let l = layout(Size { w: 400.0, h: 500.0 }, parts);
+        assert_eq!(l.banner, Some(Rect::new(0.0, 53.0, 400.0, 22.0)));
+        assert_eq!(l.body, Rect::new(0.0, 75.0, 400.0, 379.0));
+        assert_eq!(l.input, Rect::new(14.0, 462.0, 372.0, 24.0));
+        // No room: the body is empty, never negative.
+        let tiny = layout(Size { w: 320.0, h: 60.0 }, parts);
+        assert!(tiny.body.h.abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn chips_and_notice_stack_above_a_multi_line_input_and_overflow_hides() {
-        let parts = Parts { chips: &[100.0, 150.0, 120.0, 10.0], notice: true, multi: true };
+        let parts =
+            Parts { chips: &[100.0, 150.0, 120.0, 10.0], notice: true, multi: true, banner: false };
         let l = layout(Size { w: 400.0, h: 500.0 }, parts);
         assert_eq!(l.input, Rect::new(14.0, 410.0, 372.0, 76.0));
         let top = 410.0 - 8.0 - 22.0;
@@ -239,11 +264,14 @@ mod tests {
     fn a_chip_wider_than_the_row_is_cut_to_it_and_a_tiny_view_has_no_body() {
         let l = layout(
             Size { w: 100.0, h: 60.0 },
-            Parts { chips: &[500.0], notice: false, multi: true },
+            Parts { chips: &[500.0], notice: false, multi: true, banner: false },
         );
         assert_eq!(l.chips, vec![Some(Rect::new(14.0, -60.0, 72.0, 22.0))]);
         assert!(l.body.h.abs() < f64::EPSILON);
-        let l = layout(Size { w: 0.0, h: 0.0 }, Parts { chips: &[], notice: false, multi: false });
+        let l = layout(
+            Size { w: 0.0, h: 0.0 },
+            Parts { chips: &[], notice: false, multi: false, banner: false },
+        );
         assert!(l.input.w.abs() < f64::EPSILON && l.title.w.abs() < f64::EPSILON);
     }
 }

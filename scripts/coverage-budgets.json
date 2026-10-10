@@ -56,6 +56,7 @@
     "src/modules/llm/io.rs": 96.2,
     "src/modules/llm/mod.rs": 100.0,
     "src/modules/llm/openai.rs": 99.5,
+    "src/modules/llm/private.rs": 100.0,
     "src/modules/llm/report.rs": 100.0,
     "src/modules/llm/settings.rs": 100.0,
     "src/modules/llm/transport.rs": 97.8,
@@ -100,6 +101,7 @@
     "src/platform/pill/layout.rs": 100.0,
     "src/platform/surface/geometry.rs": 100.0,
     "src/platform/surface/keys.rs": 100.0,
+    "src/platform/surface/privacy.rs": 100.0,
     "src/platform/surface/rows.rs": 100.0,
     "src/platform/surface/style.rs": 100.0,
     "src/root.rs": 100.0
