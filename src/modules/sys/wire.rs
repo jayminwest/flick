@@ -6,7 +6,7 @@ use super::io::Hooks;
 use super::{ID, run, unix_now};
 use crate::core::Event;
 use crate::core::control::PeerHooks;
-use crate::platform::{events, panel};
+use crate::platform::{events, panel, workspace};
 
 pub fn hooks(peer: PeerHooks) -> Hooks {
     Hooks {
@@ -18,5 +18,6 @@ pub fn hooks(peer: PeerHooks) -> Hooks {
         run_input: run::run_input,
         ask: peer.ask,
         visible: panel::is_visible,
+        open: workspace::open_url,
     }
 }

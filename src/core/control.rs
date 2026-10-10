@@ -137,7 +137,8 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 /// (`card press`): it matches when the request's words after the module start with them,
 /// so `message card press` is denied while `message card post` is not. These change config,
 /// run code, take the keyboard, start the microphone, make this Mac ssh (`kota ask`) or send
-/// requests to model servers (`llm`, any verb), read the screen, write files or delete data
+/// requests to model servers (`llm`, any verb), restart services or read logs (`sys restart`,
+/// `sys tail`), read the screen, write files or delete data
 /// that cannot come back (`task rm` drops the task's tracked time). Review this table when a
 /// module gains a verb with side effects. `remote` is handled apart: only `remote status` is
 /// allowed.
@@ -155,6 +156,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("dictation", &[]),
     ("kota", &["ask"]),
     ("llm", &[]),
+    ("sys", &["restart", "tail"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.

@@ -93,7 +93,10 @@ fn a_reload_takes_the_new_services() {
 fn verbs_and_unknown_ones() {
     let mut m = sys("", HOOKS);
     assert_eq!(m.id(), "sys");
-    assert_eq!(m.verbs(), "sys snapshot | sys services | sys fleet");
+    assert_eq!(
+        m.verbs(),
+        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes]"
+    );
     assert_eq!(ask(&mut m, &["reboot"], false).unwrap_err(), "sys: unknown command \"reboot\"");
     assert_eq!(ask(&mut m, &["snapshot", "now"], false).unwrap_err(), "sys: unknown command \"snapshot\"");
     // The real module builds with the real hooks and runs nothing until asked.
@@ -240,4 +243,5 @@ fn ticks_poll_on_the_background_cadence_or_while_the_view_shows() {
     assert_eq!(tried(&m), [None, Some(1_000), Some(1_000)]);
 }
 
+mod actions;
 mod launcher;
