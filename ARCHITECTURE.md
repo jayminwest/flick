@@ -464,7 +464,7 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   `chat::Note`s in their own static. Its functions take no `Cx`, so they cannot reach the
   store; it has no control verb, no notification and no log line; its header and window
   title never hold chat text. Model: `default_model` if the private server lists it, else
-  the first listed. ⌘C with nothing selected copies the last reply with
+  the first listed; a prompt sent with no model waits for a list fetched after it (`Open::asked`). ⌘C with nothing selected copies the last reply with
   `pasteboard::set_text_concealed`. Wipes (drop the session, `io::cancel` its stream and
   wipe the taken pieces, empty rows and input, notice the `Wipe`): hide (⌘W, Esc, hotkey),
   ⌘N, `Event::Locked`/`Sleep`, `configure` (only the running module ever had a session),

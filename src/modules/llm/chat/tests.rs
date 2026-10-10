@@ -295,7 +295,7 @@ fn the_model_list_decides_the_first_send() {
     let mut f = Fx::new();
     // The list fails or is empty: the prompt goes back into the input with why.
     for (host, why) in [
-        ("down", "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server"),
+        ("down", "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server (is the server running, and its port published (tailscale serve)?)"),
         ("none", "llm: none lists no models"),
     ] {
         let mut m = llm(&server(host));

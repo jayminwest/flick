@@ -50,7 +50,7 @@ fn ping_and_models_ask_a_normal_server() {
 #[test]
 fn errors_name_the_server() {
     let mut m = configured(SERVERS).unwrap();
-    let down = "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server";
+    let down = "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server (is the server running, and its port published (tailscale serve)?)";
     assert_eq!(command(&mut m, &["ping", "down"], false).unwrap_err(), down);
     assert_eq!(command(&mut m, &["models", "down"], false).unwrap_err(), down);
     let private = "llm: vault is private; only the private chat talks to it";

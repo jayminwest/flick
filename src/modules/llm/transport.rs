@@ -64,15 +64,32 @@ pub struct Ended {
 }
 
 impl Ended {
-    /// What went wrong, if curl failed: its `curl: (7) ...` line, else the code.
+    /// What went wrong, if curl failed: its `curl: (7) ...` line, else the code; with a
+    /// `hint` when the cause is likely the server not running.
     pub fn failure(&self) -> Option<String> {
         let line = self.stderr.lines().map(str::trim).find(|l| !l.is_empty());
         let line = line.map(|l| l.strip_prefix("curl: ").unwrap_or(l).to_string());
-        match self.code {
-            Some(0) => None,
-            Some(code) => Some(line.unwrap_or_else(|| format!("curl exited {code}"))),
-            None => Some(line.unwrap_or_else(|| "curl was stopped".into())),
-        }
+        let why = match self.code {
+            Some(0) => return None,
+            Some(code) => line.unwrap_or_else(|| format!("curl exited {code}")),
+            None => line.unwrap_or_else(|| "curl was stopped".into()),
+        };
+        Some(match hint(self.code, &why) {
+            Some(h) => format!("{why} ({h})"),
+            None => why,
+        })
+    }
+}
+
+/// What a bare curl error likely means for a model server. A proxy such as `tailscale
+/// serve` answers 502 (or 504) with an empty body when nothing listens behind it, and
+/// curl's exit 7 means nothing listens on the port at all (flick-f4b8).
+fn hint(code: Option<i32>, why: &str) -> Option<&'static str> {
+    let gateway = [": 502", ": 504"].iter().any(|s| why.ends_with(s));
+    match code {
+        Some(22) if gateway => Some("the proxy reached no model server behind it: is the server running?"),
+        Some(7) => Some("is the server running, and its port published (tailscale serve)?"),
+        _ => None,
     }
 }
 
@@ -206,7 +223,13 @@ mod tests {
     fn failures_name_curls_error() {
         let ended = |code, stderr: &str| Ended { code, stderr: stderr.into() }.failure();
         assert_eq!(ended(Some(0), "noise"), None);
-        assert_eq!(ended(Some(7), "\ncurl: (7) Failed to connect\n").as_deref(), Some("(7) Failed to connect"));
+        let refused = "(7) Failed to connect (is the server running, and its port published (tailscale serve)?)";
+        assert_eq!(ended(Some(7), "\ncurl: (7) Failed to connect\n").as_deref(), Some(refused));
+        let gateway = "(22) The requested URL returned error: 502 (the proxy reached no model server behind it: is the server running?)";
+        assert_eq!(ended(Some(22), "curl: (22) The requested URL returned error: 502\n").as_deref(), Some(gateway));
+        assert!(ended(Some(22), "curl: (22) The requested URL returned error: 504").unwrap().ends_with("is the server running?)"));
+        let missing = "(22) The requested URL returned error: 404";
+        assert_eq!(ended(Some(22), "curl: (22) The requested URL returned error: 404").as_deref(), Some(missing));
         assert_eq!(ended(Some(28), "").as_deref(), Some("curl exited 28"));
         assert_eq!(ended(None, "").as_deref(), Some("curl was stopped"));
         assert_eq!(ended(None, "odd").as_deref(), Some("odd"));
