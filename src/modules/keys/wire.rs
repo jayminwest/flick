@@ -34,6 +34,10 @@ pub struct Sys {
     pub remap_is_set: fn() -> Result<bool, String>,
     pub app_running: fn(&str) -> bool,
     pub hotkeys: fn() -> Vec<String>,
+    /// Run a job on the main queue after the current call returns.
+    pub later: fn(Box<dyn FnOnce() + Send>),
+    /// Log one line.
+    pub log: fn(&str),
 }
 
 pub static REAL: Sys = Sys {
@@ -49,6 +53,8 @@ pub static REAL: Sys = Sys {
     remap_is_set: hid::caps_to_f18_is_set,
     app_running: workspace::is_running,
     hotkeys: hotkeys::registered_keys,
+    later: |job| events::on_main(job),
+    log: |line| eprintln!("flick: keys: {line}"),
 };
 
 /// Caps Lock sends F18 because Flick set it, so quitting must clear it.
@@ -228,24 +234,40 @@ impl Wire {
     /// What may fight `rules`: Hyperkey remapping Caps Lock too, Hammerspoon's own taps,
     /// and global hotkeys on the hyper key or a chord's key. `names` names the chords.
     pub fn conflicts(&self, rules: &Rules, remap: bool, names: &[&str]) -> Vec<String> {
-        let mut out = vec![];
-        if remap && (self.sys.app_running)(HYPERKEY) {
-            out.push("Hyperkey is running and also remaps Caps Lock; quit it".into());
-        }
-        if !rules.chords.is_empty() && (self.sys.app_running)(HAMMERSPOON) {
-            out.push("Hammerspoon is running; its event taps may run the same chords".into());
-        }
-        let bound: Vec<u16> = (self.sys.hotkeys)().iter().filter_map(|k| keycode(k)).collect();
-        if rules.hyper.is_some_and(|h| bound.contains(&h.source)) {
-            out.push("a global hotkey uses the hyper key, which the tap swallows".into());
-        }
-        for (chord, name) in rules.chords.iter().zip(names) {
-            if chord.key.is_some_and(|k| bound.contains(&k)) {
-                out.push(format!("chord \"{name}\": its key is also a global hotkey"));
-            }
-        }
-        out
+        conflicts(self.sys, rules, remap, names)
     }
+
+    /// Log `conflicts` on the main queue's next turn, not now: `Event::Started` runs before
+    /// the controller binds the global hotkeys, so a check now would miss them (flick-6968).
+    pub fn log_conflicts_later(&self, rules: &Rules, remap: bool, names: Vec<String>) {
+        let (sys, rules) = (self.sys, rules.clone());
+        (sys.later)(Box::new(move || {
+            for c in conflicts(sys, &rules, remap, &names) {
+                (sys.log)(&format!("conflict: {c}"));
+            }
+        }));
+    }
+}
+
+/// `Wire::conflicts`, with the macOS calls of `sys`.
+fn conflicts<S: AsRef<str>>(sys: &Sys, rules: &Rules, remap: bool, names: &[S]) -> Vec<String> {
+    let mut out = vec![];
+    if remap && (sys.app_running)(HYPERKEY) {
+        out.push("Hyperkey is running and also remaps Caps Lock; quit it".into());
+    }
+    if !rules.chords.is_empty() && (sys.app_running)(HAMMERSPOON) {
+        out.push("Hammerspoon is running; its event taps may run the same chords".into());
+    }
+    let bound: Vec<u16> = (sys.hotkeys)().iter().filter_map(|k| keycode(k)).collect();
+    if rules.hyper.is_some_and(|h| bound.contains(&h.source)) {
+        out.push("a global hotkey uses the hyper key, which the tap swallows".into());
+    }
+    for (chord, name) in rules.chords.iter().zip(names) {
+        if chord.key.is_some_and(|k| bound.contains(&k)) {
+            out.push(format!("chord \"{}\": its key is also a global hotkey", name.as_ref()));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -264,6 +286,8 @@ pub mod tests {
         pub static SECURE: RefCell<bool> = const { RefCell::new(false) };
         pub static RUNNING: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
         pub static HOTKEYS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        /// Jobs the stub `later` queued, for `run_later`.
+        static LATER: RefCell<Vec<Box<dyn FnOnce() + Send>>> = const { RefCell::new(Vec::new()) };
         /// What the stub `remap_is_set` answers.
         pub static REMAP_SET: RefCell<Result<bool, String>> = const { RefCell::new(Ok(false)) };
     }
@@ -298,7 +322,16 @@ pub mod tests {
         remap_is_set: || REMAP_SET.with(|r| r.borrow().clone()),
         app_running: |id| RUNNING.with(|r| r.borrow().contains(&id)),
         hotkeys: || HOTKEYS.with(|h| h.borrow().clone()),
+        later: |job| LATER.with(|l| l.borrow_mut().push(job)),
+        log: |line| call(format!("log {line}")),
     };
+
+    /// Run the jobs the stub `later` queued, as the main queue would after the current call.
+    pub fn run_later() {
+        for job in LATER.with(|l| std::mem::take(&mut *l.borrow_mut())) {
+            job();
+        }
+    }
 
     /// Feed one event to the stub tap's handler.
     pub fn press(kind: keytap::Kind, keycode: u16, flags: u64) -> keytap::Verdict {
