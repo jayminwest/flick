@@ -26,6 +26,7 @@ pub trait Stream: Read + Write + Send + Sized + 'static {
     fn try_clone(&self) -> io::Result<Self>;
     fn shutdown(&self, how: Shutdown) -> io::Result<()>;
     fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
 }
 
 macro_rules! stream {
@@ -39,6 +40,9 @@ macro_rules! stream {
             }
             fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
                 <$t>::set_read_timeout(self, timeout)
+            }
+            fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+                <$t>::set_write_timeout(self, timeout)
             }
         }
     };
@@ -54,12 +58,19 @@ pub struct Limits {
     /// How long to wait for each request line; `None` waits forever. An event stream waits
     /// forever whatever this is.
     pub idle: Option<Duration>,
+    /// How long one write to the client may block, replies and event lines alike; a client
+    /// that stops reading is dropped after it. `None` waits forever.
+    pub write: Option<Duration>,
     /// Whether `["events"]` may turn the connection into an event stream.
     pub events: bool,
 }
 
-/// The local socket's limits: none. Only this user can connect to it.
-pub const LOCAL: Limits = Limits { line: usize::MAX, idle: None, events: true };
+/// The local socket's limits: only a write timeout, so a client that never reads cannot pin
+/// a connection thread (or an event writer) forever. Only this user can connect to it.
+pub const LOCAL: Limits = Limits { line: usize::MAX, idle: None, write: Some(WRITE), events: true };
+
+/// How long a write to a local client may block before the connection ends.
+const WRITE: Duration = Duration::from_secs(10);
 
 /// The reply to `["events"]` on a connection whose `Limits` forbid it.
 pub const EVENTS_REFUSED: &str = "events: not allowed over the network";
@@ -168,6 +179,7 @@ pub fn connection<S: Stream>(
 ) -> io::Result<()> {
     let mut out = stream.try_clone()?;
     stream.set_read_timeout(limits.idle)?;
+    stream.set_write_timeout(limits.write)?;
     let mut input = BufReader::new(stream);
     let mut line = String::new();
     loop {
@@ -397,7 +409,8 @@ mod tests {
     #[test]
     fn limits_bound_line_length_idle_time_and_events() {
         static HUB: Hub = Hub::new();
-        let limits = Limits { line: 16, idle: Some(Duration::from_millis(50)), events: false };
+        let limits =
+            Limits { line: 16, idle: Some(Duration::from_millis(50)), write: None, events: false };
         let (client, server) = UnixStream::pair().unwrap();
         let task = thread::spawn(move || connection(server, echo, &HUB, limits));
         let mut client = BufReader::new(client);
@@ -420,5 +433,48 @@ mod tests {
             format!("{{\"error\":\"{TOO_LONG}\"}}\n")
         );
         task.join().unwrap().unwrap();
+    }
+
+    /// Run `connection` on `server` with a 50 ms write timeout; its result arrives on the
+    /// returned channel, so a test can time out instead of hanging on a stuck writer.
+    fn serve_with_write_timeout(
+        server: UnixStream,
+        hub: &'static Hub,
+    ) -> std::sync::mpsc::Receiver<io::Result<()>> {
+        let limits = Limits { write: Some(Duration::from_millis(50)), ..LOCAL };
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(connection(server, echo, hub, limits));
+        });
+        rx
+    }
+
+    #[test]
+    fn a_client_that_never_reads_its_replies_is_dropped() {
+        static HUB: Hub = Hub::new();
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let done = serve_with_write_timeout(server, &HUB);
+        // A reply far larger than the socket buffer, which the client never reads.
+        let word = "x".repeat(1 << 20);
+        writeln!(client, "[\"{word}\"]").unwrap();
+        let ended = done.recv_timeout(Duration::from_secs(15)).expect("the writer is stuck");
+        assert!(ended.is_err());
+    }
+
+    #[test]
+    fn a_subscriber_that_never_reads_is_dropped() {
+        static HUB: Hub = Hub::new();
+        let (mut client, server) = UnixStream::pair().unwrap();
+        let done = serve_with_write_timeout(server, &HUB);
+        writeln!(client, "[\"events\"]").unwrap();
+        wait_for("a subscriber", || HUB.len() == 1);
+        // Far fewer lines than the backlog, but far more bytes than the socket buffer.
+        let line = "x".repeat(64 * 1024);
+        for _ in 0..32 {
+            HUB.publish(|| line.clone());
+        }
+        done.recv_timeout(Duration::from_secs(15)).expect("the event writer is stuck").unwrap();
+        assert_eq!(HUB.len(), 0);
+        drop(client);
     }
 }

@@ -368,8 +368,9 @@ pub mod tests {
     fn a_closed_port_is_an_error() {
         let (l, port) = listener();
         drop(l);
-        assert!(http(&format!("http://127.0.0.1:{port}/")).unwrap().send().is_err());
-        assert!(http("http://no-such-host.invalid/").unwrap().send().is_err());
+        // An IP literal, so no resolver is involved: the error names the refused address.
+        let err = http(&format!("http://127.0.0.1:{port}/")).unwrap().send().unwrap_err();
+        assert!(err.starts_with(&format!("127.0.0.1:{port}: ")), "{err}");
     }
 
     /// A unique temp file path for a shell action to write.

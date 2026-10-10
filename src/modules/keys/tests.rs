@@ -1,7 +1,7 @@
 //! Tests for module `keys`.
 
 use super::action::tests::{listener, read_when_written, serve, temp};
-use super::wire::tests::{REMAP_SET, SECURE, STUB, calls};
+use super::wire::tests::{HOTKEYS, REMAP_SET, SECURE, STUB, calls, run_later};
 use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
@@ -219,6 +219,21 @@ fn started_keys_install_the_rules_and_run_chords() {
     drop(keys);
     // The stub's clear fails, so dropping the module tries once more.
     assert_eq!(calls(), ["clear_remap"]);
+}
+
+#[test]
+fn started_logs_conflicts_with_hotkeys_bound_after_it() {
+    calls();
+    let mut keys = configured("[keys]\nhyper = \"F18\"").unwrap();
+    test_cx("", |cx| keys.on_event(Event::Started, cx));
+    assert_eq!(calls(), ["start"]);
+    // The controller binds the global hotkeys after `Started`; the check runs after that.
+    HOTKEYS.with(|h| *h.borrow_mut() = vec!["F18".into()]);
+    run_later();
+    assert_eq!(calls(), ["log conflict: a global hotkey uses the hyper key, which the tap swallows"]);
+    HOTKEYS.with(|h| h.borrow_mut().clear());
+    drop(keys);
+    calls();
 }
 
 const DICTATE: &str = r#"

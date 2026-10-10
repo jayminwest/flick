@@ -242,14 +242,13 @@ impl Keys {
         }
     }
 
-    /// Install the rules (from `Event::Started` on) and report conflicts to the log.
+    /// Install the rules (from `Event::Started` on) and report conflicts to the log once the
+    /// controller has bound the global hotkeys.
     fn start(&mut self) {
         let ups = self.wire.start(&self.rules, self.remap);
         self.fire_all(&ups);
-        let names: Vec<&str> = self.chords.iter().map(|c| c.name.as_str()).collect();
-        for c in self.wire.conflicts(&self.rules, self.remap, &names) {
-            eprintln!("flick: keys: conflict: {c}");
-        }
+        let names = self.chords.iter().map(|c| c.name.clone()).collect();
+        self.wire.log_conflicts_later(&self.rules, self.remap, names);
     }
 }
 
