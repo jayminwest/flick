@@ -1,6 +1,7 @@
 //! What KOTA's presence looks like, as plain data (100% coverage floor): the menu bar
-//! title and tooltip, the menu entries (flick-78b9 renders them through
-//! `platform::status_item`), `kota status` as text and JSON, and the ask view's text.
+//! title and tooltip, the menu entries (`item.rs` shows them through
+//! `platform::status_item`), the down notification, `kota status` as text and JSON, and
+//! the ask view's text.
 
 use serde_json::{Value, json};
 
@@ -10,7 +11,6 @@ use super::presence::{Presence, State};
 /// One menu row. `Pick` calls the module's pick handler with `key`; `Open` routes `key`
 /// like a press of the module's hotkey.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-78b9 renders the menu"))]
 pub enum Entry {
     Info(String),
     Separator,
@@ -19,7 +19,6 @@ pub enum Entry {
 }
 
 /// The menu bar glyph: a `K` and a mark for the state; `K?` while stale.
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-78b9 renders the title"))]
 pub fn glyph(p: &Presence) -> &'static str {
     if p.stale {
         return "K?";
@@ -36,7 +35,6 @@ pub fn glyph(p: &Presence) -> &'static str {
 }
 
 /// The menu bar title: the glyph, plus the count of cards waiting on the user.
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-78b9 renders the title"))]
 pub fn title(p: &Presence, pending: u32) -> String {
     match pending {
         0 => glyph(p).to_string(),
@@ -75,7 +73,6 @@ pub fn headline(p: &Presence, now: u64) -> String {
 }
 
 /// The tooltip: the headline and KOTA's current task.
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-78b9 renders the tooltip"))]
 pub fn tooltip(p: &Presence, now: u64) -> String {
     match p.seen.pane.as_ref().filter(|pane| !pane.title.is_empty()) {
         Some(pane) => format!("{}\n{}", headline(p, now), pane.title),
@@ -102,7 +99,6 @@ pub fn info(p: &Presence, now: u64, offset: i32) -> Vec<String> {
 }
 
 /// The whole menu, top to bottom.
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-78b9 renders the menu"))]
 pub fn menu(p: &Presence, pending: u32, now: u64, offset: i32) -> Vec<Entry> {
     let mut entries: Vec<Entry> = info(p, now, offset).into_iter().map(Entry::Info).collect();
     let inbox = match pending {
@@ -117,6 +113,17 @@ pub fn menu(p: &Presence, pending: u32, now: u64, offset: i32) -> Vec<Entry> {
         Entry::Pick { title: "Refresh Now".into(), key: "refresh" },
     ]);
     entries
+}
+
+/// The notification for a change to down: title and body. Down means the server
+/// answered: herdr has no KOTA pane, or (herdr failing) kota-dash reports `health` false.
+pub fn down_notice(p: &Presence, machine: &str) -> (String, String) {
+    let body = if p.errors.iter().any(|e| e.starts_with("herdr: ")) {
+        format!("kota-dash on {machine} reports health false")
+    } else {
+        format!("herdr on {machine} has no KOTA pane")
+    };
+    ("KOTA is down".into(), body)
 }
 
 /// How rounds run.

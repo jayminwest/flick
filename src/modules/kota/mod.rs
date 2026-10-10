@@ -1,8 +1,8 @@
 //! Module `kota`: KOTA's presence in the menu bar, its pending-card badge and quick ask
 //! (plan flick-4354). KOTA is the always-on Claude Code session in a herdr pane on
 //! mbp-server. Steps so far: the presence model and `kota status` (flick-3b9b), the
-//! poller and `kota refresh` (flick-4f39), the pending-card count (flick-316c) and quick
-//! ask (flick-039d). No menu bar item yet.
+//! poller and `kota refresh` (flick-4f39), the pending-card count (flick-316c), quick
+//! ask (flick-039d) and the menu bar item (flick-78b9, `item.rs`).
 //!
 //! Presence: a round runs `herdr [--machine <machine>] agent list` and curl on kota-dash's
 //! `/ok` in parallel (`io.rs`), finds the KOTA pane (agent `claude` in `cwd`) and maps
@@ -24,6 +24,12 @@
 //! `fast_secs`, and so does the view while it shows. The view lists the last asks (memory
 //! only: the message history is the `message` module's).
 //!
+//! Menu bar item (`item.rs`): the presence glyph plus the count of cards waiting on the
+//! user (`Event::CardsPending`), shown while rounds run on a timer and `status_item` is
+//! true. Its menu has the state rows, Ask KOTA… (hotkey `ask`), Inbox (hotkey `inbox`:
+//! the `message` module's `recent` view), Open Dashboard and Refresh Now; opening it
+//! starts a round. A change to down notifies when `notify_down` is true.
+//!
 //! `flick kota status [--json]` (no I/O) and `flick kota refresh` are allowed over the
 //! network: both only read, and refresh is rate-limited. `kota ask` is not: a peer (KOTA
 //! included) must not make this Mac ssh text to KOTA.
@@ -33,6 +39,7 @@
 
 mod ask;
 mod io;
+mod item;
 mod presence;
 mod run;
 mod settings;
@@ -49,6 +56,7 @@ use crate::config::Section;
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, later, unknown_verb};
 use ask::{Ask, Status};
 use io::{Hooks, Shared};
+use item::{INBOX, INBOX_VIEW, Shown, Ui};
 use settings::Settings;
 use view::{Extra, Polling};
 
@@ -74,23 +82,30 @@ pub struct Kota {
     /// Cards waiting on the user, from the last `Event::CardsPending` (the `message`
     /// module owns the cards).
     pending: u32,
+    ui: Ui,
+    /// What the menu bar item shows; `None` while it is hidden.
+    shown: Option<Shown>,
 }
 
 impl Default for Kota {
     fn default() -> Self {
-        Kota::with_hooks(wire::HOOKS)
+        Kota::with_hooks(wire::HOOKS, wire::UI)
     }
 }
 
 impl Drop for Kota {
     fn drop(&mut self) {
         self.shared.stop();
+        if self.shown.is_some() {
+            (self.ui.hide)();
+        }
     }
 }
 
 impl Kota {
-    fn with_hooks(hooks: Hooks) -> Kota {
-        Kota { settings: Settings::default(), active: false, started: false, shared: Arc::default(), hooks, pending: 0 }
+    fn with_hooks(hooks: Hooks, ui: Ui) -> Kota {
+        let shared = Arc::default();
+        Kota { settings: Settings::default(), active: false, started: false, shared, hooks, pending: 0, ui, shown: None }
     }
 
     /// Timed rounds run.
@@ -194,6 +209,7 @@ impl Module for Kota {
         if self.active && (old != *s || !was) {
             io::tick(&self.shared, s, self.hooks);
         }
+        self.sync_item();
         Ok(())
     }
 
@@ -238,15 +254,21 @@ impl Module for Kota {
         spec.map(|s| Binding { spec: s.clone(), key: Ok(ASK.into()) }).into_iter().collect()
     }
 
-    /// `ask` (the `hotkey`, and the menu's Ask KOTA…) opens the ask view.
+    /// `ask` (the `hotkey`, and the menu's Ask KOTA…) opens the ask view; `inbox` (the
+    /// menu's Inbox) asks for the cards view by name.
     fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
-        (key == ASK).then(|| self.ask_view())
+        match key {
+            ASK => Some(self.ask_view()),
+            INBOX => Some(ListView::new(INBOX_VIEW.0, INBOX_VIEW.1)),
+            _ => None,
+        }
     }
 
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
         match event {
             Event::Started => self.started = true,
             Event::CardsPending { count } => self.pending = count,
+            Event::ModuleChanged { module: ID } => self.requests(),
             _ => {}
         }
         if !self.polling() {
@@ -254,16 +276,24 @@ impl Module for Kota {
         }
         let (shared, s, hooks) = (&self.shared, &self.settings, self.hooks);
         match event {
-            Event::Started => io::tick(shared, s, hooks),
-            Event::ModuleChanged { module: ID } => {
-                // flick-78b9 notifies on a change to down; until then nothing reads them.
-                drop(std::mem::take(&mut shared.lock().transitions));
-                io::tick(shared, s, hooks);
-            }
+            Event::Started | Event::ModuleChanged { module: ID } => io::tick(shared, s, hooks),
             Event::Sleep | Event::Locked => io::suspend(shared),
             Event::Wake | Event::Unlocked => io::resume(shared, s, hooks),
             Event::LauncherOpened if s.poll_secs == 0 => drop(io::refresh(shared, s, hooks)),
             _ => {}
+        }
+        if matches!(
+            event,
+            Event::Started
+                | Event::ModuleChanged { module: ID }
+                | Event::CardsPending { .. }
+                | Event::Sleep
+                | Event::Locked
+                | Event::Wake
+                | Event::Unlocked
+                | Event::LauncherOpened
+        ) {
+            self.sync_item();
         }
         false
     }

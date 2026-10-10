@@ -124,3 +124,12 @@ fn asks_show_newest_first_with_their_status() {
     );
     assert_eq!(asks_text(&[], 0), "");
 }
+
+#[test]
+fn the_down_notice_says_what_the_server_answered() {
+    let mut p = presence(State::Down);
+    let notice = |p: &Presence| down_notice(p, "mbp-server");
+    assert_eq!(notice(&p), ("KOTA is down".into(), "herdr on mbp-server has no KOTA pane".into()));
+    p.errors = vec!["herdr: timed out".into()];
+    assert_eq!(notice(&p).1, "kota-dash on mbp-server reports health false");
+}
