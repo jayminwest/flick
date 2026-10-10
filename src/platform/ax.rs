@@ -142,6 +142,34 @@ pub fn focused_window_title(pid: i32) -> Option<String> {
     string_attr(Retained::as_ptr(&win) as CFTypeRef, "AXTitle").filter(|t| !t.is_empty())
 }
 
+/// The text selected in app `pid`'s focused element (`AXSelectedText`). None without
+/// Accessibility permission, when the app exposes no selection, when only whitespace is
+/// selected, and always in a secure (password) field. Each AX message waits at most
+/// `SUMMON_TIMEOUT`, so a hung app costs a bounded pause; still, never call it on a hot path.
+/// Reads only: no synthetic ⌘C, the clipboard is untouched.
+#[cfg_attr(not(test), expect(dead_code, reason = "context attach in chat (flick-65bd) calls it"))]
+pub fn selected_text(pid: i32) -> Option<String> {
+    let app_el = app_element(pid);
+    if app_el.0.is_null() {
+        return None;
+    }
+    // SAFETY: `app_el` is a live element.
+    unsafe { AXUIElementSetMessagingTimeout(app_el.0, SUMMON_TIMEOUT) };
+    let focused = copy_attr(app_el.0, "AXFocusedUIElement")?;
+    let el = Retained::as_ptr(&focused) as CFTypeRef;
+    // The timeout is per element: the focused one would otherwise wait the system default.
+    // SAFETY: `el` is a live AX element retained by `focused` for the whole function.
+    unsafe { AXUIElementSetMessagingTimeout(el, SUMMON_TIMEOUT) };
+    let subrole = string_attr(el, "AXSubrole");
+    if super::context::rules::is_secure(subrole.as_deref()) {
+        return None;
+    }
+    super::context::rules::selection(string_attr(el, "AXSelectedText"))
+}
+
+/// How long one AX message to another app may take while reading summon context.
+const SUMMON_TIMEOUT: f32 = 0.2;
+
 fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
     let attr = NSString::from_str(attr);
     let mut value: CFTypeRef = ptr::null();
@@ -279,5 +307,11 @@ mod tests {
     fn a_process_without_windows_has_no_focused_window_title() {
         assert_eq!(focused_window_title(std::process::id() as i32), None);
         assert_eq!(focused_window_title(-1), None);
+    }
+
+    #[test]
+    fn a_process_without_a_focused_element_has_no_selection() {
+        assert_eq!(selected_text(std::process::id() as i32), None);
+        assert_eq!(selected_text(-1), None);
     }
 }
