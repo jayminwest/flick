@@ -281,3 +281,22 @@ fn peers_may_read_sys_health() {
         assert_eq!(net_policy(&words), Ok(()), "{verb} --json");
     }
 }
+
+#[test]
+fn peers_may_read_kota_presence() {
+    // `kota status` reads only the cached presence and `kota refresh` starts at most one
+    // read-only round per 10 s, so the deny table must not list them (plan flick-4354).
+    // `kota refresh` is not run here: it would run herdr and curl.
+    for verb in ["status", "refresh"] {
+        let req = ["kota", verb].map(String::from);
+        assert_eq!(net_policy(&req), Ok(()), "{verb}");
+        let (words, flags) = split_flags([&req[..], &["--json".into()]].concat());
+        assert!(flags.json);
+        assert_eq!(net_policy(&words), Ok(()), "{verb} --json");
+    }
+    // Without a [kota] key the presence is unknown and nothing polls.
+    assert_eq!(
+        net_reply(&["kota", "status", "--json"]),
+        r#"{"ok":{"checked_at":null,"errors":[],"failing":[],"pane":null,"pending":0,"polling":"off (set a key in [kota] to poll)","since":null,"stale":false,"state":"unknown"}}"#
+    );
+}
