@@ -268,6 +268,7 @@ and every hotkey.
   machines it starts nothing and the root item `sys:fleet` is hidden. No event says a view
   closed, so the module tracks it: `open` of `fleet` or `machine` sets the flag; root
   search asking `items`, `LauncherOpened`, and pushing another module's view clear it.
+  Settings, a fleet example and the manual checklist: `docs/sys.md`.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
 follows an external server.
@@ -312,10 +313,12 @@ on busy; the main thread answers it while only the thread waits), then `ssh -o
 BatchMode=yes -o ConnectTimeout=8 <ssh> <kota_ask> --id <id>` with the text on stdin (15 s;
 never in argv). On an ssh failure it posts `message post --reply-to <id>` with the reason, so
 the pending card does not stay. The verb's answer is the outcome, through `core::later`.
+Settings, state meanings and the manual checklist: `docs/kota.md`.
 
 Dictation (`src/modules/dictation/`): two child processes and the main-thread steps around
 them; every program and macOS call goes through `dictation::Hooks` (`wire::REAL`; scripted
-fakes in `fake.rs` for tests).
+fakes in `fake.rs` for tests). Setup, the model download, privacy, limits and the manual
+checklist: `docs/dictation.md`.
 
 - `dictation start` (a keys chord's `on_down`) refuses while the microphone is denied
   (pill "Microphone denied") or a program or model is missing. While the authorization is

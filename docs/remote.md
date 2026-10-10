@@ -15,8 +15,19 @@ flick --json remote status | jq .ok.last
 ```
 
 - **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
-- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, `task rm`, `script run`, or `message card press` and `card focus`, `sys restart` or `sys tail`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, `sys snapshot`, `services` and `fleet`, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, `task rm`, `script run`, `message card press` or `card focus`, any `dictation` or `llm` verb, `kota ask`, or `sys restart` or `sys tail`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, `kota status` and `refresh`, `sys snapshot`, `services` and `fleet`, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
 - **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
+
+## Peers for the fleet
+
+The [fleet](sys.md) reads a `via = "flick"` machine through that Mac's Flick, so the network access works the other way round from the setup below. The Mac that shows the fleet (the laptop) is the peer, and the Mac it reads (mbp-server) is the host. On mbp-server:
+
+```toml
+[remote]
+peers = ["jaymins-macbook-pro"]   # the laptop's Tailscale machine name (`tailscale status`)
+```
+
+Then reload and run `flick remote on` there once (the switch survives restarts). mbp-server's Flick must be new enough to have `sys snapshot`. Until then, or while its network access is off, the laptop falls back to ssh when the machine has `ssh` set. When one `config.toml` is shared between both Macs, list both names (`peers = ["mbp-server", "jaymins-macbook-pro"]`): naming itself does no harm, and network access stays off on each Mac until `flick remote on` there. A peer only reads the fleet's data: `sys tail` and `sys restart` are refused over the network, and the laptop runs them over ssh.
 
 ## Setup and manual tests
 

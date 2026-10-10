@@ -43,7 +43,10 @@ Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
 - **Herdr agents.** Coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones waiting on you first. ↵ jumps to the agent's pane; a notification tells you when one starts to wait. [Herdr](docs/herdr.md).
 - **Screenshots and drawing.** Capture an area, a window or a screen to a PNG file and the clipboard, mark it up with arrows, boxes, a pen, a highlighter, text and redaction, and draw on the screen with a cursor halo. It replaces Shottr and Presentify. [Capture](docs/capture.md).
-- **Key triggers.** Caps Lock as Hyper, and key chords that run an HTTP request or a shell command on key down and up (push-to-talk). [Key triggers](docs/keys.md).
+- **Key triggers.** Caps Lock as Hyper, and key chords that run an HTTP request, a shell command or a Flick command on key down and up (push-to-talk). [Key triggers](docs/keys.md).
+- **Dictation.** Hold a chord, speak, release: the text goes into the focused field. whisper.cpp runs on this Mac; audio and text never leave it. [Dictation](docs/dictation.md).
+- **KOTA.** The state of an always-on agent session in the menu bar (thinking, blocked, idle, down), the cards waiting on you, and a quick ask. [KOTA](docs/kota.md).
+- **Fleet.** This Mac's health and service checks, and a launcher view of several Macs and their services, with Screen Sharing, log tails and confirmed restarts. [System and fleet](docs/sys.md).
 - **Activity and tasks.** Opt-in time tracking per app, kept on this Mac, and a short task list with one running timer. [Activity](docs/activity.md), [Tasks](docs/tasks.md).
 - **Quicklinks.** URLs and paths with an optional `{query}` argument. Type `<keyword> <text>` to run one from the root search. Import your Raycast quicklinks with one command. [Quicklinks](docs/configuration.md#quicklinks).
 
@@ -73,10 +76,10 @@ The script builds `~/Applications/Flick.app` and starts it. Press `⌥⇧Space` 
 - [Install and update](docs/install.md)
 - [Configuration](docs/configuration.md): config file, hotkeys, quicklinks, launcher keys
 - [Command line](docs/cli.md)
-- Modules: [Script commands](docs/scripts.md) · [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Remote access](docs/remote.md)
+- Modules: [Script commands](docs/scripts.md) · [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Messages](docs/message.md) · [Dictation](docs/dictation.md) · [KOTA](docs/kota.md) · [System and fleet](docs/sys.md) · [Remote access](docs/remote.md)
 - [How it works](docs/how-it-works.md) and [ARCHITECTURE.md](ARCHITECTURE.md)
 
-Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except what you configure: HTTP requests as key triggers, and shell commands as key triggers or script commands. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
+Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except what you configure: HTTP requests as key triggers, shell commands as key triggers or script commands, and the checks and ssh calls of `[kota]` and `[[sys.machine]]`. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
 
 ## Roadmap
 
