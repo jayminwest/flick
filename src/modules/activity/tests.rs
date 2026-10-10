@@ -50,8 +50,9 @@ fn identity(pid: i32) -> Option<(Option<String>, String)> {
 }
 
 fn activity(table: &str) -> Activity {
-    let mut a = Activity {
-        env: Env {
+    // `Activity` is `Drop`, so no struct update syntax (mulch mx-3fa393).
+    let mut a = Activity::default();
+    a.env = Env {
             now: || NOW.with(Cell::get),
             utc_offset: |_| 0,
             identity,
@@ -70,8 +71,6 @@ fn activity(table: &str) -> Activity {
             },
             indicator: |on| sys(format!("indicator {on}")),
             on_quit: |_| sys("on_quit".into()),
-        },
-        ..Activity::default()
     };
     a.configure(&parse(table).unwrap().section("activity").unwrap().unwrap()).unwrap();
     a
@@ -411,6 +410,22 @@ fn titles_on_follow_the_front_app_while_recording() {
         assert_eq!(calls(), ["title 1", "follow 1", "indicator false", "unfollow"]);
         TRUSTED.with(|t| t.set(false));
         assert!(run(&mut a, cx, "status").unwrap().contains("titles: no Accessibility permission"));
+    });
+}
+
+#[test]
+fn dropping_the_module_takes_down_the_indicator_and_the_follow() {
+    with_cx(|cx| {
+        // Disabled on reload while recording with titles: both come down (flick-e084).
+        let mut a = activity("[activity]\ntitles = true");
+        run(&mut a, cx, "on").unwrap();
+        calls();
+        drop(a);
+        assert_eq!(calls(), ["indicator false", "unfollow"]);
+        assert!(cx.store.recording(), "recording stays on for a module enabled again");
+        // A module that never showed anything leaves the system alone.
+        drop(activity("[activity]\ntitles = true"));
+        assert!(calls().is_empty());
     });
 }
 

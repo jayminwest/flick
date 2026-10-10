@@ -225,6 +225,11 @@ pub struct Section {
 }
 
 impl Section {
+    /// Module `module`'s section as if the file had no such table: every key at its default.
+    pub fn empty(module: &str) -> Section {
+        Section { module: module.into(), table: Table::new() }
+    }
+
     /// The table as the module's own settings type. Give `T` `#[serde(default)]` so a
     /// missing table or key takes its default.
     pub fn get<T: DeserializeOwned>(&self) -> Result<T, String> {

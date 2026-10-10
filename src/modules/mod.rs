@@ -6,7 +6,7 @@
 //! settings type private to the module. `enabled = false` in that table leaves the module
 //! out of the registry, so it adds no items, views or hotkeys.
 
-use crate::config::Config;
+use crate::config::{Config, Section};
 use crate::core::{Module, Registry};
 
 /// Declares each module directory and registers it, one line per module:
@@ -66,16 +66,26 @@ mod bridge;
 #[cfg(test)]
 pub use clipboard::store::Clips;
 
-/// Every enabled module under `config`, with the app index scanned now.
-pub fn registry(config: &Config) -> Result<Registry, String> {
-    with_apps(config, apps::scan())
-}
-
 /// Every enabled module over `apps`, in `modules!` order. Errors name the bad table.
 pub fn with_apps(config: &Config, apps: Vec<apps::App>) -> Result<Registry, String> {
-    let mut m = Modules { config, list: vec![] };
+    let mut m = Modules { config, list: vec![], skipped: None };
     add_all(&mut m, apps)?;
     Ok(Registry::new(m.list))
+}
+
+/// Every enabled module under `config`, with the app index scanned now, for startup.
+/// Unlike `with_apps`, a bad module table does not stop the others. That module runs
+/// on its defaults, as if the file had no such table. Returns one error per bad table.
+pub fn lenient(config: &Config) -> (Registry, Vec<String>) {
+    lenient_with_apps(config, apps::scan())
+}
+
+/// `lenient` over `apps`.
+pub fn lenient_with_apps(config: &Config, apps: Vec<apps::App>) -> (Registry, Vec<String>) {
+    let mut m = Modules { config, list: vec![], skipped: Some(vec![]) };
+    // `add` fails only when `skipped` is `None`.
+    let _ = add_all(&mut m, apps);
+    (Registry::new(m.list), m.skipped.unwrap_or_default())
 }
 
 /// Each module's `flick help` verb line (`Module::verbs`), in registration order.
@@ -116,23 +126,39 @@ pub fn reload(registry: &mut Registry, config: &Config) -> Result<Vec<&'static s
 struct Modules<'a> {
     config: &'a Config,
     list: Vec<Box<dyn Module>>,
+    /// `Some` when lenient: the errors of the bad tables skipped so far.
+    skipped: Option<Vec<String>>,
 }
 
 impl Modules<'_> {
     /// Build module `id` and configure it from its table, unless the table sets
-    /// `enabled = false`.
+    /// `enabled = false`. When lenient, a bad table is recorded and the module configured
+    /// from an empty one instead.
     fn add<M: Module + 'static>(
         &mut self,
         id: &str,
         new: impl FnOnce() -> M,
     ) -> Result<(), String> {
-        if let Some(table) = self.config.section(id)? {
-            let mut module = new();
-            module.configure(&table)?;
-            debug_assert_eq!(module.id(), id, "table name is the module id");
-            self.list.push(Box::new(module));
+        let table = match self.config.section(id) {
+            Ok(None) => return Ok(()),
+            Ok(Some(table)) => table,
+            Err(e) => self.skip(id, e)?,
+        };
+        let mut module = new();
+        if let Err(e) = module.configure(&table) {
+            module.configure(&self.skip(id, e)?)?;
         }
+        debug_assert_eq!(module.id(), id, "table name is the module id");
+        self.list.push(Box::new(module));
         Ok(())
+    }
+
+    /// Error `e` in module `id`'s table: `Err(e)`, or when lenient the empty table to use
+    /// instead.
+    fn skip(&mut self, id: &str, e: String) -> Result<Section, String> {
+        let Some(skipped) = self.skipped.as_mut() else { return Err(e) };
+        skipped.push(e);
+        Ok(Section::empty(id))
     }
 }
 
@@ -218,5 +244,24 @@ mod tests {
         assert!(
             registry("[[quicklinks]]\nname = \"No URL\"\n[quicklink]\nenabled = false").is_ok()
         );
+    }
+
+    #[test]
+    fn lenient_skips_only_the_bad_tables() {
+        let text = "[[quicklinks]]\nname = \"No URL\"\n[window]\nenabled = 1\n\
+                    [switcher]\nhotkey = \"cmd+J\"\n[desktop]\nenabled = false";
+        let (mut r, errors) = lenient_with_apps(&parse(text).unwrap(), vec![]);
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert_eq!(errors[0], "[window] enabled: expected true or false");
+        assert!(errors[1].starts_with("[quicklink]: missing field `url`"), "{errors:?}");
+        // The good tables still apply: switcher keeps its hotkey, desktop stays off.
+        let specs = r.hotkeys().into_iter().map(|(m, b)| (m, b.spec)).collect::<Vec<_>>();
+        assert!(specs.contains(&("switcher", "cmd+J".into())), "{specs:?}");
+        assert!(!specs.iter().any(|(m, _)| *m == "desktop"));
+        // The bad tables' modules run on their defaults: window commands, no quicklinks.
+        let items = test_cx("", |cx| r.items(cx));
+        assert!(items.iter().any(|i| i.id.module() == "window"));
+        assert!(!items.iter().any(|i| i.id.module() == "quicklink"));
+        assert!(lenient_with_apps(&parse("").unwrap(), vec![]).1.is_empty());
     }
 }
