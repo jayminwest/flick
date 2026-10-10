@@ -63,7 +63,10 @@ pub struct Machine {
     #[serde(default)]
     pub dash: Option<String>,
     /// Checks of a machine read over ssh: launchd and process run inside the ssh call,
-    /// http and tcp from this Mac. A Flick machine checks its own `[[sys.service]]`.
+    /// http and tcp from this Mac. Needs `ssh`. A Flick machine checks its own
+    /// `[[sys.service]]` and reports them; listed here too, a service is checked when its
+    /// Flick falls back to ssh, and its `log` and `restart` let this Mac tail and restart it
+    /// over ssh (flick-4a4c).
     #[serde(default)]
     pub service: Vec<Service>,
 }
@@ -93,8 +96,8 @@ impl Machine {
         if word(self.dash.as_ref()).is_some_and(|u| !(u.starts_with("http://") || u.starts_with("https://"))) {
             return bad("dash must start with http:// or https://");
         }
-        if !self.service.is_empty() && self.via != Via::Ssh {
-            return bad("services belong to via = \"ssh\" machines; others check their own");
+        if !self.service.is_empty() && (self.via == Via::Local || self.ssh.is_none()) {
+            return bad("services belong to machines with an ssh target; this Mac's are [[sys.service]]");
         }
         for s in &self.service {
             if s.kind == Kind::Command {

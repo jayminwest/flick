@@ -205,6 +205,13 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["llm", "ping"], "llm ping"),
         (&["llm", "models", "mlx"], "llm models"),
         (&["llm"], "llm"),
+        // A peer must never restart this Mac's services or read its logs (flick-4a4c); the
+        // fleet restarts and tails from the laptop, locally or over ssh.
+        (&["sys", "restart", "web"], "sys restart"),
+        (&["sys", "restart", "pro", "ollama", "--yes"], "sys restart"),
+        (&["sys", "restart"], "sys restart"),
+        (&["sys", "tail", "web"], "sys tail"),
+        (&["sys", "tail", "pro", "ollama"], "sys tail"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
