@@ -349,11 +349,16 @@ Asks (`chat/asks.rs`): the question is stored at once as a `role` me message who
 the request id, then one worker at a time (FIFO) runs `/usr/bin/ssh -o BatchMode=yes -o
 ConnectTimeout=8 <kota_host> <kota_ask> --id <req> --thread <t>` with the question on
 stdin (`message::run::exec`, 20 s). A non-zero exit marks the question `failed` and puts the
-reason on the window's notice line. KOTA answers with `message post --thread <t>
---reply-to <req> --id <x> [--partial]` (a 'me' row is never pending, so the reply never
-takes the question). HUD policy (`model::alert`): while the window shows a thread, posts to
-it show no card and play no sound; other threaded posts show a card on the first and the
-final post of an id. Verbs: `message chat [--thread t] [--snapshot <png>]`, `message ask
+reason on the window's notice line; a wake (`Env::wake_after`) just past
+`model::THINKING_SECS` redraws so an unanswered "Thinking…" goes. KOTA answers with
+`message post [--thread <t>] --reply-to <req> --id <x> [--partial]` (a 'me' row is never
+pending, so the reply never takes the question); a post or card without a thread takes the
+one its id is stored in, else its `reply_to`'s (`thread::inherit`). HUD policy
+(`model::alert`): while the window shows a thread, posts and cards to it show no corner card
+and play no sound (a corner card already up only redraws in place); other threaded posts
+show a card on the first and the final post of an id. Thread cards are transcript rows
+(`view::rows` adds the press state by card id and folds it into the row version); their
+presses queue `Note::Press` and go through `dispatch::press`, as corner cards' do. Verbs: `message chat [--thread t] [--snapshot <png>]`, `message ask
 [--thread t] <text...>` (answers once ssh is done, `core::later`); the launcher view
 `message/threads` (⌘K Chat Threads on the root item) lists threads as
 `message:thread:<t>`, Enter opens the window on one. All macOS and ssh calls go through

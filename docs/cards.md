@@ -30,7 +30,7 @@ Top-level keys; any other key is ignored with a warning.
 | `id` | string | required; 1-64 of `A-Z a-z 0-9 . _ -`. The message id: posting the same id again replaces the card. |
 | `title` | string | required, not blank; trimmed, cut to 120 chars with `…` (warning). |
 | `state` | string | `open` (default), `pending`, `done`, `error`. Anything else: error. |
-| `thread` | string | optional conversation id, id charset. Invalid: dropped with a warning. Stored with the card; nothing groups by it yet (reserved for the chat window). |
+| `thread` | string | optional conversation id, id charset. Invalid: dropped with a warning. The card shows inline in that chat thread; while the chat window shows the thread it does not show in the corner. Without one, a card keeps the thread its `id` is already in, else takes the thread of the message `reply_to` names (so a card answering a chat question lands in its thread). |
 | `reply_to` | string | optional id of the message this card answers (see [reply_to](#reply_to-and-pending-placeholders)). Invalid: dropped with a warning. |
 | `blocks` | array | body, top to bottom, at most 24. Not an array: ignored with a warning. |
 | `actions` | array | buttons, left to right (wrapping, right-aligned), at most 6. Not an array: ignored with a warning. |
@@ -114,8 +114,9 @@ While `script`, `flick` or `shell` runs, the card shows a spinner and `Running s
 | `error` | warning symbol, "KOTA reported an error" | enabled (retry) |
 
 - **Update a card by re-posting the same `id`** with the full card (a post replaces, it never merges). It redraws in place, keeps its slot, plays no sound, and clears Flick's own press state (pending, error line, confirm, running). What the user typed or picked survives the redraw unless the update changed that input's initial `value`/`selected`.
-- An `open` card with an enabled action stays until acted on or closed (`card_timeout_secs`, default 0 = forever; Esc from another app does not close it). Other cards hide after `timeout_secs` (default 20 s) unless the pointer rests on them.
-- A card the user dismissed (x, Esc, `card dismiss`) **or that timed out** comes back only when re-posted as `open` or `error`; a `done` or `pending` re-post of it goes to history silently. So: put the outcome of a long job in an `open` or `error` card if the user must see it, and keep progress updates short-lived. A card you post as `pending` has no watchdog and hides after `timeout_secs` like any card without enabled actions.
+- An `open` card with an enabled action stays until acted on or closed (`card_timeout_secs`, default 0 = forever; Esc from another app does not close it). A `pending` card stays until updated. Other cards hide after `timeout_secs` (default 20 s) unless the pointer rests on them.
+- A card you post as `pending` stays up with no timeout (and no watchdog) until you re-post it, so the final `done` update of a long job shows in its place; the user can still close it.
+- A card the user dismissed (x, Esc, `card dismiss`) comes back only when re-posted as `open` or `error`; a `done` or `pending` re-post of it goes to history silently. A card that only timed out is not dismissed: any re-post of it shows again.
 - `pending` posts make no sound and no notification.
 - Error details belong in a `text` block; the `error` state's own line is generic.
 
@@ -146,7 +147,7 @@ stdin: {"env":"prod","note":"ship it","tags":["a","b"]}   then EOF
 - **Exit 2**: rejected. The last non-empty stderr line (≤ 200 chars) shows as `KOTA rejected: <line>`; actions come back.
 - **Anything else** (another code, a signal, a spawn failure): `Sending to KOTA failed (exit n): <last stderr line>`; actions come back.
 - **20 s budget** from spawn to exit, then the command is killed: "No answer from KOTA in 20 s". Queue the work and exit; do the work after.
-- A press on a pending or running card is ignored, so a press is never sent twice. A card dismissed while its press runs drops the result.
+- A press on a `pending` or `done` card, or on one whose press still runs, is ignored (`card press` answers `Card <id> is done: its actions are off`), so a press is never sent twice and a finished card never runs its actions again. A card dismissed while its press runs drops the result.
 
 The KOTA side (`kota-ask --action`) should: read the values, queue a tick that names the card and action, exit 0 at once, then re-post the card (`done` with the outcome, `open` with the next question, or `error` with what failed).
 

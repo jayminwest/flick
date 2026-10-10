@@ -220,6 +220,24 @@ fn stray_presses_do_nothing() {
     press("go");
     settle(&mut f, &mut m);
     assert_eq!(take_log(), [""; 0]);
+    // Nor does a done one (flick-f823): no send, no local action, no error line, no state.
+    let done = ASK.replacen(r#""title":"Deploy?","#, r#""title":"Deploy?","state":"done","#, 1);
+    f.run(&mut m, false, &["card", "post", &done]).unwrap();
+    take_log();
+    for action in ["go", "later", "web", "sh"] {
+        press(action);
+    }
+    settle(&mut f, &mut m);
+    assert_eq!(take_log(), [""; 0]);
+    assert!(m.ui.is_empty() && !m.dismissed.contains("c1"), "{:?}", m.ui);
+    f.local = true;
+    assert_eq!(f.run(&mut m, false, &["card", "press", "c1", "web"]), Err("Card c1 is done: its actions are off".into()));
+    // An error card takes presses again (retry).
+    let error = ASK.replacen(r#""title":"Deploy?","#, r#""title":"Deploy?","state":"error","#, 1);
+    f.run(&mut m, false, &["card", "post", &error]).unwrap();
+    take_log();
+    assert_eq!(f.run(&mut m, false, &["card", "press", "c1", "web"]), Ok("Opened the link".into()));
+    assert_eq!(take_log()[0], "open https://example.com");
     // Other events do nothing.
     assert!(!f.cx("", false, |cx| m.on_event(Event::Wake, cx)));
 }

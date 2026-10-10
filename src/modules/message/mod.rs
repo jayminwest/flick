@@ -65,8 +65,8 @@ const CHAT: &str = "chat";
 pub struct Inbox {
     env: Env,
     settings: Settings,
-    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one stays
-    /// in history.
+    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one the
+    /// user dismissed stays in history.
     dismissed: HashSet<String>,
     /// Dismissed cards that only timed out: they still wait on the user (`pending.rs`).
     expired: HashSet<String>,
@@ -172,6 +172,7 @@ impl Inbox {
         let post = text::parse_post(args)?;
         let id = post.id.unwrap_or_else(self.env.new_id);
         let first = cx.store.message(&id).is_none();
+        let thread = thread::inherit(post.thread, &id, post.reply_to.as_deref(), cx);
         let (context, replaced) = quote(post.reply_to.as_deref(), cx);
         let m = Message {
             id: id.clone(),
@@ -182,7 +183,7 @@ impl Inbox {
             reply_to: post.reply_to,
             context,
             pending: post.pending,
-            thread: post.thread,
+            thread,
             state: if post.partial { Progress::Partial } else { Progress::Done },
             ..Message::default()
         };
