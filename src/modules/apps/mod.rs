@@ -5,6 +5,7 @@ mod leftovers;
 mod running;
 mod uninstall;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::core::{Action, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
@@ -72,12 +73,16 @@ pub struct Apps {
     home: PathBuf,
     /// The uninstall waiting for its confirmation; its paths are exactly what was shown.
     pending: Option<uninstall::Plan>,
+    /// Bundles of the running apps (`workspace::running_bundles`), for the action menu. Read
+    /// on the first menu after an app launched or quit or the launcher opened, never per
+    /// render; `None` until then.
+    running: Option<HashSet<PathBuf>>,
 }
 
 impl Apps {
     pub fn new(apps: Vec<App>) -> Apps {
         let home = dirs::home_dir().unwrap_or_default();
-        Apps { apps, own: app::own_bundle(), home, pending: None }
+        Apps { apps, own: app::own_bundle(), home, pending: None, running: None }
     }
 
     /// The indexed app named `name`, any case.
@@ -115,6 +120,7 @@ impl Module for Apps {
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         if view.name == running::VIEW {
+            self.running = None;
             running::refresh(view, &running::running(self.own.as_deref()), cx);
         }
     }
@@ -146,10 +152,15 @@ impl Module for Apps {
 
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
-    /// keystroke. `AppActivated` makes the running view stale: an app launched or quit.
+    /// keystroke. `AppActivated` and `AppTerminated` make the running view stale: an app
+    /// launched or quit.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        if let Event::AppActivated { .. } = event {
+        if let Event::AppActivated { .. } | Event::AppTerminated { .. } = event {
+            self.running = None;
             return true;
+        }
+        if let Event::LauncherOpened | Event::Wake = event {
+            self.running = None;
         }
         let rescan = match event {
             Event::LauncherOpened | Event::Wake => true,
@@ -266,8 +277,24 @@ mod tests {
             let mut flick = Apps { own: Some(own.into()), ..Apps::new(vec![]) };
             let id = ItemId::new("app", own).with_arg("quit");
             assert!(matches!(flick.activate(&id, cx), Outcome::Stay(Some(s)) if s.contains("is Flick")));
-            assert!(apps.on_event(Event::AppActivated { pid: 1 }, cx));
             assert!(apps.command(&["running".into()], cx).is_ok());
+        });
+    }
+
+    #[test]
+    fn app_launches_and_quits_make_the_running_view_stale() {
+        let mut apps = Apps::new(vec![]);
+        test_cx("", |cx| {
+            for event in [
+                Event::AppActivated { pid: 1 },
+                Event::AppTerminated { pid: 1 },
+                Event::LauncherOpened,
+            ] {
+                apps.running = Some(HashSet::new());
+                let stale = apps.on_event(event, cx);
+                assert_eq!(stale, event != Event::LauncherOpened);
+                assert!(apps.running.is_none(), "{event:?} forgets the running apps");
+            }
         });
     }
 }

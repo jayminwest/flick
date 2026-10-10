@@ -15,10 +15,11 @@ const UNINSTALL: &str = "uninstall";
 
 impl Apps {
     /// cmd+K on the app at `path`. The panel asks on every render of the selected item, so
-    /// this makes no `AppKit` query: Quit and Force Quit are listed for every app but Flick
-    /// itself, and `quit` checks that the app runs. Uninstall… is left out for protected apps
-    /// (see `uninstallable`). Empty for a key that is not a path.
-    pub(super) fn menu(&self, path: &Path) -> Vec<Action> {
+    /// this reads the cached running apps (`Apps::running`, one `AppKit` query after each
+    /// launch, quit or launcher open): Quit and Force Quit are listed for running apps but
+    /// Flick itself, and `quit` checks again. Uninstall… is left out for protected apps (see
+    /// `uninstallable`). Empty for a key that is not a path.
+    pub(super) fn menu(&mut self, path: &Path) -> Vec<Action> {
         if !path.is_absolute() {
             return vec![];
         }
@@ -26,7 +27,7 @@ impl Apps {
             Action::new(OPEN, "Open Application", Icon::Symbol("arrow.up.forward.app")),
             Action::new(REVEAL, "Show in Finder", Icon::Symbol("folder")),
         ];
-        if !self.is_own(path) {
+        if !self.is_own(path) && self.is_running(path) {
             menu.push(Action::new(QUIT, "Quit", Icon::Symbol("xmark.circle")));
             menu.push(Action::new(
                 FORCE_QUIT,
@@ -84,6 +85,13 @@ impl Apps {
         }
     }
 
+    /// The app at `path` runs, by the cached running apps (read now if there are none).
+    fn is_running(&mut self, path: &Path) -> bool {
+        let running =
+            self.running.get_or_insert_with(|| workspace::running_bundles().into_iter().collect());
+        running.contains(&workspace::canonical(path))
+    }
+
     fn is_own(&self, path: &Path) -> bool {
         self.own.as_deref() == Some(path)
     }
@@ -99,6 +107,9 @@ impl Apps {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+
     use super::*;
     use crate::core::{ItemId, Module, test_cx};
     use crate::modules::apps::App;
@@ -106,9 +117,11 @@ mod tests {
     const FAKE: &str = "/nonexistent/flick/Fake.app";
     const OWN: &str = "/nonexistent/flick/Flick.app";
 
+    /// Fake and Flick, both running by the cache (neither really runs: `quit` finds no pids).
     fn apps() -> Apps {
         let apps = vec![App { name: "Fake".into(), path: FAKE.into() }];
-        Apps { own: Some(OWN.into()), ..Apps::new(apps) }
+        let running = Some([FAKE, OWN].into_iter().map(PathBuf::from).collect());
+        Apps { own: Some(OWN.into()), running, ..Apps::new(apps) }
     }
 
     fn keys(actions: &[Action]) -> Vec<&'static str> {
@@ -125,6 +138,21 @@ mod tests {
             assert_eq!(keys(&a.actions(&ItemId::new("app", OWN), cx)), [OPEN, REVEAL]);
             assert!(a.actions(&ItemId::new("app", "quit"), cx).is_empty());
         });
+    }
+
+    #[test]
+    fn menu_hides_quit_for_apps_that_do_not_run() {
+        let mut a = apps();
+        a.running = Some(HashSet::new());
+        test_cx("", |cx| {
+            assert_eq!(keys(&a.actions(&ItemId::new("app", FAKE), cx)), [OPEN, REVEAL]);
+        });
+        // With no cache the menu reads the running apps: Finder always runs, Fake never.
+        a.running = None;
+        let finder = Path::new("/System/Library/CoreServices/Finder.app");
+        assert!(keys(&a.menu(finder)).contains(&QUIT));
+        assert!(a.running.is_some());
+        assert_eq!(keys(&a.menu(Path::new(FAKE))), [OPEN, REVEAL]);
     }
 
     #[test]

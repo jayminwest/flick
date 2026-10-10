@@ -162,7 +162,7 @@ the list, refreshed) or `Hide`.
 ## Events and the main thread
 
 `Event` (`src/core/event.rs`): `Started`, `Reloaded`, `LauncherOpened`, `AppActivated { pid }`,
-`PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
+`AppTerminated { pid }`, `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
 `ModuleChanged { module }`, `Chord { index, down }`, `WindowChanged { pid }`, `Sleep`,
 `Locked`, `Unlocked`, `TaskChanged { task }` (the `task` module's running task, posted with
 `events::post`), `CardsPending { count, unread }` (cards waiting on the user, unread posts).
@@ -176,7 +176,7 @@ keep the selected item when it is still in the list (`refresh_keeping_selection`
 Sources:
 
 - `platform::events::start` registers `NSWorkspace`/`NSNotificationCenter` observers
-  (activation, wake, screen parameters, and through `events::on_session` sleep, screen
+  (activation, app termination, wake, screen parameters, and through `events::on_session` sleep, screen
   lock/unlock and fast user switching as `Sleep`/`Locked`/`Unlocked`) and one 0.5 s timer.
   The timer compares the pasteboard change count, and every 10th tick (5 s) checks idle time
   against 60 s. Nothing else polls.
