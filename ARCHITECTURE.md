@@ -194,7 +194,8 @@ Sources:
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
   modifier-release poll), `kota` (its poll round, its timer, its ask thread, and its menu
   bar item's picks and menu opens), `llm` (its model-list and reply-stream threads, at most
-  one undelivered event at a time, and its chat window's handlers).
+  one undelivered event at a time, and its chat and private chat windows' handlers; the
+  event never carries chat text, `Event` being `Copy`).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -437,6 +438,23 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   refetched on open; a server's error row `llm:retry:<server>` refetches. `threads` lists
   `llm:thread:<id>`. All window calls go through `chat::Ui` (`wire::UI`; fakes in
   `testkit::UI`).
+- Private chat (`private_chat.rs`, flick-c325): the root item `llm:private` (shown with any
+  server) and `[llm] private_hotkey` (bound whenever set) show the private surface
+  "llm-private" (`Spec::private = Some("Private - nothing is saved")`, title "Private
+  Chat") on a `PrivateSession` in `private_chat::Room` (`Arc<Mutex<Option<Open>>>`). With
+  no `private = true` server the item answers `NO_PRIVATE` and the hotkey returns the
+  `private` view saying it; nothing falls back to a normal server. Its handlers queue
+  `chat::Note`s in their own static. Its functions take no `Cx`, so they cannot reach the
+  store; it has no control verb, no notification and no log line; its header and window
+  title never hold chat text. Model: `default_model` if the private server lists it, else
+  the first listed. ⌘C with nothing selected copies the last reply with
+  `pasteboard::set_text_concealed`. Wipes (drop the session, `io::cancel` its stream and
+  wipe the taken pieces, empty rows and input, notice the `Wipe`): hide (⌘W, Esc, hotkey),
+  ⌘N, `Event::Locked`/`Sleep`, `configure` (only the running module ever had a session),
+  and quit: `wire` installs one `app::on_terminate` hook (and `quit_on_sigterm`) that
+  reaches the room and `io::Shared` through `Weak`s in a static and calls
+  `private_chat::wipe_for_quit` (`try_lock`, never waits). Window calls go through
+  `private_chat::Ui` (`wire::PRIVATE_UI`; fakes in `testkit::PRIVATE`).
 
 ### Key tap
 

@@ -16,10 +16,14 @@
 //! - `private.rs`: `PrivateSession`, the private chat's in-memory transcript (no store, no
 //!   `Serialize`, redacted `Debug`, wiped on clear and drop), its `private = true` server gate
 //!   and when it is wiped (`Wipe`, `wipe_on`).
+//! - `private_chat.rs`: the private chat window (surface "llm-private", flick-c325): the root
+//!   item `llm:private` and `private_hotkey`, concealed copy, wiped on close, `Locked`,
+//!   `Sleep`, reload (`configure`) and quit.
 //!
 //! `flick llm ping [server]` and `flick llm models [server] [--json]` fetch a normal (not
 //! private) server's `/v1/models`, waiting at most `ASK_WAIT`. Every `llm` verb is denied
-//! over the network (`NET_DENIED`): they make this Mac send requests.
+//! over the network (`NET_DENIED`): they make this Mac send requests. The private chat has no
+//! verb at all.
 //!
 //! Nothing here logs prompts or replies; errors carry at most 200 characters of a server's
 //! error message.
@@ -28,6 +32,7 @@ mod chat;
 mod io;
 mod openai;
 mod private;
+mod private_chat;
 mod report;
 mod settings;
 mod store;
@@ -57,11 +62,12 @@ pub struct Llm {
     hooks: Hooks,
     ask_wait: Duration,
     chat: chat::Chat,
+    private: private_chat::Private,
 }
 
 impl Default for Llm {
     fn default() -> Self {
-        Llm::with_hooks(wire::HOOKS, wire::UI)
+        Llm::with_hooks(wire::HOOKS, wire::UI, wire::PRIVATE_UI)
     }
 }
 
@@ -72,9 +78,9 @@ impl Drop for Llm {
 }
 
 impl Llm {
-    fn with_hooks(hooks: Hooks, ui: chat::Ui) -> Llm {
-        let chat = chat::Chat::new(ui);
-        Llm { settings: Settings::default(), shared: Arc::default(), hooks, ask_wait: ASK_WAIT, chat }
+    fn with_hooks(hooks: Hooks, ui: chat::Ui, private: private_chat::Ui) -> Llm {
+        let (chat, private) = (chat::Chat::new(ui), private_chat::Private::new(private));
+        Llm { settings: Settings::default(), shared: Arc::default(), hooks, ask_wait: ASK_WAIT, chat, private }
     }
 
     /// Fetch a normal server's model list now and wait for it, at most `ask_wait`.
@@ -101,18 +107,26 @@ impl Module for Llm {
         store::MIGRATIONS
     }
 
+    /// A reload wipes the private chat. `modules::reload` also configures a throwaway fresh
+    /// instance first; it never had a private chat, so only the running module wipes.
     fn configure(&mut self, table: &Section) -> Result<(), String> {
         self.settings = table.get::<Settings>()?.check()?;
+        self.private_wipe(private::Wipe::Reload);
         Ok(())
     }
 
-    /// `ModuleChanged` for this module: the threads' results and the chat window's notes.
+    /// `ModuleChanged` for this module: the threads' results and both windows' notes.
+    /// `Locked` and `Sleep` wipe the private chat.
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         if event == (Event::ModuleChanged { module: ID }) {
             // The one posted event arrived: the threads may post again.
             self.shared.lock().posted = false;
             self.chat_drain(cx);
+            self.private_drain();
             return true;
+        }
+        if let Some(why) = private::wipe_on(event) {
+            self.private_wipe(why);
         }
         false
     }
@@ -144,16 +158,23 @@ impl Module for Llm {
         }
     }
 
-    /// `hotkey` shows or hides the chat window; only with a normal server.
+    /// `hotkey` shows or hides the chat window; only with a normal server. `private_hotkey`
+    /// shows or hides the private one; bound whenever set, so that without a private server it
+    /// can say why.
     fn hotkeys(&self) -> Vec<Binding> {
-        let spec = self.settings.hotkey.as_ref().filter(|s| !s.trim().is_empty());
+        let set = |spec: &Option<String>| spec.as_ref().filter(|s| !s.trim().is_empty()).cloned();
         let usable = self.settings.normal(None).is_ok();
-        spec.filter(|_| usable).map(|s| Binding { spec: s.clone(), key: Ok(views::CHAT.into()) }).into_iter().collect()
+        let chat = set(&self.settings.hotkey).filter(|_| usable).map(|spec| Binding { spec, key: Ok(views::CHAT.into()) });
+        let private = set(&self.settings.private_hotkey).map(|spec| Binding { spec, key: Ok(views::PRIVATE.into()) });
+        chat.into_iter().chain(private).collect()
     }
 
+    /// Without a private server, the private hotkey shows the launcher saying so.
     fn hotkey(&mut self, key: &str, cx: &mut Cx) -> Option<ListView> {
-        if key == views::CHAT {
-            self.chat_toggle(cx);
+        match key {
+            views::CHAT => self.chat_toggle(cx),
+            views::PRIVATE => return self.private_toggle().err().and_then(|_| self.view(views::PRIVATE)),
+            _ => {}
         }
         None
     }

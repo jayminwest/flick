@@ -1,10 +1,13 @@
-//! The launcher side of the normal chat (flick-6a0d): the root item `llm:chat`, the `models`
-//! view (every normal server's models, `llm:model:<server>/<model>`) and the `threads` view
-//! (the kept chats, `llm:thread:<id>`). With no normal server there is no item and nothing
-//! runs.
+//! The launcher side of the chats: the root item `llm:chat`, the `models` view (every normal
+//! server's models, `llm:model:<server>/<model>`) and the `threads` view (the kept chats,
+//! `llm:thread:<id>`) of the normal chat (flick-6a0d); with no normal server there is no
+//! `llm:chat`. The root item `llm:private` opens the private chat (flick-c325), shown with
+//! any server; with no private server it says `NO_PRIVATE`, as does the `private` view the
+//! private hotkey shows then.
 
 use super::Llm;
 use super::io::{self, Models};
+use super::settings::NO_PRIVATE;
 use super::store::Chats;
 use crate::core::{Action, Cx, Icon, Item, ItemId, ListView, Outcome};
 
@@ -14,6 +17,8 @@ pub const CHAT: &str = "chat";
 pub const MODELS: &str = "models";
 /// The thread list's view name (and the root item's action that opens it).
 pub const THREADS: &str = "threads";
+/// The private chat's root item key, and the view that says why it cannot open.
+pub const PRIVATE: &str = "private";
 const MODEL: &str = "model:";
 const THREAD: &str = "thread:";
 const RETRY: &str = "retry:";
@@ -32,20 +37,37 @@ fn ranked(items: Vec<Item>, cx: &mut Cx) -> Vec<Item> {
 }
 
 impl Llm {
-    /// The root item, only with a normal server.
+    /// The root items: `llm:chat` with a normal server, `llm:private` with any server.
     pub(super) fn root_items(&self) -> Vec<Item> {
-        let Ok(server) = self.settings.normal(None) else { return vec![] };
+        let mut items: Vec<Item> = self.chat_item().into_iter().collect();
+        if !self.settings.servers.is_empty() {
+            let subtitle = match self.settings.private(None) {
+                Ok(s) => format!("{} · nothing is saved", s.name),
+                Err(_) => "No private server ([[llm.servers]] private = true)".into(),
+            };
+            items.push(Item {
+                subtitle,
+                accessory: "Command".into(),
+                keywords: ["llm", "model", "chat", "ai", "local", "private", "incognito"].map(String::from).to_vec(),
+                ..Item::new(id(PRIVATE), "Private Model Chat", "Open Private Chat", Icon::Symbol("lock"))
+            });
+        }
+        items
+    }
+
+    fn chat_item(&self) -> Option<Item> {
+        let server = self.settings.normal(None).ok()?;
         let (server, model) = match &self.chat.pick {
             Some((s, m)) => (s.as_str(), m.as_str()),
             None => (server.name.as_str(), self.settings.default_model.as_str()),
         };
         let model = if model.is_empty() { "first listed model" } else { model };
-        vec![Item {
+        Some(Item {
             subtitle: format!("{server} · {model}"),
             accessory: "Command".into(),
             keywords: ["llm", "model", "chat", "ai", "local"].map(String::from).to_vec(),
             ..Item::new(id(CHAT), "Local Model Chat", "Open Chat", Icon::Symbol("brain"))
-        }]
+        })
     }
 
     pub(super) fn root_actions(item: &ItemId) -> Vec<Action> {
@@ -72,6 +94,7 @@ impl Llm {
                     ..ListView::new(super::ID, MODELS)
                 })
             }
+            PRIVATE => Some(ListView { empty: NO_PRIVATE.into(), escape_hides: true, ..ListView::new(super::ID, PRIVATE) }),
             THREADS => Some(ListView {
                 placeholder: "Search chats…".into(),
                 footer: "Local model chats  ·  ↵ opens".into(),
@@ -83,7 +106,11 @@ impl Llm {
     }
 
     pub(super) fn fill(&self, view: &mut ListView, cx: &mut Cx) {
-        let items = if view.name == MODELS { self.model_items() } else { self.thread_items(cx) };
+        let items = match view.name.as_str() {
+            MODELS => self.model_items(),
+            THREADS => self.thread_items(cx),
+            _ => vec![],
+        };
         view.items = ranked(items, cx);
     }
 
@@ -147,6 +174,14 @@ impl Llm {
             self.pick(&server, model);
             self.summon(None, cx);
             return Outcome::Hide;
+        }
+        if key == PRIVATE {
+            if let Err(e) = self.settings.private(None) {
+                return Outcome::Stay(Some(e));
+            }
+            cx.hide();
+            // The gate passed, so the summon does not fail.
+            return self.private_summon().err().map(Some).map_or(Outcome::Hide, Outcome::Stay);
         }
         let thread = key.strip_prefix(THREAD);
         if thread.is_none() && key != CHAT {
