@@ -224,7 +224,10 @@ Sources:
   modifier-release poll), `kota` (its poll round, its timer, its ask thread, and its menu
   bar item's picks and menu opens), `llm` (its model-list and reply-stream threads, at most
   one undelivered event at a time, and its chat and private chat windows' handlers; the
-  event never carries chat text, `Event` being `Copy`).
+  event never carries chat text, `Event` being `Copy`), `app` (its uninstall sizing thread:
+  Uninstall… pushes view `app/uninstall`, which lists the paths with "Sizing…" until the
+  sizes arrive, and Enter there asks for the confirmation; `app uninstall --dry-run` answers
+  later through `core::later`).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a

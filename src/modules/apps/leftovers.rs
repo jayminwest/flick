@@ -25,13 +25,6 @@ pub const ROOTS: [&str; 10] = [
 /// Entries a size walk visits before it stops and reports a lower bound.
 const WALK_LIMIT: usize = 200_000;
 
-/// A leftover path and its size.
-#[derive(Debug, PartialEq)]
-pub struct Leftover {
-    pub path: PathBuf,
-    pub size: Size,
-}
-
 /// Bytes of the regular files under a path. `capped`: the walk stopped early, so `bytes` is a
 /// lower bound (show it as ">= X").
 #[derive(Debug, PartialEq, Clone, Copy, Default)]
@@ -40,13 +33,10 @@ pub struct Size {
     pub capped: bool,
 }
 
-/// Leftovers of the app with bundle id `bid` under `home`, sorted by path, with sizes.
-pub fn find(home: &Path, bid: &str) -> Vec<Leftover> {
-    matches(home, bid).into_iter().map(|path| Leftover { size: size(&path), path }).collect()
-}
-
 /// The leftover paths of `bid` under `home`, sorted. Each is a direct child of a canonical
 /// `~/Library/<root>` (or `Preferences/ByHost`) that is a real folder, and is not a symlink.
+/// Cheap (a few folder listings); sizing them (`size`) is not, so the caller does that on a
+/// thread.
 pub fn matches(home: &Path, bid: &str) -> Vec<PathBuf> {
     if !valid_bid(bid) {
         return vec![];
@@ -196,6 +186,18 @@ mod tests {
 
     const BID: &str = "dev.flick.test";
     const UUID: &str = "0A1B2C3D-4E5F-6789-ABCD-EF0123456789";
+
+    /// A leftover path and its size.
+    #[derive(Debug, PartialEq)]
+    struct Leftover {
+        path: PathBuf,
+        size: Size,
+    }
+
+    /// The matches of `bid` under `home`, each sized.
+    fn find(home: &Path, bid: &str) -> Vec<Leftover> {
+        matches(home, bid).into_iter().map(|path| Leftover { size: size(&path), path }).collect()
+    }
 
     /// A temp home folder, removed on drop. Test-only cleanup; the finder itself never deletes.
     struct Home(PathBuf);
