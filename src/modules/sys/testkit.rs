@@ -168,8 +168,11 @@ fn connect(target: &str, _budget: Duration) -> Result<Duration, String> {
 pub struct Shown {
     pub opened: u32,
     pub visible: bool,
+    /// It has the keyboard (`show` gives it; tests take it away).
+    pub key: bool,
     pub header: Option<(String, String, Status)>,
-    /// Each bubble as `key|side|header|time|state|md`.
+    /// Each bubble as `key|side|header|time|state|md`, each card as
+    /// `key|card|title|labels|confirm <action>`.
     pub rows: Vec<String>,
     pub notice: Option<String>,
     /// Notes for the next `take`, as the handlers would queue them.
@@ -188,16 +191,22 @@ fn shown<R>(f: impl FnOnce(&mut Shown) -> R) -> R {
 fn row(r: &Row) -> String {
     match *r {
         Row::Bubble { key, side, header, time, state, md, .. } => format!("{key}|{side:?}|{header}|{time}|{state:?}|{md}"),
-        _ => "other".into(),
+        Row::Card { key, card, ui, .. } => {
+            let off = |a: &crate::core::card::Action| if a.enabled() { "" } else { " (off)" };
+            let labels: Vec<String> = card.actions.iter().map(|a| format!("{}{}", a.label, off(a))).collect();
+            format!("{key}|card|{}|{}|confirm {}", card.title, labels.join(", "), ui.confirm.unwrap_or("-"))
+        }
+        Row::Divider { .. } => "other".into(),
     }
 }
 
 /// A fake "fleet" surface; `snapshot` fails for a path under `/nope/`.
 pub const WINDOW: window::Hooks = window::Hooks {
     open: || shown(|s| s.opened += 1),
-    show: || shown(|s| s.visible = true),
-    hide: || shown(|s| s.visible = false),
+    show: || shown(|s| (s.visible, s.key) = (true, true)),
+    hide: || shown(|s| (s.visible, s.key) = (false, false)),
     visible: || shown(|s| s.visible),
+    key: || shown(|s| s.key),
     header: |t, sub, st| shown(|s| s.header = Some((t.into(), sub.into(), st))),
     rows: |rows| shown(|s| s.rows = rows.iter().map(row).collect()),
     notice: |n| shown(|s| s.notice = n.map(str::to_string)),

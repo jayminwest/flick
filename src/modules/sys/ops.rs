@@ -5,11 +5,13 @@
 
 use super::act::{self, Target};
 use super::jobs;
+use super::menu::{self, Press};
 use super::settings::Machine;
 use super::views::{self, Key};
 use super::{ID, Sys};
 use crate::core::later;
 use crate::core::{Action, Cx, Icon, ItemId, ListView, Outcome};
+use crate::platform::hud;
 
 /// `$HOME`, for a `~/` log on this Mac.
 fn home() -> String {
@@ -97,6 +99,42 @@ impl Sys {
             }
             _ => Outcome::Stay(None),
         }
+    }
+
+    /// A press on a fleet window action card (`menu.rs`, flick-1e00): open, tail, or
+    /// restart on the second press (the card's Run), re-resolved from config. Why it did
+    /// nothing goes to the window's notice line.
+    pub(super) fn window_press(&mut self, card: &str, action: &str) {
+        let Some(press) = menu::press(card, action, hud::CANCEL) else { return };
+        let asked = Some((card.to_string(), action.to_string()));
+        let confirmed = matches!(press, Press::Restart { .. }) && self.win.confirm == asked;
+        self.win.confirm = None;
+        let said = match press {
+            Press::Cancel => Ok(()),
+            Press::Open { machine, vnc } => {
+                let m = self.shared.lock().fleet.slots.iter().find(|s| s.machine.name == machine).map(|s| s.machine.clone());
+                match m.and_then(|m| if vnc { m.vnc } else { m.dash }) {
+                    Some(url) => {
+                        (self.hooks.open)(&url);
+                        Ok(())
+                    }
+                    None => Err(format!("sys: {machine} has no such action now")),
+                }
+            }
+            Press::Tail { machine, service } => {
+                let started = self.resolve(Some(machine), service).and_then(|t| self.tail(&t, false));
+                self.win.tail = started.is_ok();
+                started
+            }
+            Press::Restart { .. } if !confirmed => {
+                self.win.confirm = asked;
+                Ok(())
+            }
+            Press::Restart { machine, service } => self.resolve(Some(machine), service).and_then(|t| {
+                jobs::restart(&self.shared, &t, t.restart((self.hooks.uid)())?, self.hooks, None)
+            }),
+        };
+        self.win.said = said.err();
     }
 
     /// The restart the user confirmed, resolved again from config.
