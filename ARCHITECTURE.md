@@ -405,12 +405,16 @@ the request id, then one worker at a time (FIFO) runs `/usr/bin/ssh -o BatchMode
 ConnectTimeout=8 <kota_host> <kota_ask> --id <req> --thread <t>` with the question on
 stdin (`message::run::exec`, 20 s). A non-zero exit marks the question `failed` and puts the
 reason on the window's notice line; a wake (`Env::wake_after`) just past
-`model::THINKING_SECS` redraws so an unanswered "Thinking…" goes. KOTA answers with
+`model::THINKING_SECS` redraws so an unanswered "Thinking…" goes. ⌘R resends a failed
+question under its id and `Messages::restamp`s it to the retry time (it moves to the end of
+the transcript), with a new wake, so "Thinking…" runs its full time again. KOTA answers with
 `message post [--thread <t>] --reply-to <req> --id <x> [--partial]` (a 'me' row is never
 pending, so the reply never takes the question); a post or card without a thread takes the
 one its id is stored in, else its `reply_to`'s (`thread::inherit`). HUD policy
 (`model::alert`): while the window shows a thread, posts and cards to it show no corner card
-and play no sound (a corner card already up only redraws in place); other threaded posts
+and play no sound (a corner card already up only redraws in place), and summoning the
+window on a thread (or ⌘[ / ⌘] onto one) dismisses that thread's corner cards from the HUD
+without storing a dismissal (flick-1947); other threaded posts
 show a card on the first and the final post of an id. Thread cards are transcript rows
 (`view::rows` adds the press state by card id and folds it into the row version); their
 presses queue `Note::Press` and go through `dispatch::press`, as corner cards' do. Verbs: `message chat [--thread t] [--snapshot <png>]`, `message ask
