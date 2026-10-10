@@ -5,19 +5,21 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
-//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
+//! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
 //! keyboard into the newest card, or gives it back), `action_command`,
 //! `pending_timeout_secs`, `card_timeout_secs`. Table `messages` holds the history. Each
 //! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
 //! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`,
-//! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`.
+//! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`. Chat threads
+//! (`post --thread`, `--partial` streaming) are stored per thread; `thread.rs` reads them.
 
 mod card;
 mod dispatch;
 mod local;
 mod pending;
 mod run;
+mod settings;
 pub mod store;
 #[cfg(test)]
 mod tests;
@@ -29,112 +31,28 @@ mod tests_local;
 mod tests_pending;
 #[cfg(test)]
 mod tests_press;
+#[cfg(test)]
+mod tests_thread;
 mod text;
+mod thread;
 mod wire;
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::config::Section;
 use crate::core::card::State;
 use crate::core::{Action, Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::hud::{Content, Corner, Options, Placement, TextCard};
-use store::{Message, Messages};
+use crate::platform::hud::{Content, Options, Placement, TextCard};
+use settings::{Settings, Style};
+use store::{Keep, Message, Messages, Progress};
 use wire::Env;
 
 const LIST: &str = "list";
 const RECENT: &str = "recent";
 /// The hotkey key of `card_hotkey`.
 const CARD: &str = "card";
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum Style {
-    /// The corner panel.
-    #[default]
-    Panel,
-    /// A system notification.
-    Notification,
-    Both,
-    /// History only.
-    None,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-enum Position {
-    #[default]
-    TopRight,
-    TopLeft,
-    BottomRight,
-    BottomLeft,
-    Top,
-    Bottom,
-}
-
-impl Position {
-    fn corner(self) -> Corner {
-        match self {
-            Position::TopRight => Corner::TopRight,
-            Position::TopLeft => Corner::TopLeft,
-            Position::BottomRight => Corner::BottomRight,
-            Position::BottomLeft => Corner::BottomLeft,
-            Position::Top => Corner::Top,
-            Position::Bottom => Corner::Bottom,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct Settings {
-    /// The root item's title and the panel header of a post with no `--title`.
-    name: String,
-    style: Style,
-    position: Position,
-    /// Panel width in points, 240 to 900.
-    width: f64,
-    /// Seconds the panel stays; 0 keeps it until dismissed.
-    timeout_secs: u64,
-    /// Cards shown at once; older ones collapse into a `+N more` pill.
-    max_cards: usize,
-    /// Messages kept in history.
-    max_history: usize,
-    /// Play a short sound when a reply arrives (never for pending posts).
-    sound: bool,
-    /// Opens the message list.
-    hotkey: Option<String>,
-    /// Moves the keyboard into the newest card (or gives it back).
-    card_hotkey: Option<String>,
-    /// What a reply press runs (argv), with `--action --card <id> --action-id <aid>` appended
-    /// and the values JSON on stdin. Empty: a press shows an error naming this key.
-    action_command: Vec<String>,
-    /// Seconds a sent press waits for KOTA's update before the card shows an error; 0 waits.
-    pending_timeout_secs: u64,
-    /// Seconds an open card with actions stays; 0 keeps it until acted on or closed.
-    card_timeout_secs: u64,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            name: "Messages".into(),
-            style: Style::Panel,
-            position: Position::TopRight,
-            width: 380.0,
-            timeout_secs: 20,
-            max_cards: 4,
-            max_history: 50,
-            sound: true,
-            hotkey: None,
-            card_hotkey: None,
-            action_command: vec![],
-            pending_timeout_secs: 120,
-            card_timeout_secs: 0,
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct Inbox {
@@ -173,11 +91,12 @@ impl Inbox {
         }
     }
 
-    /// A message card: timed out like any card, no sound for a placeholder.
+    /// A message card: timed out like any card, no sound for a placeholder or a reply still
+    /// streaming.
     fn options(&self, m: &Message) -> Options {
         Options {
             timeout_secs: self.settings.timeout_secs as f64,
-            sound: self.settings.sound && !m.pending,
+            sound: self.settings.sound && !quiet(m),
             sticky: false,
         }
     }
@@ -202,7 +121,7 @@ impl Inbox {
             if panel {
                 self.show_text(m, &body);
             }
-            (self.header(m).to_string(), body, m.pending)
+            (self.header(m).to_string(), body, quiet(m))
         };
         if matches!(self.settings.style, Style::Notification | Style::Both) && !panel_only && !pending {
             (self.env.notify)(&m.id, &header, &body);
@@ -226,11 +145,17 @@ impl Inbox {
     /// Save `m`; `took` (its `reply_to` was a pending message, now gone) also removes that
     /// placeholder's card, which `m` takes the place of.
     fn save(&self, m: &Message, took: bool, cx: &Cx) -> Result<(), String> {
-        cx.store.put_message(m, self.settings.max_history)?;
+        cx.store.put_message(m, self.keep())?;
         if let Some(pending) = m.reply_to.as_deref().filter(|r| took && *r != m.id) {
             (self.env.dismiss)(pending);
         }
         Ok(())
+    }
+
+    /// How much history the store keeps.
+    fn keep(&self) -> Keep {
+        let s = &self.settings;
+        Keep { history: s.max_history, per_thread: s.chat_history, threads: s.chat_threads }
     }
 
     /// Save and show a post; returns its id and whether it replaced a pending message.
@@ -247,6 +172,8 @@ impl Inbox {
             reply_to: post.reply_to,
             context,
             pending: post.pending,
+            thread: post.thread,
+            state: if post.partial { Progress::Partial } else { Progress::Done },
             ..Message::default()
         };
         self.save(&m, replaced, cx)?;
@@ -269,14 +196,19 @@ impl Inbox {
         }
     }
 
-    /// `ls` text: one line per message, `id  time  [title: ]body`.
+    /// `ls` text: one line per message, `id  time  [title: ]body[ (pending|partial|failed)]`.
     fn ls(&self, list: &[Message], now: i64) -> String {
         let line = |m: &Message| {
             let time = text::stamp(m.ts, now, (self.env.utc_offset)(m.ts));
             let title = m.title.as_ref().map(|t| format!("{t}: ")).unwrap_or_default();
-            let pending = if m.pending { " (pending)" } else { "" };
+            let mark = match (m.pending, m.state) {
+                (true, _) => " (pending)",
+                (_, Progress::Partial) => " (partial)",
+                (_, Progress::Failed) => " (failed)",
+                (_, Progress::Done) => "",
+            };
             let body = text::preview(&text::plain(&m.body), 100);
-            format!("{}\t{time}\t{title}{body}{pending}", m.id)
+            format!("{}\t{time}\t{title}{body}{mark}", m.id)
         };
         list.iter().map(line).collect::<Vec<_>>().join("\n")
     }
@@ -285,6 +217,7 @@ impl Inbox {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
             ["card", ..] => self.card_verb(&args[1..], cx),
+            ["thread" | "threads", ..] => self.thread_verb(args, cx),
             ["post", ..] => {
                 let (id, replaced) = self.post(&args[1..], cx)?;
                 if cx.json {
@@ -329,6 +262,11 @@ fn quote(reply_to: Option<&str>, cx: &Cx) -> (Option<String>, bool) {
         Some(m) => (Some(m.body), true),
         None => (cx.store.message(r).map(|m| m.body), false),
     }
+}
+
+/// A placeholder or a reply still streaming: no sound, no notification.
+fn quiet(m: &Message) -> bool {
+    m.pending || m.state == Progress::Partial
 }
 
 fn icon(m: &Message) -> Icon {
@@ -376,8 +314,10 @@ impl Module for Inbox {
         if s.max_cards == 0 {
             return Err("[message]: max_cards must be at least 1".into());
         }
-        if s.max_history == 0 {
-            return Err("[message]: max_history must be at least 1".into());
+        for (key, n) in [("max_history", s.max_history), ("chat_history", s.chat_history), ("chat_threads", s.chat_threads)] {
+            if n == 0 {
+                return Err(format!("[message]: {key} must be at least 1"));
+            }
         }
         if s.action_command.first().is_some_and(|p| p.trim().is_empty()) {
             return Err("[message]: action_command needs a program first".into());
@@ -485,6 +425,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--thread t] [--pending|--partial] <body...> | message ls [--limit n] | message threads [--limit n] | message thread <t> [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
     }
 }
