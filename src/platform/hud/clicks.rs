@@ -1,7 +1,10 @@
 //! Clicks and presses on a card panel: the close button, a click on a text card, and an
-//! action button press (or one on an `embed` card).
+//! action button press (or one on an `embed` card), and a click on the `+N more` pill.
 
-use super::{CardUi, Dismissed, Draw, ON_PRESS, STATE, close, embed, fill, focus, relayout};
+use super::{
+    CardUi, Dismissed, Draw, ON_PRESS, STATE, arm, close, embed, fill, focus, next_epoch, relayout,
+    stack,
+};
 use crate::core::card::action::values_json;
 use crate::platform::workspace;
 
@@ -59,4 +62,27 @@ fn refill_with_error(id: &str, error: &str) {
         fill(mtm, e, Draw::Card(&card, &ui), width, opts, epoch);
         relayout(s, mtm);
     });
+}
+
+/// A click on the `+N more` pill: page to the hidden cards (`stack::cycle`). Every card that
+/// shows after it starts its full timeout again, so a card does not appear only to vanish.
+pub(super) fn more_clicked() {
+    let mtm = crate::platform::mtm();
+    let shown: Vec<(String, u64, f64)> = STATE.with_borrow_mut(|s| {
+        let n = s.shown;
+        stack::cycle(&mut s.cards, n);
+        relayout(s, mtm);
+        let n = s.shown;
+        s.cards
+            .iter_mut()
+            .take(n)
+            .map(|e| {
+                e.epoch = next_epoch();
+                (e.id.clone(), e.epoch, e.opts.timeout_secs)
+            })
+            .collect()
+    });
+    for (id, epoch, secs) in shown {
+        arm(&id, epoch, secs);
+    }
 }
