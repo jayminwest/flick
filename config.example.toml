@@ -155,7 +155,7 @@
 #status_item = true
 # Post a notification when KOTA goes down.
 #notify_down = true
-# Opens Ask KOTA; unset by default.
+# Opens the Ask KOTA view (kota/ask): type, then Enter sends; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyO"
 
 # --- sys: this Mac's health (CPU load, memory, disks, battery, thermal, uptime) and the
