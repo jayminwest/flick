@@ -22,7 +22,7 @@ notify_down = true                 # post a notification when KOTA goes down
 
 ```bash
 flick kota status            # state, KOTA's task, failing checks, last check, errors, cards waiting, polling
-flick --json kota status     # {"state","stale","since","pane","failing","errors","checked_at","pending","polling"}
+flick --json kota status     # {"state","stale","since","pane","failing","errors","checked_at","pending","unread","polling"}
 flick kota refresh           # check now (at most once per 10 s)
 flick kota ask "what's on today?"   # send a question; answers once ssh is done, exit 1 with the reason if it failed
 ```
@@ -41,7 +41,7 @@ Each check (a "round") runs two children in parallel. `herdr [--machine <machine
 | `K-` | offline | Neither herdr nor kota-dash answered. |
 | `K?` | unknown, or stale | No round yet, or the pane has an unknown status. While stale, the data is from before a sleep or lock, and no round has confirmed it yet. |
 
-The cards waiting on you follow the glyph, for example `K! 2`. The count comes from the `message` module (`Event::CardsPending`).
+The cards waiting on you and the posts you have not read follow the glyph, for example `K! 2`; the Inbox row splits them (`Inbox (1 waiting, 1 unread)`). The counts come from the `message` module (`Event::CardsPending`); see [unread posts](message.md#unread-posts).
 
 **Down vs offline.** Down means the server answered and KOTA is not running there. The pane is gone, or kota-dash says it is unhealthy. Fix it on mbp-server. Offline means nothing answered. From the laptop, a dead mbp-server and a laptop with no network look the same, so offline is never called down, and it posts no notification. Check this Mac's network and Tailscale first.
 

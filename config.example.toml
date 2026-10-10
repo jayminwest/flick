@@ -413,8 +413,13 @@
 #position = "top-right"
 # Card width in points, 240 to 900.
 #width = 380
-# Seconds the card stays; 0 keeps it until dismissed.
+# Seconds the card stays; 0 keeps it until dismissed. A card's time runs only while you
+# are at the Mac: with no keyboard or mouse input since it showed, it waits for you.
 #timeout_secs = 20
+# Seconds the card of a post nobody asked for (no --reply-to, not --pending, outside chat
+# threads; e.g. KOTA's nudges) stays; 0 keeps it until dismissed. Such a post is unread
+# until you close its card or open the message list; the KOTA menu bar badge counts it.
+#unprompted_timeout_secs = 0
 # Cards shown at once; older ones collapse into a "+N more" pill.
 #max_cards = 4
 # Messages kept in history outside chat threads.

@@ -99,9 +99,8 @@ fn dismiss_all_removes_every_card_and_marks_them() {
     assert_eq!(take_log(), ["dismiss c2", "dismiss c1"]);
     f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
     assert_eq!(take_log(), [""; 0]);
-    m.dismissed.extend((0..300).map(|i| i.to_string()));
-    f.run(&mut m, false, &["card", "dismiss", "c2"]).unwrap();
-    assert_eq!(m.dismissed.len(), 1, "the set starts over past its cap");
+    // Stored on the message rows (flick-07cd); the text post was not a card.
+    assert!(f.closed("c1") && f.closed("c2") && f.dismissal("t").is_none());
     let (mut f, mut m) = (Fixture::new(), inbox(""));
     f.run(&mut m, false, &["card", "post", DEPLOY]).unwrap();
     assert_eq!(f.run(&mut m, false, &["card", "dismiss", "--all"]), Ok("Dismissed 1 card".into()));
@@ -212,7 +211,7 @@ fn a_kota_pending_card_stays_until_its_done_update_shows() {
     f.cx("", false, |cx| m.drain(cx));
     f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
     assert_eq!(take_log().len(), 1);
-    assert!(!m.dismissed.contains("c1") && !m.expired.contains("c1"));
+    assert_eq!(f.dismissal("c1"), None);
     // One the user closed stays closed.
     queue(dispatch::Note::Dismissed("c1".into()));
     f.cx("", false, |cx| m.drain(cx));

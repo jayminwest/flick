@@ -7,7 +7,8 @@
 //!   redraws only a card that shows. `dismiss` / `dismiss_all` remove cards.
 //! - `stack` (pure) places them: at most `Placement::max_cards` show, the rest collapse into
 //!   a `+N more` pill; the stack stays on the screen it first appeared on until it empties.
-//! - Each card hides after its own `Options::timeout_secs` unless the pointer rests on it.
+//! - Each card hides after its own `Options::timeout_secs` unless the pointer rests on it;
+//!   the timeout runs only while the user is at the Mac (`timeout.rs`).
 //!   Every card has an x close button. A click elsewhere on a text card opens its link and
 //!   dismisses it. Escape (a global key monitor, which needs Accessibility, installed only
 //!   while cards show) dismisses every card that is not `Options::sticky`.
@@ -32,6 +33,7 @@ mod focus;
 mod keys;
 mod stack;
 mod text;
+mod timeout;
 mod view;
 
 use std::cell::{Cell, RefCell};
@@ -54,11 +56,10 @@ pub use text::TextCard;
 use super::{timer, workspace};
 use crate::core::card::Card;
 use crate::core::card::action::values_json;
+use timeout::arm;
 use view::{Pill, Views, ns};
 
 const ESCAPE: u16 = 53;
-/// Seconds the pointer over a card holds off its timeout, rechecked each time.
-const HOVER_RECHECK: f64 = 2.0;
 
 /// What a card shows.
 #[derive(Clone, Copy, Debug)]
@@ -379,30 +380,6 @@ fn contains(f: NSRect, p: NSPoint) -> bool {
         && p.x < f.origin.x + f.size.width
         && p.y >= f.origin.y
         && p.y < f.origin.y + f.size.height
-}
-
-fn arm(id: &str, epoch: u64, secs: f64) {
-    if secs > 0.0 {
-        let id = id.to_string();
-        timer::after(secs, move || expire(&id, epoch));
-    }
-}
-
-/// A timeout of card `id`: dismiss it, unless a later show or update re-armed it or the
-/// pointer rests on it.
-fn expire(id: &str, epoch: u64) {
-    let live = STATE.with_borrow(|s| {
-        let e = s.cards.iter().find(|e| e.id == id && e.epoch == epoch)?;
-        Some(e.views.panel.isVisible() && contains(e.views.panel.frame(), NSEvent::mouseLocation()))
-    });
-    match live {
-        Some(true) => {
-            let id = id.to_string();
-            timer::after(HOVER_RECHECK, move || expire(&id, epoch));
-        }
-        Some(false) => close(id, Dismissed::Timeout),
-        None => {}
-    }
 }
 
 /// A click on the card in panel `window`: on its close button, or elsewhere.

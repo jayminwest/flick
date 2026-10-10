@@ -34,9 +34,31 @@ pub fn glyph(p: &Presence) -> &'static str {
     }
 }
 
-/// The menu bar title: the glyph, plus the count of cards waiting on the user.
-pub fn title(p: &Presence, pending: u32) -> String {
-    match pending {
+/// What waits on the user, from `Event::CardsPending` (the `message` module owns both).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Badge {
+    /// Cards waiting on the user.
+    pub pending: u32,
+    /// Posts nobody asked for that the user has not seen.
+    pub unread: u32,
+}
+
+impl Badge {
+    /// `Inbox` with what waits in it: `(2 waiting, 1 unread)`.
+    fn inbox(self) -> String {
+        let parts: Vec<String> = [(self.pending, "waiting"), (self.unread, "unread")]
+            .into_iter()
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, word)| format!("{n} {word}"))
+            .collect();
+        if parts.is_empty() { "Inbox".into() } else { format!("Inbox ({})", parts.join(", ")) }
+    }
+}
+
+/// The menu bar title: the glyph, plus the count of cards waiting on the user and unread
+/// posts.
+pub fn title(p: &Presence, badge: Badge) -> String {
+    match badge.pending.saturating_add(badge.unread) {
         0 => glyph(p).to_string(),
         n => format!("{} {n}", glyph(p)),
     }
@@ -99,12 +121,9 @@ pub fn info(p: &Presence, now: u64, offset: i32) -> Vec<String> {
 }
 
 /// The whole menu, top to bottom.
-pub fn menu(p: &Presence, pending: u32, now: u64, offset: i32) -> Vec<Entry> {
+pub fn menu(p: &Presence, badge: Badge, now: u64, offset: i32) -> Vec<Entry> {
     let mut entries: Vec<Entry> = info(p, now, offset).into_iter().map(Entry::Info).collect();
-    let inbox = match pending {
-        0 => "Inbox".to_string(),
-        n => format!("Inbox ({n} waiting)"),
-    };
+    let inbox = badge.inbox();
     entries.extend([
         Entry::Separator,
         Entry::Open { title: "Ask KOTA…".into(), key: "ask" },
@@ -150,8 +169,7 @@ impl Polling {
 /// Facts for `kota status` besides the presence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Extra {
-    /// Cards waiting on the user (`Event::CardsPending`).
-    pub pending: u32,
+    pub badge: Badge,
     pub polling: Polling,
 }
 
@@ -168,7 +186,8 @@ pub fn status_json(p: &Presence, extra: Extra) -> Value {
         "failing": p.seen.failing,
         "errors": p.errors,
         "checked_at": p.checked_at,
-        "pending": extra.pending,
+        "pending": extra.badge.pending,
+        "unread": extra.badge.unread,
         "polling": extra.polling.text(),
     })
 }
@@ -177,8 +196,11 @@ pub fn status_json(p: &Presence, extra: Extra) -> Value {
 pub fn status_text(p: &Presence, extra: Extra, now: u64, offset: i32) -> String {
     let mut rows = info(p, now, offset);
     rows.extend(p.errors.iter().cloned());
-    if extra.pending > 0 {
-        rows.push(format!("{} waiting", extra.pending));
+    if extra.badge.pending > 0 {
+        rows.push(format!("{} waiting", extra.badge.pending));
+    }
+    if extra.badge.unread > 0 {
+        rows.push(format!("{} unread", extra.badge.unread));
     }
     rows.push(format!("polling: {}", extra.polling.text()));
     rows.join("\n")

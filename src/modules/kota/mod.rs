@@ -25,7 +25,7 @@
 //! only: the message history is the `message` module's).
 //!
 //! Menu bar item (`item.rs`): the presence glyph plus the count of cards waiting on the
-//! user (`Event::CardsPending`), shown while rounds run on a timer and `status_item` is
+//! user and unread posts (`Event::CardsPending`), shown while rounds run on a timer and `status_item` is
 //! true. Its menu has the state rows, Ask KOTA… (hotkey `ask`), Inbox (hotkey `inbox`:
 //! the `message` module's `recent` view), Open Dashboard and Refresh Now; opening it
 //! starts a round. A change to down notifies when `notify_down` is true.
@@ -58,7 +58,7 @@ use ask::{Ask, Status};
 use io::{Hooks, Shared};
 use item::{INBOX, INBOX_VIEW, Shown, Ui};
 use settings::Settings;
-use view::{Extra, Polling};
+use view::{Badge, Extra, Polling};
 
 pub const ID: &str = "kota";
 /// The ask view's name, its item key and the hotkey's key.
@@ -79,9 +79,9 @@ pub struct Kota {
     started: bool,
     shared: Arc<Shared>,
     hooks: Hooks,
-    /// Cards waiting on the user, from the last `Event::CardsPending` (the `message`
-    /// module owns the cards).
-    pending: u32,
+    /// Cards waiting on the user and unread posts, from the last `Event::CardsPending` (the
+    /// `message` module owns them).
+    badge: Badge,
     ui: Ui,
     /// What the menu bar item shows; `None` while it is hidden.
     shown: Option<Shown>,
@@ -105,7 +105,7 @@ impl Drop for Kota {
 impl Kota {
     fn with_hooks(hooks: Hooks, ui: Ui) -> Kota {
         let shared = Arc::default();
-        Kota { settings: Settings::default(), active: false, started: false, shared, hooks, pending: 0, ui, shown: None }
+        Kota { settings: Settings::default(), active: false, started: false, shared, hooks, badge: Badge::default(), ui, shown: None }
     }
 
     /// Timed rounds run.
@@ -119,7 +119,7 @@ impl Kota {
             (true, 0) => Polling::OnDemand,
             (true, secs) => Polling::Every(secs),
         };
-        let extra = Extra { pending: self.pending, polling };
+        let extra = Extra { badge: self.badge, polling };
         let p = self.shared.lock();
         if json {
             return view::status_json(&p.presence, extra).to_string();
@@ -267,7 +267,7 @@ impl Module for Kota {
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
         match event {
             Event::Started => self.started = true,
-            Event::CardsPending { count } => self.pending = count,
+            Event::CardsPending { count, unread } => self.badge = Badge { pending: count, unread },
             Event::ModuleChanged { module: ID } => self.requests(),
             _ => {}
         }
