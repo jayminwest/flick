@@ -1,8 +1,6 @@
 //! Engine output to the text that goes in: whisper's non-speech tokens out (`[BLANK_AUDIO]`,
 //! `[Music]`, `(music)`, `*laughs*`, `♪`), lines joined, whitespace collapsed.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the recorder and engine workers (flick-8b7c) and the verbs (flick-a085) use these"))]
-
 /// Words that mark a `(...)` or `*...*` span as a sound, not speech. A `[...]` span is
 /// always dropped: whisper writes no speech in square brackets.
 const SOUNDS: &[&str] = &[

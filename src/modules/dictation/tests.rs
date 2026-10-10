@@ -1,6 +1,10 @@
 //! Tests for module `dictation`.
 
-use std::cell::Cell;
+mod flow;
+
+use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use super::*;
 use crate::config::parse;
@@ -9,13 +13,41 @@ use crate::core::test_cx;
 thread_local! {
     /// What the fake microphone check answers.
     static MIC: Cell<Mic> = const { Cell::new(Mic::Unchecked) };
+    /// `ask_mic`, `arm` and `later` calls.
+    static ASKED: Cell<u32> = const { Cell::new(0) };
+    static ARMED: Cell<u32> = const { Cell::new(0) };
+    static LATER: Cell<u32> = const { Cell::new(0) };
+    /// Esc on the pill, taken by `take_cancel`.
+    static ESC: Cell<bool> = const { Cell::new(false) };
+    /// Milliseconds the fake clock is ahead of `base()`.
+    static CLOCK: Cell<u64> = const { Cell::new(0) };
+    static FLAGS: Cell<u64> = const { Cell::new(0) };
+    static FRONT: Cell<Option<i32>> = const { Cell::new(Some(1)) };
+    static SECURE: Cell<bool> = const { Cell::new(false) };
+    static CACHE: RefCell<PathBuf> = RefCell::new(PathBuf::from("/nonexistent/flick-dictation"));
+    /// Everything the fakes were asked to show, insert and log, in order.
+    static SEEN: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
 }
 
-/// Fake system: everything under /opt/homebrew/bin is a program, files under /models
-/// exist, nothing else does.
+fn base() -> Instant {
+    static BASE: OnceLock<Instant> = OnceLock::new();
+    *BASE.get_or_init(Instant::now)
+}
+
+fn saw(line: String) {
+    SEEN.with_borrow_mut(|s| s.push(line));
+}
+
+/// What the fakes saw since the last call.
+fn seen() -> Vec<String> {
+    SEEN.with_borrow_mut(std::mem::take)
+}
+
+/// Fake system: everything under /opt/homebrew/bin and /fake is a program, files under
+/// /models exist, nothing else does. Programs are `fake::spawn`'s scripts.
 static FAKE: Hooks = Hooks {
     probe: |path| {
-        if path.starts_with("/opt/homebrew/bin") {
+        if path.starts_with("/opt/homebrew/bin") || path.starts_with("/fake") {
             Probe::Program
         } else if path.starts_with("/models") || path.starts_with("/Users/u/bin") {
             Probe::File
@@ -24,7 +56,33 @@ static FAKE: Hooks = Hooks {
         }
     },
     mic: || MIC.with(Cell::get),
+    ask_mic: || ASKED.set(ASKED.get() + 1),
     home: || PathBuf::from("/Users/u"),
+    cache: || CACHE.with_borrow(Clone::clone),
+    spawn: fake::spawn,
+    notify: || {},
+    later: |secs| {
+        assert!((secs - super::flow::RELEASE_POLL).abs() < f64::EPSILON);
+        LATER.set(LATER.get() + 1);
+    },
+    arm: || ARMED.set(ARMED.get() + 1),
+    take_cancel: || ESC.replace(false),
+    now: || base() + Duration::from_millis(CLOCK.get()),
+    pill: |p| {
+        saw(match p {
+            Pill::Recording(_) => "pill recording".into(),
+            Pill::Transcribing => "pill transcribing".into(),
+            Pill::Result(t) => format!("pill result {t}"),
+            Pill::Error(t) => format!("pill error {t}"),
+            Pill::Hide => "pill hide".into(),
+        });
+    },
+    frontmost: || FRONT.get(),
+    flags: || FLAGS.get(),
+    secure_input: || SECURE.get(),
+    paste: |text, ms| saw(format!("paste {text:?} restore {ms}")),
+    type_text: |text| saw(format!("type {text:?}")),
+    log: |line| saw(format!("log {line}")),
 };
 
 fn configured(text: &str) -> Result<Dictation, String> {
@@ -105,7 +163,7 @@ fn bad_tables_and_verbs_are_errors() {
     let mut d = configured("").unwrap();
     assert_eq!(run(&mut d, &["start", "now"]).unwrap_err(), "dictation: unknown command \"start\"");
     assert_eq!(run(&mut d, &[]).unwrap_err(), "dictation: missing command");
-    assert_eq!(d.verbs(), "dictation status");
+    assert_eq!(d.verbs(), "dictation start | dictation stop | dictation cancel | dictation last | dictation status");
     assert_eq!(Dictation::default().id(), "dictation");
 }
 
