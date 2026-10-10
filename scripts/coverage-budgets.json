@@ -11,6 +11,7 @@
     "src/control/tailscale.rs": 95.0,
     "src/core/": 100.0,
     "src/modules/activity/mod.rs": 99.1,
+    "src/modules/activity/phone.rs": 99.0,
     "src/modules/activity/remote.rs": 98.8,
     "src/modules/activity/report.rs": 100.0,
     "src/modules/activity/rules.rs": 100.0,

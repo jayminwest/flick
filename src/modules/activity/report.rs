@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 
+use super::phone::PhoneSummary;
 use super::rules::Config;
 use std::fmt::Write;
 
@@ -59,6 +60,8 @@ pub struct Report {
     pub top_titles: Vec<Total>,
     /// Longest web hosts, only when URLs are stored.
     pub top_domains: Vec<Total>,
+    /// Phone app opens in the range (flick-ios); not part of the recorded time.
+    pub phone: PhoneSummary,
 }
 
 /// The host of http(s) URL `url`, lowercased, without user info, port or `www.`.
@@ -128,6 +131,7 @@ impl Report {
             by_app: by(&|s| Some(s.subject.name.clone())),
             top_titles,
             top_domains,
+            phone: PhoneSummary::default(),
         }
     }
 
@@ -157,7 +161,7 @@ impl Report {
                 let _ = write!(out, "\n  {:>8}  {share:>3}%  {}", duration(t.secs), t.name);
             }
         }
-        out
+        out + &self.phone.text()
     }
 }
 
@@ -208,7 +212,9 @@ impl TaskReport {
     }
 }
 
-/// One span for `flick activity spans`.
+/// One entry of `flick activity spans`: a span of this Mac (`source` "mac") or a phone's app
+/// open (`source` "phone", `start` = `end`, with `device` and, from the prompt, `reason`
+/// and `minutes`).
 #[derive(Debug, Serialize)]
 pub struct SpanOut<'a> {
     pub start: i64,
@@ -221,35 +227,44 @@ pub struct SpanOut<'a> {
     pub task: Option<i64>,
     pub category: Option<&'a str>,
     pub project: Option<&'a str>,
+    pub source: &'static str,
+    pub device: Option<&'a str>,
+    pub reason: Option<&'a str>,
+    pub minutes: Option<i64>,
+}
+
+impl<'a> SpanOut<'a> {
+    /// A Mac span `start..end` of `app` (`name`) with its rule's category and project.
+    pub fn new(start: i64, end: i64, app: &'a str, name: &'a str, rule: (Option<&'a str>, Option<&'a str>)) -> Self {
+        let (category, project) = rule;
+        let (title, url, task, device, reason, minutes) = (None, None, None, None, None, None);
+        let source = "mac";
+        SpanOut { start, end, secs: end - start, app, name, title, url, task, category, project, source, device, reason, minutes }
+    }
 }
 
 pub fn span_list<'a>(spans: &'a [Span<Subject>], rules: &'a Config) -> Vec<SpanOut<'a>> {
     spans
         .iter()
-        .map(|s| {
-            let (category, project) = rules.classify(&s.subject);
-            SpanOut {
-                start: s.start,
-                end: s.end,
-                secs: s.secs(),
-                app: &s.subject.app,
-                name: &s.subject.name,
-                title: s.subject.title.as_deref(),
-                url: s.subject.url.as_deref(),
-                task: s.subject.task,
-                category,
-                project,
-            }
+        .map(|s| SpanOut {
+            title: s.subject.title.as_deref(),
+            url: s.subject.url.as_deref(),
+            task: s.subject.task,
+            ..SpanOut::new(s.start, s.end, &s.subject.app, &s.subject.name, rules.classify(&s.subject))
         })
         .collect()
 }
 
 /// Tab-separated lines: local start, duration, app name, bundle id, title, and the URL when
-/// the span has one.
+/// the span has one. A phone open reads `open` for the duration and its device for the
+/// title.
 pub fn span_text(spans: &[SpanOut], utc_offset_secs: i32) -> String {
     spans
         .iter()
         .map(|s| {
+            if let Some(device) = s.device {
+                return format!("{}\topen\t{}\t{}\t{device}", local_time(s.start, utc_offset_secs), s.name, s.app);
+            }
             format!(
                 "{}\t{}\t{}\t{}\t{}{}",
                 local_time(s.start, utc_offset_secs),

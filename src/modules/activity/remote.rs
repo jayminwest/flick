@@ -32,6 +32,8 @@ pub fn gate(args: &[String], store: &Store, now: i64) -> Result<bool, String> {
         Some("today" | "week" | "spans") => Err(REFUSED.into()),
         Some("on" | "off" | "forget") => Err(AGENT.into()),
         Some("remote") if args.get(1).is_some_and(|v| v != "status") => Err(AGENT.into()),
+        // Everything else passes, `phone add` included: a phone adds its own app opens over
+        // the network without the grant, since adding reads nothing back.
         _ => Ok(false),
     }
 }
