@@ -267,3 +267,15 @@ fn peers_reach_the_card_verbs() {
     assert_eq!(net_reply(&["message", "card", "ls", "--json"]), r#"{"ok":[]}"#);
     assert_eq!(net_reply(&["message", "card", "get", "c1"]), r#"{"error":"No card c1"}"#);
 }
+
+#[test]
+fn peers_may_read_sys_health() {
+    // `sys snapshot` is read-only and is how a peer's fleet view reads this Mac (plan
+    // flick-b5d0), so the deny table must not list it. Not run here: the real module would
+    // run the probe.
+    let req = ["sys", "snapshot"].map(String::from);
+    assert_eq!(net_policy(&req), Ok(()));
+    let (words, flags) = split_flags([&req[..], &["--json".into()]].concat());
+    assert!(flags.json);
+    assert_eq!(net_policy(&words), Ok(()));
+}
