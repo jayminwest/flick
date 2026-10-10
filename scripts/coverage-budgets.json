@@ -44,6 +44,7 @@
     "src/modules/tasks/view.rs": 100.0,
     "src/modules/quicklinks/validate.rs": 100.0,
     "src/modules/windows/action.rs": 100.0,
+    "src/platform/hud/stack.rs": 100.0,
     "src/platform/ink/legend.rs": 100.0,
     "src/platform/ink/model.rs": 100.0,
     "src/root.rs": 100.0
