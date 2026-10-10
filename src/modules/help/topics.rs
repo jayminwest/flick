@@ -30,7 +30,7 @@ const fn topic(
 }
 
 /// Every topic, in the order the help view lists them.
-pub const TOPICS: [Topic; 22] = [
+pub const TOPICS: [Topic; 23] = [
     topic("launcher", "Launcher", "Type to search apps and commands. ↵ runs, ⌘K shows actions, esc goes back.", "magnifyingglass", "configuration.md#launcher-keys"),
     topic("windows", "Window Commands", "Type a command such as Left Half, or bind one to a hotkey in [window.keys].", "rectangle.split.2x1", "configuration.md"),
     topic("switcher", "Window Switcher", "Switch Windows lists open windows. The first is the previous one, so ↵ jumps back.", "macwindow.on.rectangle", "configuration.md"),
@@ -56,6 +56,7 @@ pub const TOPICS: [Topic; 22] = [
     topic("dictation", "Dictation", "Hold the dictation chord, speak, release: the text goes into the focused field. Runs on this Mac only.", "mic", "dictation.md"),
     topic("feedback", "Feedback", "Type fb <text> to save a note about Flick. Recent Feedback lists your notes.", "text.bubble", "feedback.md"),
     topic("message", "Messages and Cards", "Agents such as KOTA post messages and cards to a corner. card_hotkey moves the keyboard into the newest card.", "bubble.left.and.bubble.right", "message.md"),
+    topic("llm", "Local Model Chat", "Chat with models on your own servers: add [[llm.servers]], then open Local Model Chat. ⌘. stops a reply.", "brain", "local-llm.md"),
     topic("remote", "Remote Access", "Lets Macs in your tailnet run flick commands here. Off until you turn it on.", "network", "remote.md"),
     topic("config", "Configuration", "Open Flick Config edits config.toml; Reload Flick Config applies it.", "gearshape", "configuration.md"),
     topic("cli", "Command Line", "flick <module> <verb> asks the running Flick; flick help lists the verbs.", "apple.terminal", "cli.md"),

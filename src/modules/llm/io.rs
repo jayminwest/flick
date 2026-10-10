@@ -145,7 +145,6 @@ impl Shared {
 
     /// Take a stream's new pieces and its status; an ended stream is forgotten once taken.
     /// `None`: no such stream. The caller owns the text now (and wipes it if private).
-    #[cfg_attr(not(test), expect(dead_code, reason = "the chat window reads replies (flick-6a0d)"))]
     pub fn take(&self, id: u64) -> Option<(Vec<Piece>, Status)> {
         let mut st = self.lock();
         let i = st.streams.iter().position(|s| s.id == id)?;
@@ -262,7 +261,6 @@ impl Seen {
 /// Stream a chat reply: POST `body` (from `openai::chat_body`, wiped once sent) to
 /// `server`'s `/v1/chat/completions`, within `timeout` seconds. Returns the stream id for
 /// `Shared::take` and `cancel`.
-#[cfg_attr(not(test), expect(dead_code, reason = "the chat window sends prompts (flick-6a0d)"))]
 pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, hooks: Hooks) -> u64 {
     let id = {
         let mut st = shared.lock();
@@ -333,7 +331,6 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
 }
 
 /// Stop stream `id`: kill its curl, keep what arrived. False when it is not running.
-#[cfg_attr(not(test), expect(dead_code, reason = "the chat window's stop (flick-6a0d)"))]
 pub fn cancel(shared: &Shared, id: u64) -> bool {
     let mut st = shared.lock();
     let Some(s) = st.stream(id).filter(|s| s.status == Status::Running) else { return false };

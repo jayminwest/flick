@@ -71,7 +71,7 @@ pub use rows::Row;
 use rows::{COALESCE_SECS, Owned};
 use window::{Views, ns};
 
-/// Which surface: a fixed name per use ("chat", "private", "fleet").
+/// Which surface: a fixed name per use ("chat", "llm", "private", "fleet").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SurfaceId(pub &'static str);
 
