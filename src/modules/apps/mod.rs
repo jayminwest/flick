@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::core::{Action, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::{app, files, workspace};
+use crate::platform::{app, events, files, workspace};
 
 #[derive(Clone)]
 pub struct App {
@@ -30,6 +30,11 @@ const NAME_VERBS: [&str; 4] = ["open", "reveal", "quit", "force-quit"];
 /// How uninstall removes a path. Tests get one that refuses, so no test can reach the Trash.
 const TRASH: fn(&Path) -> Result<PathBuf, String> =
     if cfg!(test) { |_| Err("tests never use the Trash".into()) } else { files::trash };
+
+/// Called on the uninstall sizing thread when the sizes are in: the review view is stale.
+/// Tests read the sizes themselves and post nothing to the main queue.
+const SIZED: fn() =
+    if cfg!(test) { || {} } else { || events::post(Event::ModuleChanged { module: "app" }) };
 
 /// Scan the standard app folders, one level into subfolders (e.g. "/Applications/Adobe Photoshop/").
 pub fn scan() -> Vec<App> {
@@ -115,30 +120,46 @@ impl Module for Apps {
     }
 
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
-        (view == running::VIEW).then(running::view)
+        match view {
+            running::VIEW => Some(running::view()),
+            uninstall::VIEW => Some(uninstall::view()),
+            _ => None,
+        }
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         if view.name == running::VIEW {
             self.running = None;
             running::refresh(view, &running::running(self.own.as_deref()), cx);
+        } else if view.name == uninstall::VIEW {
+            self.refresh_uninstall(view);
         }
     }
 
-    /// `app:<path>` opens the app; with arg `quit` (the running view) asks it to quit.
+    /// `app:<path>` opens the app; with arg `quit` (the running view) asks it to quit; with
+    /// arg `uninstall` (the uninstall review view) asks to confirm the pending uninstall.
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
         if id.key() == running::ROOT_KEY {
             return Outcome::Push(running::view());
         }
-        if id.arg() == Some(running::QUIT_ARG) {
-            return Outcome::Stay(Some(self.quit(Path::new(id.key()), false).unwrap_or_else(|e| e)));
+        match id.arg() {
+            Some(running::QUIT_ARG) => {
+                Outcome::Stay(Some(self.quit(Path::new(id.key()), false).unwrap_or_else(|e| e)))
+            }
+            Some(uninstall::ARG) => self.confirm_pending(),
+            _ => {
+                cx.hide();
+                workspace::open_file(Path::new(id.key()));
+                Outcome::Hide
+            }
         }
-        cx.hide();
-        workspace::open_file(Path::new(id.key()));
-        Outcome::Hide
     }
 
+    /// The uninstall review rows (leftover folders among them) have no actions.
     fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        if id.arg() == Some(uninstall::ARG) {
+            return vec![];
+        }
         self.menu(Path::new(id.key()))
     }
 
@@ -153,8 +174,12 @@ impl Module for Apps {
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
     /// keystroke. `AppActivated` and `AppTerminated` make the running view stale: an app
-    /// launched or quit.
+    /// launched or quit. `ModuleChanged` for `app` is the uninstall sizing thread: the review
+    /// view is stale.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+        if event == (Event::ModuleChanged { module: "app" }) {
+            return true;
+        }
         if let Event::AppActivated { .. } | Event::AppTerminated { .. } = event {
             self.running = None;
             return true;

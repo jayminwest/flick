@@ -18,6 +18,7 @@
     "src/modules/activity/store.rs": 100.0,
     "src/modules/activity/urls.rs": 90.4,
     "src/modules/apps/leftovers.rs": 100.0,
+    "src/modules/apps/uninstall.rs": 98.7,
     "src/modules/bridge/agent.rs": 100.0,
     "src/modules/bridge/brief.rs": 100.0,
     "src/modules/capture/name.rs": 100.0,
