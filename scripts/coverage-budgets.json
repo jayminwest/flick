@@ -58,6 +58,7 @@
     "src/modules/llm/mod.rs": 100.0,
     "src/modules/llm/openai.rs": 99.5,
     "src/modules/llm/private.rs": 100.0,
+    "src/modules/llm/private_chat.rs": 100.0,
     "src/modules/llm/report.rs": 100.0,
     "src/modules/llm/settings.rs": 100.0,
     "src/modules/llm/store.rs": 100.0,
