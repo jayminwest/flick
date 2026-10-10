@@ -1,12 +1,13 @@
-//! The real I/O behind `io::Hooks`: a child process with a time budget, the herdr
-//! executable, and this Mac's short host name. Only background threads call these.
+//! The real I/O behind `io::Hooks`: a child process with a time budget (stdin closed, or
+//! fed a text), the herdr executable, this binary's path and this Mac's short host name.
+//! Only background threads call these.
 //!
 //! Copied in small from `herdr/remote.rs` and `sys/run.rs` (modules never import each
 //! other): every `HERDR_*` variable is removed from the child's environment, so a Flick
 //! started from a herdr pane does not retarget the CLI at that pane's session.
 
 use std::ffi::OsString;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -55,10 +56,27 @@ fn strip_herdr_env(cmd: &mut Command, env: impl IntoIterator<Item = OsString>) {
 /// Run `argv` (no shell) with stdin closed and no `HERDR_*` variables; kill it when
 /// `budget` runs out.
 pub fn run(argv: &[String], budget: Duration) -> Result<Exit, String> {
+    exec(argv, None, budget)
+}
+
+/// `run` with `input` on the child's stdin (then closed): text that must never be in argv.
+pub fn feed(argv: &[String], input: &str, budget: Duration) -> Result<Exit, String> {
+    exec(argv, Some(input), budget)
+}
+
+/// The path of this binary, which quick ask re-runs as a client (`message post`).
+pub fn exe() -> Result<String, String> {
+    std::env::current_exe().map(|p| p.display().to_string()).map_err(|e| format!("cannot find Flick's binary: {e}"))
+}
+
+fn exec(argv: &[String], input: Option<&str>, budget: Duration) -> Result<Exit, String> {
     let (program, rest) = argv.split_first().ok_or("empty command")?;
     let mut cmd = Command::new(program);
-    cmd.args(rest).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let stdin = if input.is_some() { Stdio::piped() } else { Stdio::null() };
+    cmd.args(rest).stdin(stdin).stdout(Stdio::piped()).stderr(Stdio::piped());
     strip_herdr_env(&mut cmd, std::env::vars_os().map(|(name, _)| name));
+    // A self-call answers this Flick, as a local caller.
+    cmd.env_remove("FLICK_HOST").env_remove("FLICK_REMOTE");
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!("{program} not found"),
         _ => format!("{program}: {e}"),
@@ -73,6 +91,13 @@ pub fn run(argv: &[String], budget: Duration) -> Result<Exit, String> {
             out
         })
     };
+    if let (Some(text), Some(mut pipe)) = (input, child.stdin.take()) {
+        let text = text.to_string();
+        // A thread, so a child that does not read never blocks this one; EOF on drop.
+        thread::spawn(move || {
+            let _ = pipe.write_all(text.as_bytes());
+        });
+    }
     let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
     let deadline = Instant::now() + budget;
@@ -118,6 +143,15 @@ mod tests {
         let removed: Vec<_> = cmd.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_owned()).collect();
         assert_eq!(removed, ["HERDR_PANE_ID", "HERDR_SOCKET_PATH"].map(OsString::from));
         assert!(cmd.get_envs().any(|(k, v)| k == "KEEP" && v.is_some()));
+    }
+
+    #[test]
+    fn feed_passes_the_text_on_stdin() {
+        let argv = ["/bin/cat".to_string()];
+        let out = feed(&argv, "what's on; today?", Duration::from_secs(5)).unwrap();
+        assert_eq!((out.code, out.stdout.as_str()), (Some(0), "what's on; today?"));
+        assert_eq!(run(&argv, Duration::from_secs(5)).unwrap().stdout, "");
+        assert!(exe().unwrap().contains("flick"));
     }
 
     #[test]
