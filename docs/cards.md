@@ -30,7 +30,7 @@ Top-level keys; any other key is ignored with a warning.
 | `id` | string | required; 1-64 of `A-Z a-z 0-9 . _ -`. The message id: posting the same id again replaces the card. |
 | `title` | string | required, not blank; trimmed, cut to 120 chars with `…` (warning). |
 | `state` | string | `open` (default), `pending`, `done`, `error`. Anything else: error. |
-| `thread` | string | optional conversation id, id charset. Invalid: dropped with a warning. Stored with the card; nothing groups by it yet (reserved for the chat window). |
+| `thread` | string | optional conversation id, id charset. Invalid: dropped with a warning. The card shows inline in that chat thread; while the chat window shows the thread it does not show in the corner. Without one, a card keeps the thread its `id` is already in, else takes the thread of the message `reply_to` names (so a card answering a chat question lands in its thread). |
 | `reply_to` | string | optional id of the message this card answers (see [reply_to](#reply_to-and-pending-placeholders)). Invalid: dropped with a warning. |
 | `blocks` | array | body, top to bottom, at most 24. Not an array: ignored with a warning. |
 | `actions` | array | buttons, left to right (wrapping, right-aligned), at most 6. Not an array: ignored with a warning. |

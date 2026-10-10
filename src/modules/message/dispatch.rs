@@ -166,8 +166,9 @@ impl Inbox {
         (self.env.show_card)(c, &ui.card_ui(), &self.placement(), &opts);
     }
 
-    /// Redraw card `id` if it shows, after its press state changed.
-    fn redraw(&self, id: &str, cx: &Cx) {
+    /// Redraw card `id` if it shows in the corner, after its press state changed. The chat
+    /// window redraws its card rows itself (`chat_refresh`).
+    pub(super) fn redraw(&self, id: &str, cx: &Cx) {
         let Some((c, _)) = stored(id, cx) else { return };
         let ui = self.ui.get(id).cloned().unwrap_or_default();
         (self.env.update_card)(&c, &ui.card_ui(), &self.card_options(&c, &ui));
