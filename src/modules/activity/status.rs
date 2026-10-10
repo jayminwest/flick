@@ -1,5 +1,5 @@
 //! `flick activity status`: recording, the title and URL switches with their permissions,
-//! and the open span. Also the Today view's footer, which names browsers that refused
+//! the agents' grant (`remote`), and the open span. Also the Today view's footer, which names browsers that refused
 //! Automation.
 
 use crate::core::store::Store;
@@ -21,6 +21,7 @@ impl Activity {
             (true, []) => "on".into(),
             (true, names) => format!("no Automation permission for {}", names.join(", ")),
         };
+        let remote = self.remote_line(store);
         let open = match self.clock.open() {
             Some((s, start)) => {
                 let since = local_time(start, (self.env.utc_offset)(start));
@@ -31,7 +32,7 @@ impl Activity {
             None if self.clock.is_idle() => "idle".into(),
             None => "none".into(),
         };
-        format!("recording: {on}\ntitles: {titles}\nurls: {urls}\nopen span: {open}")
+        format!("recording: {on}\ntitles: {titles}\nurls: {urls}\nremote: {remote}\nopen span: {open}")
     }
 
     /// The Today view's footer. It names the browsers that refused Automation: their spans

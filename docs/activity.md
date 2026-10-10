@@ -8,6 +8,7 @@ Recording is off until you turn it on: run **Start Activity Recording** from the
 [activity]
 titles = false                     # the default; true also stores window titles
 urls = false                       # the default; true also stores the browser's front tab URL
+remote_titles = false              # agent sessions see window titles only when true
 remote_urls = false                # agent sessions see URLs and domains only when true
 exclude = ["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess"]
 hotkey = "cmd+ctrl+alt+shift+KeyR" # toggles recording; unbound by default
@@ -21,19 +22,21 @@ category = "code"
 ```
 
 ```bash
-flick activity status              # recording, titles, urls, the open span
+flick activity status              # recording, titles, urls, the agents' grant, the open span
 flick activity today               # totals by category, project, app, title and domain; `week` for 7 days
 flick activity today --by task     # totals per running task id (see `flick task ls`)
 flick activity spans --since 2026-10-01   # <start>\t<duration>\t<app>\t<bundle id>\t<title>[\t<url>]
 flick --json activity today | jq .ok.by_app
 flick activity forget today --yes  # also: forget all --yes, forget app <bundle id> --yes
+flick activity remote allow 30     # agents may read reports for 30 min; also: allow always, deny, status
 ```
 
 Privacy:
 
 - **What.** Each span is a start, an end, the app's bundle id and name and, only with `titles = true`, the focused window's title (spinner glyphs stripped, at most 256 characters). With `titles = false` Flick never reads a title and installs no Accessibility observer. Titles need Accessibility; without it `flick activity status` says `titles: no Accessibility permission` and spans stay per app.
-- **URLs.** Only with `urls = true`, a span in Brave, Chrome, Edge or Chromium also stores the front tab's URL (at most 2048 characters), and reports list the top domains. Flick asks the browser through AppleScript when it comes to the front or its window or title changes (the window is followed as for titles, so tab switches need Accessibility too). A private (incognito) window gives no URL. Safari and Arc are not supported: Flick cannot tell their private windows. Each browser asks once for Automation permission; if you deny it, `flick activity status` says `urls: no Automation permission for Brave Browser`, the Activity Today footer names the browser, and its spans have no URL (allow it again in System Settings > Privacy & Security > Automation). URLs keep their query strings, which can hold tokens; `exclude` the browser or leave `urls` off if that matters.
+- **URLs.** Only with `urls = true`, a span in Brave, Chrome, Edge or Chromium also stores the front tab's URL (at most 2048 characters), and reports list the top domains. Flick asks the browser through AppleScript when it comes to the front or its window or title changes (the window is followed as for titles, so tab switches need Accessibility too). A private (incognito) window gives no URL. Safari and Arc are not supported: Flick cannot tell their private windows, so it never asks them. Safari's AppleScript dictionary has no private-window property; the only workaround reads a localized Window menu label through System Events, which needs extra permissions, works only while Safari is active and can guess wrong. Arc's dictionary accepts `incognito` when a script makes a window, but no documentation shows it as a property a script can read back, and Arc windows have no `mode`. Each browser asks once for Automation permission; if you deny it, `flick activity status` says `urls: no Automation permission for Brave Browser`, the Activity Today footer names the browser, and its spans have no URL (allow it again in System Settings > Privacy & Security > Automation). URLs keep their query strings, which can hold tokens; `exclude` the browser or leave `urls` off if that matters.
 - **Not recorded.** Apps in `exclude` (matched by bundle id or name) leave a gap, not a row. Setting `exclude` replaces the default list, so keep the password managers in it. Idle time (60 s without input; the span ends at the last input), a locked screen and sleep are not recorded either.
+- **Agents.** An agent session (`--remote`, or a peer over [remote access](remote.md)) reads `today`, `week` and `spans` only while you allow it: `flick activity remote allow [<minutes>|always]` (60 min without an argument) or **Allow Agents to Read Activity (1 h)** in the launcher. `flick activity remote deny`, or the same item, revokes it. `flick activity status` shows the grant as `remote: off`, `remote: on · 42 min left` or `remote: on · until revoked`; `flick activity remote status` also gives the last read. Agents never turn recording on or off, forget, or change the grant. Their replies leave out titles unless `remote_titles = true`, and URLs and domains unless `remote_urls = true`. The grant guards against accidents, not against a hostile agent: `--remote` is a word the caller sends.
 - **Where.** Tables `activity_spans` and `activity_state` in `~/Library/Application Support/Flick/flick.db`. The module has no network code. The only way in from outside is the mode-0600 control socket.
 - **Delete.** `flick activity forget today|all|app <bundle id> --yes`. `forget all` empties both tables, turns recording off and runs `VACUUM`, so the rows leave the file. Data stays until you delete it.
 - **Rules** apply when a report runs and are never stored, so a rule edit regroups past spans too.
@@ -101,7 +104,8 @@ sqlite3 "$db" 'select * from activity_state'
 6e. **Other browsers and exclude.** Chrome gets URLs the same way (its own prompt).
    Safari and Arc rows never have a URL and cause no prompt. With Brave in `exclude`, no
    Brave row is stored and no prompt appears.
-6f. **Agents.** `flick activity remote allow`, then `flick activity spans --remote --json`:
+6f. **Agents.** `flick activity remote allow`: `flick activity status` prints
+   `remote: on · 60 min left`. Then `flick activity spans --remote --json`:
    every `url` is null and `flick activity today --remote --json` has empty `top_domains`.
    With `remote_urls = true` (and a config reload) both show.
 7. **CPU with a spinner title.** With recording on and `titles = true`, put a terminal in

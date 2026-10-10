@@ -61,6 +61,30 @@ fn agents_never_grant_record_or_forget() {
     });
 }
 
+/// The `remote:` line of `activity status`.
+fn status_remote(a: &mut Activity, cx: &mut Cx) -> String {
+    let status = run(a, cx, "status").unwrap();
+    status.lines().find_map(|l| l.strip_prefix("remote: ")).unwrap_or_default().to_owned()
+}
+
+#[test]
+fn status_shows_the_grant() {
+    with_cx(|cx| {
+        let mut a = activity("");
+        assert_eq!(status_remote(&mut a, cx), "off");
+        run(&mut a, cx, "remote allow 5").unwrap();
+        at(T + 60);
+        assert_eq!(status_remote(&mut a, cx), "on · 4 min left");
+        assert!(remote(&mut a, cx, "status", false).unwrap().contains("\nremote: on · 4 min left\n"));
+        at(T + 300);
+        assert_eq!(status_remote(&mut a, cx), "off", "an expired grant is off");
+        run(&mut a, cx, "remote allow always").unwrap();
+        assert_eq!(status_remote(&mut a, cx), "on · until revoked");
+        run(&mut a, cx, "remote deny").unwrap();
+        assert_eq!(status_remote(&mut a, cx), "off");
+    });
+}
+
 #[test]
 fn the_grant_expires_lazily() {
     with_cx(|cx| {
