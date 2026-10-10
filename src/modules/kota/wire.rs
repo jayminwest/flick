@@ -41,7 +41,7 @@ fn show(title: &str, tooltip: &str, menu: &[Entry]) {
             Entry::Info(text) => Row::Info(text),
             Entry::Separator => Row::Separator,
             Entry::Pick { title, key } => Row::Pick { title, key },
-            Entry::Open { title, key } => Row::Open { title, module: ID, key },
+            Entry::Open { title, module, key } => Row::Open { title, module, key },
         })
         .collect();
     status_item::show(ID, title, tooltip, &rows, queue);

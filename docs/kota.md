@@ -55,6 +55,7 @@ The item shows only after Flick starts, while `[kota]` sets a key and `status_it
 
 - The state line (`KOTA: thinking · 4m`), KOTA's task, `Checks: <names> failing` (`herdr` or `dash` when that source failed), and `Checked 12:03`. The last row says `stale` while the state is stale.
 - **Ask KOTA…** opens the Ask KOTA view.
+- **Open Chat** opens the [KOTA chat window](message.md#chat), the one `[message] chat_hotkey` toggles, on the thread it showed last. Unlike the hotkey, it never hides the window.
 - **Inbox** (`Inbox (2 waiting)`) opens the `message` module's history of messages and cards.
 - **Open Dashboard** opens `dash` in the browser.
 - **Refresh Now** checks now.
@@ -63,7 +64,7 @@ Opening the menu also checks now, at most once per 10 s. When the state changes 
 
 ## Quick ask
 
-**Ask KOTA…** opens the launcher view `kota/ask`. Open it with the `hotkey` or from the menu bar item. Type the question; ↵ sends it, and the launcher hides. The footer shows KOTA's state. The text area lists the last 8 asks (memory only) with `sending…`, `sent` or `failed: <why>`. `flick kota ask <text>` does the same from a shell.
+**Ask KOTA…** opens the launcher view `kota/ask`. Open it with the `hotkey` or from the menu bar item. Type the question; ↵ sends it, and the launcher hides. The footer shows KOTA's state. The **Open Chat** row is always in the view: it is first while the field is empty, so the hotkey then ↵ opens the [KOTA chat window](message.md#chat) on its last thread (the launcher hides). Use ↓ to get to it after you type. The text area lists the last 8 asks (memory only) with `sending…`, `sent` or `failed: <why>`. `flick kota ask <text>` does the same from a shell.
 
 An ask:
 
@@ -105,7 +106,8 @@ Unit tests cover the presence model, the menu model and the ask argv with fake c
 - [ ] **On with a key.** Add `hotkey = "cmd+ctrl+alt+shift+KeyO"` under `[kota]` and reload. Within a few seconds the menu bar shows `K` (or `K…` while KOTA works). `flick kota status` shows `KOTA: idle · <age>`, `Checked HH:MM` and `polling: every 60 s`.
 - [ ] **Thinking and blocked.** Give KOTA a task. Within 60 s the glyph turns `K…` and the tooltip shows its task. When KOTA asks for an approval, the glyph turns `K!` within 15 s.
 - [ ] **Pending count.** Have KOTA post a card that waits on you. The title shows `K 1` (or the current glyph plus 1), and the menu row reads `Inbox (1 waiting)`. **Inbox** opens the messages history.
-- [ ] **Menu.** Open the menu: it lists the state line, KOTA's task, `Checked HH:MM`, then **Ask KOTA…**, **Inbox**, **Open Dashboard** and **Refresh Now**. Opening it updates `Checked`. **Open Dashboard** opens kota-dash in the browser.
+- [ ] **Menu.** Open the menu: it lists the state line, KOTA's task, `Checked HH:MM`, then **Ask KOTA…**, **Open Chat**, **Inbox**, **Open Dashboard** and **Refresh Now**. Opening it updates `Checked`. **Open Dashboard** opens kota-dash in the browser. **Open Chat** shows the chat window on its last thread; choose it again while the window shows, and the window stays.
+- [ ] **Open Chat from the hotkey.** Press the hotkey: the first row is **Open Chat** and the footer says `↵ opens chat`. Press ↵: the launcher hides and the chat window shows on its last thread. Press the hotkey, type `hi`: the rows are **Ask KOTA: hi** then **Open Chat**, and the footer says `↵ sends`.
 - [ ] **Ask from the hotkey.** Press the hotkey, type `smoke test: reply ok`, press ↵. A pending KOTA card appears at once. KOTA's reply replaces it. `flick kota status` polls fast (the glyph tracks KOTA within 15 s) for 3 minutes.
 - [ ] **Ask from the CLI.** `flick kota ask "smoke test from the cli"` prints `Asked KOTA (k…): queued for KOTA (…)` (kota-ask's last line) and exits 0.
 - [ ] **Ask failure.** Set `ssh = "jaymin@nonexistent-host"` and reload. `flick kota ask hi` exits 1 with ssh's error. The pending card turns into `KOTA ask failed: <reason>`. Restore `ssh`.

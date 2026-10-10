@@ -6,16 +6,18 @@
 use serde_json::{Value, json};
 
 use super::ask::{Ask, Status};
+use super::item::CHAT;
 use super::presence::{Presence, State};
+use super::{ASK, ID};
 
 /// One menu row. `Pick` calls the module's pick handler with `key`; `Open` routes `key`
-/// like a press of the module's hotkey.
+/// like a press of `module`'s hotkey (this module, or another by name).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
     Info(String),
     Separator,
     Pick { title: String, key: &'static str },
-    Open { title: String, key: &'static str },
+    Open { title: String, module: &'static str, key: &'static str },
 }
 
 /// The menu bar glyph: a `K` and a mark for the state; `K?` while stale.
@@ -126,8 +128,9 @@ pub fn menu(p: &Presence, badge: Badge, now: u64, offset: i32) -> Vec<Entry> {
     let inbox = badge.inbox();
     entries.extend([
         Entry::Separator,
-        Entry::Open { title: "Ask KOTA…".into(), key: "ask" },
-        Entry::Open { title: inbox, key: "inbox" },
+        Entry::Open { title: "Ask KOTA…".into(), module: ID, key: ASK },
+        Entry::Open { title: "Open Chat".into(), module: CHAT.0, key: CHAT.1 },
+        Entry::Open { title: inbox, module: ID, key: "inbox" },
         Entry::Pick { title: "Open Dashboard".into(), key: "dash" },
         Entry::Pick { title: "Refresh Now".into(), key: "refresh" },
     ]);

@@ -22,12 +22,15 @@
 //! and send the text to KOTA's `kota-ask` over ssh, on a thread. The verb answers once ssh
 //! is done (`core::later`): exit 1 with the reason when it failed. An ask polls fast for
 //! `fast_secs`, and so does the view while it shows. The view lists the last asks (memory
-//! only: the message history is the `message` module's).
+//! only: the message history is the `message` module's). Its Open Chat row (first while
+//! the field is empty) is the `message` module's item `message:chat:open`: the KOTA chat
+//! window that `[message] chat_hotkey` toggles (flick-ed63).
 //!
 //! Menu bar item (`item.rs`): the presence glyph plus the count of cards waiting on the
 //! user and unread posts (`Event::CardsPending`), shown while rounds run on a timer and `status_item` is
-//! true. Its menu has the state rows, Ask KOTA… (hotkey `ask`), Inbox (hotkey `inbox`:
-//! the `message` module's `recent` view), Open Dashboard and Refresh Now; opening it
+//! true. Its menu has the state rows, Ask KOTA… (hotkey `ask`), Open Chat (the `message`
+//! module's hotkey `chat:open`), Inbox (hotkey `inbox`: the `message` module's `recent`
+//! view), Open Dashboard and Refresh Now; opening it
 //! starts a round. A change to down notifies when `notify_down` is true.
 //!
 //! `flick kota status [--json]` (no I/O) and `flick kota refresh` are allowed over the
@@ -56,7 +59,7 @@ use crate::config::Section;
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, later, unknown_verb};
 use ask::{Ask, Status};
 use io::{Hooks, Shared};
-use item::{INBOX, INBOX_VIEW, Shown, Ui};
+use item::{CHAT, INBOX, INBOX_VIEW, Shown, Ui};
 use settings::Settings;
 use view::{Badge, Extra, Polling};
 
@@ -226,16 +229,19 @@ impl Module for Kota {
         let now = (self.hooks.now)();
         self.poll_fast(now.saturating_add(VIEW_FAST_SECS), false);
         let q = cx.query.trim();
-        view.items = if q.is_empty() {
-            vec![]
-        } else {
-            vec![Item {
-                subtitle: "KOTA's reply replaces the pending card".into(),
-                ..Item::new(ItemId::new(ID, ASK).with_arg(q), format!("Ask KOTA: {q}"), "Send", Icon::Symbol("paperplane"))
-            }]
+        let ask = (!q.is_empty()).then(|| Item {
+            subtitle: "KOTA's reply replaces the pending card".into(),
+            ..Item::new(ItemId::new(ID, ASK).with_arg(q), format!("Ask KOTA: {q}"), "Send", Icon::Symbol("paperplane"))
+        });
+        // The `message` module's item: Enter goes to it (`Registry::activate` routes by id).
+        let chat = Item {
+            subtitle: "The KOTA chat window, on its last thread".into(),
+            ..Item::new(ItemId::new(CHAT.0, CHAT.1), "Open Chat", "Open", Icon::Symbol("bubble.left.and.bubble.right"))
         };
+        let verb = if ask.is_some() { "sends" } else { "opens chat" };
+        view.items = ask.into_iter().chain([chat]).collect();
         let p = self.shared.lock();
-        view.footer = format!("{}  ·  ↵ sends", view::headline(&p.presence, now));
+        view.footer = format!("{}  ·  ↵ {verb}", view::headline(&p.presence, now));
         view.text = view::asks_text(&p.asks, (self.hooks.utc_offset)(i64::try_from(now).unwrap_or(0)));
     }
 

@@ -81,7 +81,9 @@ table. Do not change how a module builds keys: existing frecency history would s
 `quicklink:<name>`, `script:<name>`, `builtin:<title>`. `with_arg` attaches data (a quicklink's typed query)
 that `activate` reads with `id.arg()`. It is not part of the serialized id.
 
-`Registry::activate` routes by `id.module()`. An unknown module returns `Stay(None)`. Before it
+`Registry::activate` routes by `id.module()`, so a view may list another module's item by its
+id: the `kota/ask` view's Open Chat row is `message:chat:open`, and Enter (and ⌘K) on it go to
+`message`. An unknown module returns `Stay(None)`. Before it
 routes, the controller records use (`store.record_use`) for root items and for items in a view
 with `record_use = true`.
 
@@ -91,7 +93,8 @@ with `record_use = true`.
 - `Stay(Option<String>)`: stay; `Some` shows a status line in the footer.
 - `Push(ListView)`: a request for a view by `module` and `name`. The registry asks the owning
   module's `open`, so any module can push another module's view by name (`builtin` pushes
-  `clip/history`). That is the only way modules refer to each other.
+  `clip/history`). Views by name, item ids (above) and hotkey keys (status item `Open`
+  rows) are the only ways modules refer to each other.
 - `Form { module, name }`: a request for form `name` of `module`, by name like `Push`. The
   registry asks that module's `form`, so `builtin` can open the quicklink form without
   importing it.
@@ -322,9 +325,10 @@ Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (s
 `[kota]` key set) and `status_item` is true, so a Mac without `[kota]` has none. Title: the
 state glyph plus the `CardsPending` count and unread posts; redrawn only when title, tooltip or rows change,
 on `Started`, `ModuleChanged`, `CardsPending`, sleep/wake, lock/unlock and `LauncherOpened`.
-Rows: Ask KOTA… and Inbox are `Open` rows (kota hotkeys `ask` and `inbox`; `inbox` returns
-a request for the `message` module's `recent` view by name), Open Dashboard and Refresh Now
-are picks. The pick handler and the menu-open hook only queue a key in `wire.rs` and post
+Rows: Ask KOTA…, Open Chat and Inbox are `Open` rows (kota hotkeys `ask` and `inbox`; `inbox`
+returns a request for the `message` module's `recent` view by name; Open Chat is the `message`
+module's hotkey key `chat:open`, which shows the chat window and never hides it), Open
+Dashboard and Refresh Now are picks. The pick handler and the menu-open hook only queue a key in `wire.rs` and post
 `ModuleChanged`; the module then opens the URL or starts a rate-limited round (as `kota
 refresh`). A committed change to down posts one `notify::post` (`notify_down`), never
 `notify::on_click`. Dropping the module (disabled on reload) hides its item.

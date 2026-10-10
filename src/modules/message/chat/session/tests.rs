@@ -345,6 +345,25 @@ fn the_threads_view_lists_and_opens_threads() {
 }
 
 #[test]
+fn chat_open_shows_the_window_and_never_hides_it() {
+    // `message:chat:open` is how other modules open the window (kota's Open Chat, flick-ed63).
+    let (mut f, mut m) = (Fixture::new(), inbox(OK));
+    f.run(&mut m, false, &["post", "--thread", "t1", "--id", "a", "Plan?"]).unwrap();
+    take_log();
+    let id = ItemId::new("message", "chat:open");
+    assert!(f.cx("", false, |cx| m.actions(&id, cx)).is_empty());
+    assert!(matches!(f.cx("", false, |cx| m.activate(&id, cx)), Outcome::Hide));
+    assert_eq!(m.chat_showing(), Some("t1"), "the newest thread");
+    assert_eq!(take_log().first().map(String::as_str), Some("launcher hide"));
+    // The hotkey key of the same name (the KOTA menu's row) shows it again, keyboard and all.
+    for _ in 0..2 {
+        assert!(f.cx("", false, |cx| m.hotkey("chat:open", cx)).is_none());
+        assert_eq!(m.chat_showing(), Some("t1"));
+        assert_eq!(take_log().last().map(String::as_str), Some("chat show"));
+    }
+}
+
+#[test]
 fn card_presses_in_the_window_go_through_the_card_dispatch() {
     let (mut f, mut m) = (Fixture::new(), inbox(OK));
     let card = r#"{"id":"c1","title":"Ship?","thread":"t1","actions":[{"id":"go","label":"Ship"}]}"#;
