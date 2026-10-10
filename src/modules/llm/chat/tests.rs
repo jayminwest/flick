@@ -33,7 +33,7 @@ impl Fx {
 }
 
 fn llm(text: &str) -> Llm {
-    let mut m = Llm::with_hooks(HOOKS, UI);
+    let mut m = Llm::with_hooks(HOOKS, UI, testkit::PRIVATE);
     m.configure(&parse(text).unwrap().section(ID).unwrap().unwrap()).unwrap();
     take_log();
     m
@@ -100,7 +100,9 @@ fn without_a_normal_server_there_is_no_item_hotkey_or_window() {
     for text in ["[llm]\nhotkey = \"cmd+KeyL\"", &format!("[llm]\nhotkey = \"cmd+KeyL\"\n{VAULT}")] {
         let mut m = llm(text);
         let mut f = Fx::new();
-        assert!(f.cx("", |cx| m.items(cx)).is_empty(), "{text}");
+        // Only the private chat's item, with a server of any kind (`private_chat`).
+        let items: Vec<String> = f.cx("", |cx| m.items(cx)).iter().map(|i| i.id.to_string()).collect();
+        assert!(items.iter().all(|i| i == "llm:private"), "{text}: {items:?}");
         assert!(m.hotkeys().is_empty());
         event(&mut f, &mut m);
         assert!(take_log().is_empty());

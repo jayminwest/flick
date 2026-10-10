@@ -1,7 +1,9 @@
 //! Fakes for the module's tests: `spawn` answers by URL (the argv's last word) with canned
 //! output, so no test runs curl or reaches a server. Every argv and stdin body lands in
 //! `SENT` for the assertions that prompt text goes over stdin only. `UI` is a chat window
-//! that is only state in `thread_local`s; its calls land in `take_log`.
+//! that is only state in `thread_local`s; its calls land in `take_log`. `PRIVATE` is the
+//! private window: the same fake, with its own note queue (`queue_private`), and its copies
+//! and quit hooks logged.
 
 use std::io::{Cursor, Read, Write};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -9,6 +11,7 @@ use std::time::Duration;
 
 use super::chat::{Note, Ui};
 use super::io::Hooks;
+use super::private_chat;
 use super::transport::{Child, Spawned};
 use crate::platform::surface::Row;
 
@@ -109,7 +112,7 @@ fn spawn(argv: &[String]) -> Result<Spawned, String> {
         sent.push(Sent { argv: argv.to_vec(), stdin: vec![] });
         sent.len() - 1
     };
-    let host = url.trim_start_matches("http://").split('/').next().unwrap_or_default();
+    let host = url.trim_start_matches("http://").split(['/', ':']).next().unwrap_or_default();
     let models = url.ends_with("/v1/models");
     let gate = Arc::new(Gate::default());
     let (out, err, code, hang): (&str, &str, Option<i32>, bool) = match host {
@@ -144,6 +147,7 @@ thread_local! {
     static KEY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static FRONT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(Some(42)) };
     static NOTES: std::cell::RefCell<Vec<Note>> = const { std::cell::RefCell::new(Vec::new()) };
+    static PRIVATE_NOTES: std::cell::RefCell<Vec<Note>> = const { std::cell::RefCell::new(Vec::new()) };
     static LOG: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     static IDS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
@@ -160,6 +164,18 @@ pub fn take_log() -> Vec<String> {
 /// Queue `note` as the window's handlers would.
 pub fn queue(note: Note) {
     NOTES.with(|n| n.borrow_mut().push(note));
+}
+
+/// Queue `note` as the private window's handlers would.
+pub fn queue_private(note: Note) {
+    PRIVATE_NOTES.with(|n| n.borrow_mut().push(note));
+}
+
+/// Esc in the private window.
+pub fn closed_private() {
+    VISIBLE.set(false);
+    KEY.set(false);
+    queue_private(Note::Closed);
 }
 
 /// Make another app (`pid`) the one in front, or none.
@@ -218,4 +234,10 @@ pub const UI: Ui = Ui {
         IDS.set(n);
         format!("lnew{n}")
     },
+};
+
+pub const PRIVATE: private_chat::Ui = private_chat::Ui {
+    win: Ui { take: || PRIVATE_NOTES.with(|n| std::mem::take(&mut *n.borrow_mut())), ..UI },
+    copy: |t| log(format!("copy {t}")),
+    hook_quit: |_, _| log("hook quit".into()),
 };

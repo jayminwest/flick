@@ -76,6 +76,8 @@ pub enum Command {
     Stop,
     /// ⌘W
     Close,
+    /// ⌘C with nothing selected: only the private chat binds it (`private_chat::binding`).
+    Copy,
 }
 
 /// The command bound to `k`: ⌘ alone with N, . or W.
@@ -247,6 +249,7 @@ impl Llm {
                     self.new_thread();
                 }
                 Note::Key(Command::Stop) => self.stop(),
+                Note::Key(Command::Copy) => {}
                 Note::Key(Command::Close) => {
                     (self.chat.ui.hide)();
                     self.chat.refocus();

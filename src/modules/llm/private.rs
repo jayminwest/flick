@@ -10,16 +10,16 @@
 //!   `io::chat` wipes once curl has it. `absorb` moves a stream's pieces in and wipes them;
 //!   pieces of any stream but the current one are wiped and dropped. Text grows into fresh
 //!   buffers and the outgrown ones are wiped, so a reallocation leaves no stray copy.
-//! - Lifecycle (`Wipe`): the private chat (flick-c325) calls `clear` when its window closes,
-//!   on `Event::Locked` and `Event::Sleep` (`wipe_on`), when config reloads (`configure` on
-//!   the running module; the server may no longer be private), and on quit (an
-//!   `app::on_terminate` hook in `wire.rs`; those may not borrow app state, so the session
-//!   sits where the hook can reach it, e.g. `Arc<Mutex<Option<PrivateSession>>>`). `clear`
-//!   returns the stream still running for the caller to `io::cancel`.
+//! - Lifecycle (`Wipe`): the private chat (`private_chat.rs`, flick-c325) drops the session
+//!   when its window closes, on `Event::Locked` and `Event::Sleep` (`wipe_on`), when config
+//!   reloads (`configure` on the running module; the server may no longer be private), and on
+//!   quit (an `app::on_terminate` hook in `wire.rs`; those may not borrow app state, so the
+//!   session sits in `private_chat::Room`, an `Arc<Mutex<Option<..>>>` the hook reaches
+//!   through a `Weak`). `clear` returns the stream still running for the caller to
+//!   `io::cancel`.
 //!
 //! Out of reach (document, don't promise): copies `AppKit` keeps in the window's views, curl's
 //! and the kernel's buffers, and pages the system swapped (encrypted on macOS).
-#![cfg_attr(not(test), expect(dead_code, reason = "the private chat window drives it (flick-c325)"))]
 
 use std::fmt;
 
@@ -40,7 +40,8 @@ pub enum Wipe {
     Sleep,
     /// Config reloaded.
     Reload,
-    /// Flick is quitting.
+    /// Flick is quitting. The quit hook (`private_chat::wipe_for_quit`) has no window to tell.
+    #[cfg_attr(not(test), expect(dead_code, reason = "quit wipes with no window to show the notice"))]
     Quit,
     /// The user cleared it.
     Cleared,
