@@ -5,13 +5,14 @@
 //!    From the window it carries its chips (`context.rs`): a `[context]` block, and the
 //!    screenshot uploads the worker runs first.
 //! 2. It is stored at once as the user's message (`role` me, id = the request id, in the
-//!    thread), so the window shows it and "Thinking…" under it.
+//!    thread), so the window shows it and "Thinking…" under it, and a wake is armed for
+//!    just past `model::THINKING_SECS`, when the redraw drops a bubble KOTA never answered.
 //! 3. A worker runs `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=8 <kota_host>
 //!    <kota_ask> --id <req> --thread <t>` with the question on stdin (20 s budget,
 //!    `run::exec`), after the uploads; a failed upload is the ask's failure and kota-ask
 //!    does not run. One ask runs at a time; the rest wait in order, so KOTA gets them as typed.
-//! 4. Exit 0: done; KOTA answers with `message post --thread <t> --reply-to <req> --id <x>
-//!    [--partial]`. Anything else marks the question failed (`Not sent · ⌘R retries`), puts
+//! 4. Exit 0: done; KOTA answers with `message post [--thread <t>] --reply-to <req> --id <x>
+//!    [--partial]` (without `--thread` the reply inherits the question's, flick-3d84). Anything else marks the question failed (`Not sent · ⌘R retries`), puts
 //!    the reason on the window's notice line and, for `message ask`, is the verb's error.
 //!
 //! `message ask [--thread t] <text...>` answers once ssh is done (`core::later`). Without
@@ -21,7 +22,7 @@
 
 use std::sync::mpsc::Sender;
 
-use super::ask;
+use super::{ask, model};
 use super::context::{self, Attached, Upload};
 use crate::core::card::valid_id;
 use crate::core::later::{self, Answer};
@@ -116,6 +117,8 @@ impl Inbox {
             ..Message::default()
         };
         cx.store.put_message(&m, self.keep())?;
+        // Redraw once "Thinking…" is stale, so the bubble goes even if nothing else happens.
+        (self.env.wake_after)(model::THINKING_SECS.unsigned_abs() + 1);
         self.chat.notice = None;
         let answer = wait.then(later::answer_later);
         self.chat.queue.push_back(Ask { req: req.clone(), argv, stdin, answer, uploads, attached });

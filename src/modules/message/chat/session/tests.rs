@@ -372,3 +372,98 @@ fn kota_host_and_path_are_checked() {
     assert_eq!((m.settings.kota_host.as_str(), m.settings.kota_ask.as_str()), ("jaymin@mbp-server", ".dotfiles/home/.local/bin/kota-ask"));
     assert_eq!(m.settings.chat_hotkey, None);
 }
+
+#[test]
+fn a_reply_without_thread_lands_in_its_questions_thread() {
+    // flick-3d84: today's KOTA answers `message post --reply-to <req>` without `--thread`.
+    let (mut f, mut m) = (Fixture::new(), inbox(OK));
+    hotkey(&mut f, &mut m);
+    queue(Note::Submit("Status?".into()));
+    settle(&mut f, &mut m);
+    take_log();
+    f.run(&mut m, false, &["post", "--reply-to", "m1", "--id", "r1", "--partial", "Two"]).unwrap();
+    let log = take_log();
+    assert!(only("show", &log).is_empty(), "no HUD while the window shows the thread: {log:?}");
+    assert_eq!(only("chat rows", &log).last().unwrap(), "-- Today / m1 Done|Mine||Status? / r1 Streaming|Theirs|Messages|Two");
+    f.run(&mut m, false, &["post", "--reply-to", "m1", "--id", "r1", "Two calls."]).unwrap();
+    assert_eq!(f.store.message("r1").unwrap().thread.as_deref(), Some("tnew1"));
+    // A card answering the question goes in its thread too, inline and not in the corner.
+    let card = r#"{"id":"c1","title":"Ship?","reply_to":"m1","actions":[{"id":"go","label":"Ship"}]}"#;
+    f.run(&mut m, false, &["card", "post", card]).unwrap();
+    let log = take_log();
+    assert!(only("card", &log).is_empty(), "{log:?}");
+    assert!(only("chat rows", &log).last().unwrap().ends_with(" / c1 card|false|None"));
+    let stored: serde_json::Value = serde_json::from_str(&f.run(&mut m, false, &["card", "get", "c1"]).unwrap()).unwrap();
+    assert_eq!(stored["thread"], "tnew1");
+    // `--thread` still wins; a reply to an unthreaded message stays unthreaded.
+    f.run(&mut m, false, &["post", "--thread", "t9", "--reply-to", "m1", "--id", "r2", "elsewhere"]).unwrap();
+    f.run(&mut m, false, &["post", "--id", "loose", "hi"]).unwrap();
+    f.run(&mut m, false, &["post", "--reply-to", "loose", "--id", "r3", "still loose"]).unwrap();
+    let thread = |id: &str| f.store.message(id).unwrap().thread;
+    assert_eq!((thread("r2").as_deref(), thread("r3")), (Some("t9"), None));
+    // A re-post keeps the thread its id is in, whatever it replies to.
+    f.run(&mut m, false, &["post", "--reply-to", "m1", "--id", "r2", "moved?"]).unwrap();
+    assert_eq!(f.store.message("r2").unwrap().thread.as_deref(), Some("t9"));
+    // A pending placeholder in a thread hands its thread to the reply that takes it.
+    f.run(&mut m, false, &["post", "--pending", "--thread", "t5", "--id", "p1", "asking"]).unwrap();
+    f.run(&mut m, false, &["post", "--reply-to", "p1", "--id", "r4", "answer"]).unwrap();
+    assert!(f.store.message("p1").is_none());
+    assert_eq!(f.store.message("r4").unwrap().thread.as_deref(), Some("t5"));
+}
+
+#[test]
+fn a_stale_thinking_bubble_goes_after_its_wake() {
+    let (mut f, mut m) = (Fixture::new(), inbox(OK));
+    hotkey(&mut f, &mut m);
+    queue(Note::Submit("Still there?".into()));
+    settle(&mut f, &mut m);
+    let log = take_log();
+    // The ask arms one wake just past THINKING_SECS.
+    assert_eq!(only("wake", &log), [(model::THINKING_SECS + 1).to_string()]);
+    assert!(only("chat rows", &log).last().unwrap().ends_with("thinking:m1 Pending|Theirs|Messages|Thinking…"));
+    // The wake is a ModuleChanged: the redraw drops the bubble and the header goes idle.
+    m.env.now = || crate::modules::message::tests::TS + model::THINKING_SECS + 1;
+    event(&mut f, &mut m);
+    let log = take_log();
+    assert_eq!(only("chat rows", &log).last().unwrap(), "-- Today / m1 Done|Mine||Still there?");
+    assert!(only("chat header", &log).last().unwrap().ends_with("|idle"));
+}
+
+#[test]
+fn thread_cards_render_inline_with_their_press_state_and_no_corner_card() {
+    let (mut f, mut m) = (Fixture::new(), inbox(&format!("{OK}\naction_command = [\"sent\"]")));
+    f.cx("", false, |cx| m.summon(Some("t1".into()), cx));
+    take_log();
+    let open = r#"{"id":"c1","title":"Ship?","thread":"t1","actions":[{"id":"go","label":"Ship"}]}"#;
+    f.run(&mut m, false, &["card", "post", open]).unwrap();
+    let log = take_log();
+    assert!(only("card", &log).is_empty() && only("notify", &log).is_empty(), "{log:?}");
+    assert_eq!(only("chat rows", &log).last().unwrap(), "-- Today / c1 card|false|None");
+    // A press from the transcript goes through the card dispatch and shows pending, keyed by
+    // the card id, until KOTA re-posts it.
+    queue(Note::Press { card: "c1".into(), action: "go".into(), values: "{}".into() });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        event(&mut f, &mut m);
+        if !m.worker.running() || Instant::now() > deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    event(&mut f, &mut m);
+    assert!(matches!(m.ui["c1"].phase, crate::modules::message::dispatch::Phase::Waiting { .. }));
+    assert_eq!(only("chat rows", &take_log()).last().unwrap(), "-- Today / c1 card|true|None");
+    let done = r#"{"id":"c1","title":"Shipped","thread":"t1","state":"done"}"#;
+    f.run(&mut m, false, &["card", "post", done]).unwrap();
+    let log = take_log();
+    assert!(only("card", &log).is_empty(), "{log:?}");
+    assert_eq!(only("chat rows", &log).last().unwrap(), "-- Today / c1 card|false|None");
+    assert!(m.ui.is_empty());
+    // Another thread's card, or one posted while the window is hidden, still shows in the corner.
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c2","title":"Other","thread":"t2"}"#]).unwrap();
+    assert_eq!(only("card", &take_log()).len(), 1);
+    hotkey(&mut f, &mut m);
+    take_log();
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c3","title":"Later","thread":"t1"}"#]).unwrap();
+    assert_eq!(only("card", &take_log()).len(), 1);
+}

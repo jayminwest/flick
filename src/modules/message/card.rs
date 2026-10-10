@@ -19,7 +19,9 @@
 //!   card's initial inputs. A `shell` action shows its confirm on the first press; a second
 //!   `card press` of the same action is Run. `press <id> :cancel` is Cancel.
 //!
-//! A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
+//! A card in the thread the chat window shows draws in its transcript instead of the corner
+//! (`chat::model::alert`, as text posts); a corner card of it that already shows redraws in
+//! place. A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
 //! update of it goes to history without showing (plan risk 10). A card that only timed out
 //! is not dismissed for this: any update of it shows (flick-9bdb). A `pending` card has no
 //! timeout, so KOTA's final update of a long job finds it still up.
@@ -170,7 +172,9 @@ impl Inbox {
     }
 
     fn post_card(&mut self, json: &str, cx: &Cx) -> Result<String, String> {
-        let parsed = card::parse(json, origin(cx.remote)).map_err(|e| format!("invalid card: {e}"))?;
+        let mut parsed = card::parse(json, origin(cx.remote)).map_err(|e| format!("invalid card: {e}"))?;
+        let own = parsed.card.thread.take();
+        parsed.card.thread = super::thread::inherit(own, &parsed.card.id, parsed.card.reply_to.as_deref(), cx);
         let c = &parsed.card;
         let existed = cx.store.message(&c.id).is_some();
         let (context, took) = super::quote(c.reply_to.as_deref(), cx);
@@ -193,7 +197,13 @@ impl Inbox {
         if !silent {
             self.dismissed.remove(&m.id);
             self.expired.remove(&m.id);
-            self.display(&m, false);
+            if super::chat::model::alert(&m, !existed, self.chat_showing()).hud {
+                self.display(&m, false);
+            } else {
+                // The chat window shows its thread: the card is there, not in the corner, and
+                // a corner card of it from before only redraws in place.
+                self.redraw(&m.id, cx);
+            }
         }
         let replaced = existed || took;
         if cx.json {

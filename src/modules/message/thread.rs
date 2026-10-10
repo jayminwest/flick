@@ -7,6 +7,10 @@
 //! - `thread <t> [--limit n]`: the newest n (default `chat_history`) messages of `t`, oldest
 //!   first, as `ls` prints them; `--json`: the records. An empty or unknown thread is an
 //!   error, `No thread <t>`.
+//!
+//! `inherit` (flick-3d84): a post or card without a thread of its own goes in the thread its
+//! id is already stored in, else in that of the message it replies to, so KOTA's
+//! `message post --reply-to <req>` answers a chat question in its thread without `--thread`.
 
 use super::store::Messages;
 use super::{Inbox, text};
@@ -59,4 +63,11 @@ impl Inbox {
             _ => Err(USAGE.into()),
         }
     }
+}
+
+/// The thread of a post with id `id`: `own` (`--thread`, a card's `thread`), else the thread
+/// `id` is already stored in, else the thread of the message `reply_to` names, if any.
+/// Read before `quote` takes a pending `reply_to` out of the store.
+pub(super) fn inherit(own: Option<String>, id: &str, reply_to: Option<&str>, cx: &Cx) -> Option<String> {
+    own.or_else(|| cx.store.message(id)?.thread).or_else(|| cx.store.message(reply_to?)?.thread)
 }
