@@ -1,7 +1,8 @@
 //! Where each card of the HUD stack goes: pure geometry with a 100% coverage floor. Cards
 //! come newest first; the newest sits nearest the configured corner and older ones follow
 //! away from it. At most `max_visible` show, fewer when the screen is too short; the rest
-//! collapse into a `+N more` pill after the last visible card. Coordinates are `AppKit`
+//! collapse into a `+N more` pill after the last visible card; a click on it pages through
+//! them (`cycle`). Coordinates are `AppKit`
 //! screen points (origin bottom left, y up).
 
 /// Inset from the screen edges.
@@ -54,6 +55,14 @@ pub struct Layout {
 /// The pill's text.
 pub fn more(hidden: usize) -> String {
     format!("+{hidden} more")
+}
+
+/// Reorder `cards` (newest first) for a click on the pill: the `shown` visible ones go to
+/// the back, so the hidden ones come into view in order. Clicks page through the whole
+/// stack and come back to the start; the relative order never changes, only where it starts.
+pub fn cycle<T>(cards: &mut [T], shown: usize) {
+    let shown = shown.min(cards.len());
+    cards.rotate_left(shown);
 }
 
 /// Lay out cards of `sizes` (width, height; newest first) in screen area `area`.
@@ -134,6 +143,23 @@ mod tests {
         assert_eq!(centered.pill, Some((Rect::new(-548.0, 170.0, PILL_W, PILL_H), 2)));
         // A max of 0 still shows the newest card.
         assert_eq!(layout(AREA, Corner::Top, &w300(&[100.0; 2]), 0).pill.map(|p| p.1), Some(1));
+    }
+
+    #[test]
+    fn a_pill_click_pages_through_every_card() {
+        let mut cards = ['a', 'b', 'c', 'd', 'e'];
+        cycle(&mut cards, 3);
+        assert_eq!(cards, ['d', 'e', 'a', 'b', 'c']);
+        cycle(&mut cards, 3);
+        assert_eq!(cards, ['b', 'c', 'd', 'e', 'a']);
+        // Each click brings the next three to the front; the order is kept.
+        cycle(&mut cards, 3);
+        assert_eq!(cards, ['e', 'a', 'b', 'c', 'd']);
+        // A stale count larger than the stack leaves it as it is.
+        let mut two = ['a', 'b'];
+        cycle(&mut two, 9);
+        assert_eq!(two, ['a', 'b']);
+        cycle::<char>(&mut [], 1);
     }
 
     #[test]

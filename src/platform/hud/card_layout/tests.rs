@@ -107,6 +107,22 @@ fn tooltips_say_why_a_button_is_off_or_that_it_asks() {
 }
 
 #[test]
+fn disabled_actions_say_why_inline() {
+    let c = card(
+        r#"{"id":"c","title":"T","actions":[
+            {"id":"a","label":"Open","do":{"open_url":"ftp://x"}},
+            {"id":"b","label":"Run","do":{"shell":"ls"}},
+            {"id":"c","label":"Copy","do":{"copy":{"x":1}}},
+            {"id":"d","label":"Reply"}]}"#,
+    );
+    let reasons = disabled_reasons(&c.actions);
+    assert_eq!(reasons.len(), 2, "{reasons:?}");
+    assert_eq!(reasons[0], "Open is off: open_url: only http and https links");
+    assert!(reasons[1].starts_with("Copy is off: "), "{reasons:?}");
+    assert!(disabled_reasons(&[]).is_empty());
+}
+
+#[test]
 fn labels_for_lists_and_progress() {
     assert_eq!(list_row(0, "a", false), "• a");
     assert_eq!(list_row(2, "c", true), "3. c");
