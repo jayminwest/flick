@@ -28,6 +28,7 @@ toml_edit = { version = "0.25.15", default-features = false, features = ["parse"
 strip = true
 lto = "fat"
 codegen-units = 1
+opt-level = "s"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
