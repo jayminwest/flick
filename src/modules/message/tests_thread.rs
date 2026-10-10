@@ -10,14 +10,10 @@ fn a_streamed_reply_updates_one_message_quietly_until_done() {
     let post = |f: &mut Fixture, m: &mut _, w: &[&str]| f.run(m, true, &[&["post"], w].concat()).unwrap();
     assert_eq!(post(&mut f, &mut m, &["--thread", "t1", "--id", "r1", "--partial", "Thinking"]), r#"{"id":"r1","replaced":false}"#);
     post(&mut f, &mut m, &["--thread", "t1", "--id", "r1", "--partial", "Thinking", "more"]);
-    // No sound and no notification while it streams; the card redraws in place by id.
-    assert_eq!(
-        take_log(),
-        [
-            "show r1 Messages|11:31||Thinking|None|false|TopRight|4|20|false|false",
-            "show r1 Messages|11:31||Thinking more|None|false|TopRight|4|20|false|false",
-        ]
-    );
+    // No sound and no notification while it streams. A threaded stream shows its card on
+    // the first post and the final one only (`chat::model::alert`, flick-eedd; every partial
+    // post redrew the card before).
+    assert_eq!(take_log(), ["show r1 Messages|11:31||Thinking|None|false|TopRight|4|20|false|false"]);
     assert_eq!(f.run(&mut m, false, &["ls"]).unwrap(), "r1\t11:31\tThinking more (partial)");
     // The final post drops --partial (and may drop --thread): sound and notification.
     post(&mut f, &mut m, &["--id", "r1", "Done."]);

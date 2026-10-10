@@ -74,6 +74,12 @@ pub(super) struct Settings {
     pub(super) pending_timeout_secs: u64,
     /// Seconds an open card with actions stays; 0 keeps it until acted on or closed.
     pub(super) card_timeout_secs: u64,
+    /// Shows or hides the KOTA chat window (plan pl-75d3); unbound: chat stays inert.
+    pub(super) chat_hotkey: Option<String>,
+    /// The ssh target a chat ask runs kota-ask on (as `[kota] ssh`).
+    pub(super) kota_host: String,
+    /// kota-ask on that host, relative to its home (as `[kota] kota_ask`).
+    pub(super) kota_ask: String,
 }
 
 impl Default for Settings {
@@ -94,6 +100,9 @@ impl Default for Settings {
             action_command: vec![],
             pending_timeout_secs: 120,
             card_timeout_secs: 0,
+            chat_hotkey: None,
+            kota_host: super::chat::ask::DEFAULT_HOST.into(),
+            kota_ask: super::chat::ask::DEFAULT_KOTA_ASK.into(),
         }
     }
 }

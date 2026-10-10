@@ -191,6 +191,13 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["script", "run", "Lock"], "script run"),
         (&["message", "card", "press", "c1", "ok"], "message card press"),
         (&["message", "card", "focus"], "message card focus"),
+        // The KOTA chat (flick-eedd): a peer must not pop a key window on this Mac, write its
+        // snapshot, or make this Mac ssh a question to KOTA.
+        (&["message", "chat"], "message chat"),
+        (&["message", "chat", "--thread", "t1"], "message chat"),
+        (&["message", "chat", "--snapshot", "/tmp/x.png"], "message chat"),
+        (&["message", "ask", "hi"], "message ask"),
+        (&["message", "ask", "--thread", "t1", "hi"], "message ask"),
         // Every dictation verb: a peer must never start this Mac's microphone.
         (&["dictation", "start"], "dictation start"),
         (&["dictation", "stop"], "dictation stop"),
