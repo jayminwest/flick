@@ -211,3 +211,10 @@ fn a_bubble_without_a_header_starts_at_its_row_top_and_system_rows_centre() {
     let (f, doc) = stack(200.0, 300.0, &[]);
     assert!(f.is_empty() && close(doc, 300.0));
 }
+
+#[test]
+fn copy_message_copies_the_source_without_the_blank_space_around_it() {
+    assert_eq!(message_text("\n  **Two** calls:\n- a\n- `b`\n\n"), "**Two** calls:\n- a\n- `b`");
+    assert_eq!(message_text("plain"), "plain");
+    assert_eq!(message_text(" \n "), "");
+}
