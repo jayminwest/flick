@@ -1,8 +1,11 @@
-//! The real I/O behind `io::Hooks`: a child process with a time budget. Only background
-//! threads call it.
+//! The real I/O behind `io::Hooks`: a child process with a time budget, a TCP connect with
+//! a timeout, and this user's uid. Only background threads call these (and the first
+//! `sys snapshot`, which waits on one with the same budget).
 
 use std::io::Read;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -55,9 +58,34 @@ pub fn run(argv: &[String], budget: Duration) -> Result<Exit, String> {
     Ok(Exit { code: status.code(), stdout, stderr })
 }
 
+/// Connect to `target` (`host:port`) within `budget`, trying each address it resolves to;
+/// how long the successful connect took.
+pub fn connect(target: &str, budget: Duration) -> Result<Duration, String> {
+    let addrs: Vec<_> = target.to_socket_addrs().map_err(|e| format!("{target}: {e}"))?.collect();
+    let mut last = format!("{target}: no address");
+    for addr in addrs {
+        let start = Instant::now();
+        match TcpStream::connect_timeout(&addr, budget) {
+            Ok(_) => return Ok(start.elapsed()),
+            Err(e) => last = format!("{addr}: {e}"),
+        }
+    }
+    Err(last)
+}
+
+/// This user's uid (`id -u`, once per process), for the `gui/<uid>` launchd domain.
+pub fn uid() -> Option<u32> {
+    static UID: OnceLock<Option<u32>> = OnceLock::new();
+    *UID.get_or_init(|| {
+        let argv = ["/usr/bin/id".to_string(), "-u".to_string()];
+        run(&argv, Duration::from_secs(2)).ok()?.stdout.trim().parse().ok()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
     fn sh(script: &str) -> Vec<String> {
         vec!["/bin/sh".into(), "-c".into(), script.into()]
@@ -86,5 +114,20 @@ mod tests {
         assert!(err.starts_with("/nonexistent/flick-sys: No such file"), "{err}");
     }
 
+    #[test]
+    fn connects_to_a_listener() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        assert!(connect(&addr, Duration::from_secs(1)).unwrap() < Duration::from_secs(1));
+        // Port 0 never accepts; a freed ephemeral port could be taken by another test.
+        let err = connect("127.0.0.1:0", Duration::from_secs(1)).unwrap_err();
+        assert!(err.starts_with("127.0.0.1:0: "), "{err}");
+        assert!(connect("no port", Duration::from_secs(1)).unwrap_err().starts_with("no port: "));
+    }
 
+    #[test]
+    fn knows_the_uid() {
+        assert!(uid().is_some());
+        assert_eq!(uid(), uid());
+    }
 }

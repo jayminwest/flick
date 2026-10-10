@@ -1,0 +1,72 @@
+gui/501/org.nix-community.home.kota-life-ops = {
+	active count = 1
+	path = /Users/example/Library/LaunchAgents/org.nix-community.home.kota-life-ops.plist
+	type = LaunchAgent
+	state = running
+
+	program = /bin/sh
+	arguments = {
+	}
+
+	working directory = /Users/example/Projects/kota-life-ops
+
+	stdout path = /Users/example/Library/Logs/kota-life-ops.log
+	stderr path = /Users/example/Library/Logs/kota-life-ops.log
+	inherited environment = {
+	}
+
+	default environment = {
+	}
+
+	environment = {
+	}
+
+	LWCR = {
+	}
+
+	domain = gui/501 [100002]
+	asid = 100002
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 1
+	pid = 919
+	immediate reason = speculative
+	forks = 2
+	execs = 5
+	initialized = 1
+	trampolined = 1
+	started suspended = 0
+	proxy started suspended = 0
+	checked allocations = 0 (queried = 1)
+	checked allocations reason = no host
+	checked allocations flags = 0x0
+	last exit code = (never exited)
+
+	resource coalition = {
+		ID = 909
+		type = resource
+		state = active
+		active count = 1
+		name = org.nix-community.home.kota-life-ops
+	}
+
+	jetsam coalition = {
+		ID = 910
+		type = jetsam
+		state = active
+		active count = 1
+		name = org.nix-community.home.kota-life-ops
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	job state = running
+	sanitizer flags = 0x0
+
+	properties = keepalive | runatload | inferred program | managed LWCR | has LWCR
+}
