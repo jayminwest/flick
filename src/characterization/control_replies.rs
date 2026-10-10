@@ -348,6 +348,6 @@ fn peers_may_read_kota_presence() {
     // Without a [kota] key the presence is unknown and nothing polls.
     assert_eq!(
         net_reply(&["kota", "status", "--json"]),
-        r#"{"ok":{"checked_at":null,"errors":[],"failing":[],"pane":null,"pending":0,"polling":"off (set a key in [kota] to poll)","since":null,"stale":false,"state":"unknown"}}"#
+        r#"{"ok":{"checked_at":null,"errors":[],"failing":[],"pane":null,"pending":0,"polling":"off (set a key in [kota] to poll)","since":null,"stale":false,"state":"unknown","unread":0}}"#
     );
 }

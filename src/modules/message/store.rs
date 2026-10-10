@@ -3,6 +3,7 @@
 use rusqlite::{Row, params};
 use serde::Serialize;
 
+use super::seen::Dismissal;
 use crate::core::store::Store;
 
 /// Append only.
@@ -16,6 +17,8 @@ pub const MIGRATIONS: &[&str] = &[
     // is NULL when done, 'partial' while a reply streams, 'failed' when an ask did not go
     // out. Cards stored before this keep the thread their JSON names.
     "ALTER TABLE messages ADD COLUMN thread TEXT; ALTER TABLE messages ADD COLUMN role TEXT; ALTER TABLE messages ADD COLUMN state TEXT; CREATE INDEX messages_thread_ts ON messages (thread, ts); UPDATE messages SET thread = json_extract(card, '$.thread') WHERE card IS NOT NULL AND json_valid(card);",
+    // Unread posts, dismissals (`seen.rs`; flick-cb7d, flick-07cd): `dismissed` NULL|'user'|'timeout'.
+    "ALTER TABLE messages ADD COLUMN unread INTEGER NOT NULL DEFAULT 0; ALTER TABLE messages ADD COLUMN dismissed TEXT;",
 ];
 
 /// Who wrote a message.
@@ -127,6 +130,11 @@ pub struct Message {
     pub role: Role,
     #[serde(skip_serializing_if = "is_done")]
     pub state: Progress,
+    /// Not seen yet; how its card left the corner (`seen.rs`).
+    #[serde(skip_serializing_if = "is_false")]
+    pub unread: bool,
+    #[serde(skip)]
+    pub dismissed: Option<Dismissal>,
 }
 
 /// A stored card as its JSON object rather than a string.
@@ -151,8 +159,8 @@ fn is_done(p: &Progress) -> bool {
     *p == Progress::Done
 }
 
-const COLUMNS: &str = "id, ts, title, body, url, reply_to, context, pending, card, remote, thread, role, state";
-const VALUES: &str = "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13";
+const COLUMNS: &str = "id, ts, title, body, url, reply_to, context, pending, card, remote, thread, role, state, unread, dismissed";
+const VALUES: &str = "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15";
 
 fn row(r: &Row) -> rusqlite::Result<Message> {
     Ok(Message {
@@ -169,6 +177,8 @@ fn row(r: &Row) -> rusqlite::Result<Message> {
         thread: r.get(10)?,
         role: Role::read(r.get::<_, Option<String>>(11)?.as_deref()),
         state: Progress::read(r.get::<_, Option<String>>(12)?.as_deref()),
+        unread: r.get(13)?,
+        dismissed: Dismissal::read(r.get::<_, Option<String>>(14)?.as_deref()),
     })
 }
 
@@ -209,7 +219,7 @@ impl Messages for Store {
             &format!("{verb} INTO messages ({COLUMNS}) VALUES ({VALUES}){update}"),
             params![
                 m.id, ts, m.title, m.body, m.url, m.reply_to, m.context, m.pending, m.card, m.remote,
-                thread, m.role.column(), m.state.column()
+                thread, m.role.column(), m.state.column(), m.unread, m.dismissed.map(Dismissal::column)
             ],
         )
         .map_err(|e| format!("message: can't save: {e}"))?;
@@ -284,7 +294,7 @@ impl Messages for Store {
 
 /// The `ON CONFLICT` clause of a replacement in place: every column but `ts` from the new
 /// row (`put_message` already chose the `ts` and thread).
-const UPSERT: &str = " ON CONFLICT(id) DO UPDATE SET title = excluded.title, body = excluded.body, url = excluded.url, reply_to = excluded.reply_to, context = excluded.context, pending = excluded.pending, card = excluded.card, remote = excluded.remote, thread = excluded.thread, role = excluded.role, state = excluded.state";
+const UPSERT: &str = " ON CONFLICT(id) DO UPDATE SET title = excluded.title, body = excluded.body, url = excluded.url, reply_to = excluded.reply_to, context = excluded.context, pending = excluded.pending, card = excluded.card, remote = excluded.remote, thread = excluded.thread, role = excluded.role, state = excluded.state, unread = excluded.unread, dismissed = excluded.dismissed";
 
 /// At most `limit` messages matching `filter` (a WHERE clause or ""), newest first.
 fn newest(store: &Store, filter: &str, limit: usize) -> Vec<Message> {

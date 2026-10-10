@@ -5,6 +5,7 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
+//! `unprompted_timeout_secs` (a post nobody asked for: unread until seen, `seen.rs`),
 //! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
 //! keyboard into the newest card, or gives it back), `action_command`,
 //! `pending_timeout_secs`, `card_timeout_secs`, `chat_hotkey` (shows or hides the chat
@@ -24,6 +25,7 @@ mod dispatch;
 mod local;
 mod pending;
 mod run;
+mod seen;
 mod settings;
 pub mod store;
 #[cfg(test)]
@@ -38,6 +40,8 @@ mod tests_pending;
 mod tests_press;
 #[cfg(test)]
 mod tests_thread;
+#[cfg(test)]
+mod tests_unread;
 mod text;
 mod thread;
 mod wire;
@@ -65,13 +69,10 @@ const CHAT: &str = "chat";
 pub struct Inbox {
     env: Env,
     settings: Settings,
-    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one the
-    /// user dismissed stays in history.
-    dismissed: HashSet<String>,
-    /// Dismissed cards that only timed out: they still wait on the user (`pending.rs`).
-    expired: HashSet<String>,
-    /// The last count of cards waiting on the user sent as `Event::CardsPending`.
-    announced: Option<u32>,
+    /// Posts the last opening of the message list read: marked `Unread` there (`seen.rs`).
+    fresh: HashSet<String>,
+    /// The last counts sent as `Event::CardsPending`: cards waiting, unread posts.
+    announced: Option<(u32, u32)>,
     /// Press state by card id (`dispatch.rs`).
     ui: dispatch::Uis,
     /// Presses sent so far; numbers each send.
@@ -100,11 +101,11 @@ impl Inbox {
         }
     }
 
-    /// A message card: timed out like any card, no sound for a placeholder or a reply still
-    /// streaming.
+    /// A message card: `timeout` (an unprompted post stays), no sound for a placeholder or a
+    /// reply still streaming.
     fn options(&self, m: &Message) -> Options {
         Options {
-            timeout_secs: self.settings.timeout_secs as f64,
+            timeout_secs: self.timeout(m) as f64,
             sound: self.settings.sound && !quiet(m),
             sticky: false,
         }
@@ -187,6 +188,7 @@ impl Inbox {
             state: if post.partial { Progress::Partial } else { Progress::Done },
             ..Message::default()
         };
+        let m = Message { unread: seen::unprompted(&m), ..m };
         self.save(&m, replaced, cx)?;
         // Its sound is `quiet`'s, as `alert` decides it.
         if chat::model::alert(&m, first, self.chat_showing()).hud {
@@ -204,13 +206,22 @@ impl Inbox {
         let context = m.context.as_deref().map(|c| format!("Re: {}", text::preview(c, 60)));
         Item {
             subtitle: [Some(time), context].into_iter().flatten().collect::<Vec<_>>().join("  ·  "),
-            accessory: if m.pending { "Pending" } else if m.url.is_some() { "Link" } else { "" }.into(),
+            accessory: if m.unread || self.fresh.contains(&m.id) {
+                "Unread"
+            } else if m.pending {
+                "Pending"
+            } else if m.url.is_some() {
+                "Link"
+            } else {
+                ""
+            }
+            .into(),
             keywords: m.context.iter().cloned().collect(),
             ..Item::new(ItemId::new("message", &m.id), title, "Copy Message", icon(m))
         }
     }
 
-    /// `ls` text: one line per message, `id  time  [title: ]body[ (pending|partial|failed)]`.
+    /// `ls` text: one line per message, `id  time  [title: ]body[ (pending|partial|failed|unread)]`.
     fn ls(&self, list: &[Message], now: i64) -> String {
         let line = |m: &Message| {
             let time = text::stamp(m.ts, now, (self.env.utc_offset)(m.ts));
@@ -219,6 +230,7 @@ impl Inbox {
                 (true, _) => " (pending)",
                 (_, Progress::Partial) => " (partial)",
                 (_, Progress::Failed) => " (failed)",
+                (_, Progress::Done) if m.unread => " (unread)",
                 (_, Progress::Done) => "",
             };
             let body = text::preview(&text::plain(&m.body), 100);
@@ -362,9 +374,12 @@ impl Module for Inbox {
         }]
     }
 
-    fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
+    fn open(&mut self, view: &str, cx: &mut Cx) -> Option<ListView> {
         match view {
-            RECENT => Some(recent_view(&self.settings.name)),
+            RECENT => {
+                self.open_recent(cx);
+                Some(recent_view(&self.settings.name))
+            }
             chat::threads::VIEW => Some(chat::threads::view()),
             _ => None,
         }

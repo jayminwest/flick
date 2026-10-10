@@ -22,6 +22,13 @@ thread_local! {
     static KEYBOARD: Cell<u8> = const { Cell::new(1) };
     /// Every `Event::CardsPending` count the module sent.
     static PENDING: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    /// Every `Event::CardsPending` unread count, sent with those.
+    static UNREAD: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The unread counts sent as `Event::CardsPending` since the last call.
+pub(super) fn take_unread() -> Vec<u32> {
+    UNREAD.with(|p| std::mem::take(&mut *p.borrow_mut()))
 }
 
 /// The counts sent as `Event::CardsPending` since the last call.
@@ -154,11 +161,13 @@ pub(super) fn inbox(config: &str) -> Inbox {
             exec,
             changed: || {},
             wake_after: |secs| log(format!("wake {secs}")),
-            pending: |n| PENDING.with(|p| p.borrow_mut().push(n)),
+            pending: |n, unread| {
+                PENDING.with(|p| p.borrow_mut().push(n));
+                UNREAD.with(|p| p.borrow_mut().push(unread));
+            },
         },
         settings: Settings::default(),
-        dismissed: HashSet::new(),
-        expired: HashSet::new(),
+        fresh: HashSet::new(),
         announced: None,
         ui: dispatch::Uis::new(),
         presses: 0,
@@ -195,6 +204,16 @@ impl Fixture {
         })
     }
 
+    /// How message `id`'s card left the corner, as stored.
+    pub(super) fn dismissal(&self, id: &str) -> Option<seen::Dismissal> {
+        self.store.message(id).and_then(|m| m.dismissed)
+    }
+
+    /// The user closed message `id`'s card.
+    pub(super) fn closed(&self, id: &str) -> bool {
+        self.dismissal(id) == Some(seen::Dismissal::User)
+    }
+
     pub(super) fn run(&mut self, m: &mut Inbox, json: bool, words: &[&str]) -> Result<String, String> {
         let args: Vec<String> = words.iter().map(|w| (*w).to_string()).collect();
         self.cx("", json, |cx| m.command(&args, cx))
@@ -205,12 +224,14 @@ impl Fixture {
 fn a_post_shows_the_panel_and_lands_in_history() {
     let (mut f, mut m) = (Fixture::new(), inbox(""));
     assert_eq!(f.run(&mut m, false, &["post", "**Done**:", "see", "PR"]), Ok("m1".into()));
-    assert_eq!(take_log(), ["show m1 Messages|11:31||Done: see PR|None|false|TopRight|4|20|true|false"]);
+    // Nobody asked for it: it stays until dismissed (`unprompted_timeout_secs` 0, flick-cb7d).
+    assert_eq!(take_log(), ["show m1 Messages|11:31||Done: see PR|None|false|TopRight|4|0|true|false"]);
     let json = f.run(&mut m, true, &["ls"]).unwrap();
     let list: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(list[0]["id"], "m1");
     assert_eq!(list[0]["body"], "**Done**: see PR");
-    assert_eq!(f.run(&mut m, false, &["ls"]).unwrap(), "m1\t11:31\tDone: see PR");
+    assert_eq!(list[0]["unread"], true);
+    assert_eq!(f.run(&mut m, false, &["ls"]).unwrap(), "m1\t11:31\tDone: see PR (unread)");
 }
 
 #[test]
@@ -325,6 +346,7 @@ fn seeded() -> (Fixture, Inbox, ListView) {
     take_log();
     let mut view = f.cx("", false, |cx| m.open(RECENT, cx)).unwrap();
     f.cx("", false, |cx| m.refresh(&mut view, cx));
+    assert_eq!(take_log(), ["dismiss a"], "opening the list reads the unprompted post and closes its card");
     (f, m, view)
 }
 
@@ -340,7 +362,7 @@ fn the_launcher_lists_messages() {
     assert_eq!(view.footer, "KOTA  ·  ↵ copies  ·  ⌘K show or open");
     assert!(f.cx("", false, |cx| m.open("nope", cx)).is_none());
     let rows: Vec<_> = view.items.iter().map(|i| (i.title.as_str(), i.subtitle.as_str(), i.accessory.as_str())).collect();
-    assert_eq!(rows, [("PR: • one • two", "11:31", "Link"), ("q?", "11:31", "Pending")]);
+    assert_eq!(rows, [("PR: • one • two", "11:31", "Unread"), ("q?", "11:31", "Pending")]);
     f.cx("q?", false, |cx| m.refresh(&mut view, cx));
     assert_eq!(view.items[0].title, "q?");
 
