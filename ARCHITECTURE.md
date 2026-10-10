@@ -182,7 +182,8 @@ Sources:
 - A config reload then dispatches `Reloaded` to every module (not published either). A
   module that announces state to other modules by event sends it again there, so a module
   the reload just enabled hears it without either importing the other (`message` re-sends
-  `CardsPending` for `kota`, flick-b220).
+  `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
+  flick-4bb4).
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
@@ -202,8 +203,9 @@ Sources:
   event never carries chat text, `Event` being `Copy`).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
-  `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
-  running task was restored, so it arrives on the next main-queue turn, after the current
+  `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a
+  running task was restored and at `Reloaded` while one runs (for an `activity` the reload
+  enabled, flick-4bb4), so it arrives on the next main-queue turn, after the current
   dispatch. Consumers: `activity` closes the open span and opens the same app with the new
   task id (`activity_spans.task`); `task` marks its views stale. `flick events` publishes it.
   The `task` timer is its own `core::track::Clock` on `Idle`/`Active`, `Sleep`/`Wake` and
@@ -304,7 +306,7 @@ budget) at a time; its result goes through a pure reducer under the lock, then i
 arms one timer thread that sleeps until it is due and posts. Arming bumps a counter, so an
 older timer that wakes exits; `Sleep`/`Locked` bump the round epoch too (a round in flight
 drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module polls only when
-its `[kota]` table sets a key: `Section` cannot tell an empty table from a missing one. When
+its `[kota]` table sets a key (`Section::is_set`; an empty table counts as none). When
 config.toml is shared across Macs, `[kota]` belongs in the KOTA Mac's per-host overlay.
 
 Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (started, a
@@ -571,7 +573,9 @@ writes a commented default (`DEFAULT_CONFIG`).
 - Top-level `hotkey` is the launcher hotkey. The controller owns it.
 - Every other top-level key is a module table, `[<module id>]`. `Config::section(id)` returns
   `Ok(None)` for `enabled = false`, else a `Section` without the `enabled` key (empty if the
-  table is missing). `enabled` that is not a boolean is an error.
+  table is missing). `enabled` that is not a boolean is an error. `Section::is_set` is true when
+  the table sets a key besides `enabled`; a module that stays off until configured (kota,
+  dictation) checks it, so a bare `[<module id>]` header turns nothing on.
 - A module reads its table with `section.get::<Settings>()` into a private type. Give the type
   `#[derive(Default, Deserialize)]` and `#[serde(default)]`. Errors start with `[<id>]: `.
 - `LEGACY` in `src/config.rs` is the only place that knows the old flat keys:

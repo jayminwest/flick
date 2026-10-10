@@ -106,7 +106,8 @@ fn default_config_message_example_parses_uncommented() {
     let section = config.section("message").unwrap().unwrap();
     let message: Table = section.get().unwrap();
     assert_eq!(message.get("name").and_then(Value::as_str), Some("KOTA"));
-    assert_eq!(message.len(), 8);
+    assert_eq!(message.get("max_cards").and_then(Value::as_integer), Some(4));
+    assert_eq!(message.len(), 9);
     assert!(!DEFAULT_CONFIG.contains("\n[message]"), "the default leaves [message] commented");
 }
 
@@ -164,6 +165,16 @@ fn enabled_flag_turns_a_module_off() {
     assert_eq!(c.section("window").unwrap_err(), "window: expected a [window] table");
     let c = parse("[clip]\nenabled = \"no\"").unwrap();
     assert_eq!(c.section("clip").unwrap_err(), "[clip] enabled: expected true or false");
+}
+
+#[test]
+fn a_section_is_set_only_by_a_key_besides_enabled() {
+    let set = |text: &str| parse(text).unwrap().section("dictation").unwrap().unwrap().is_set();
+    assert!(!set(""), "no table");
+    assert!(!set("[dictation]"), "an empty table counts as none");
+    assert!(!set("[dictation]\nenabled = true"), "enabled alone is not a key");
+    assert!(set("[dictation]\nengine = \"whisper\""));
+    assert!(set("[dictation]\nenabled = true\nmin_hold_ms = 0"));
 }
 
 #[test]

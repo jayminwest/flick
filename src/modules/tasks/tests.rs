@@ -95,6 +95,24 @@ fn start_creates_runs_and_stop_ends_the_row() {
 }
 
 #[test]
+fn a_reload_posts_the_running_task_again() {
+    with_cx(|cx| {
+        let mut t = tasks();
+        t.on_event(Event::Started, cx);
+        // With no task running a reload posts nothing.
+        assert!(!t.on_event(Event::Reloaded, cx));
+        assert_eq!(calls(), Vec::<String>::new());
+        run(&mut t, cx, &["start", "A"]).unwrap();
+        calls();
+        // Unchanged, for an activity the reload just started; the open row only advances.
+        at(T + 60);
+        assert!(!t.on_event(Event::Reloaded, cx));
+        assert_eq!(calls(), [changed(Some(1))]);
+        assert_eq!(rows(cx), [(T, T + 60, 1)]);
+    });
+}
+
+#[test]
 fn starting_another_task_switches() {
     with_cx(|cx| {
         let mut t = tasks();
