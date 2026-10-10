@@ -36,6 +36,9 @@ fn started_sends_the_first_count_and_changes_only_after() {
     // A failed verb still re-counts (nothing changed, so nothing is sent).
     assert!(f.run(&mut m, false, &["card", "dismiss", "nope"]).is_err());
     assert_eq!(take_pending(), [0; 0]);
+    // A reload sends the count again, unchanged, for a module it just started.
+    f.cx("", false, |cx| assert!(!m.on_event(Event::Reloaded, cx)));
+    assert_eq!(take_pending(), [1]);
     take_log();
 }
 

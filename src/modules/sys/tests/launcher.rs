@@ -42,7 +42,7 @@ fn no_machines_no_root_item_and_nothing_polls() {
     assert_eq!(v.empty, "No machines (add [[sys.machine]] tables to config.toml)");
     event(&mut m, Event::ModuleChanged { module: ID });
     let st = m.shared.lock();
-    assert!(!st.fleet.busy && !st.probing && !st.checking && st.snapshot.is_none());
+    assert!(!st.fleet.busy() && !st.probing && !st.checking && st.snapshot.is_none());
 }
 
 #[test]
@@ -86,6 +86,28 @@ fn the_fleet_polls_only_while_its_view_shows() {
     root(&mut m);
     assert!(!m.fleet_view);
     assert!(!tick_polls(&mut m));
+}
+
+#[test]
+fn a_fleet_of_only_this_mac_keeps_polling_while_its_view_shows() {
+    let mut m = sys("[[sys.machine]]\nname = \"laptop\"\nvia = \"local\"\n", Hooks { visible: || true, ..HOOKS });
+    m.tick = Duration::from_millis(20);
+    event(&mut m, Event::Started);
+    open(&mut m, "fleet").unwrap();
+    settle(&m);
+    let at = |m: &Sys| m.shared.lock().snapshot.as_ref().map(|s| s.at);
+    assert_eq!(at(&m), Some(1_000));
+    // No round runs (no remote machine), yet a tick comes due on its own (flick-1e00).
+    assert!(m.shared.wait(Duration::from_secs(15), |s| !s.fleet.ticking), "a tick was pending");
+    m.shared.lock().snapshot.as_mut().unwrap().at = 1_000 - VISIBLE_DUE;
+    event(&mut m, Event::ModuleChanged { module: ID });
+    settle(&m);
+    assert_eq!(at(&m), Some(1_000), "the tick's poll refreshed this Mac's cache");
+    // Back at root search the view is gone: the pending tick is the last.
+    root(&mut m);
+    assert!(m.shared.wait(Duration::from_secs(15), |s| !s.fleet.ticking));
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert!(!m.shared.lock().fleet.ticking);
 }
 
 #[test]

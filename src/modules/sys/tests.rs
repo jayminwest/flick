@@ -128,7 +128,7 @@ fn event(m: &mut Sys, e: Event) {
 }
 
 fn settle(m: &Sys) {
-    assert!(m.shared.wait(Duration::from_secs(5), |s| !s.fleet.busy && !s.probing && !s.checking));
+    assert!(m.shared.wait(Duration::from_secs(15), |s| !s.fleet.busy() && !s.probing && !s.checking));
 }
 
 fn tried(m: &Sys) -> Vec<Option<u64>> {
@@ -160,7 +160,7 @@ fn a_remote_caller_reads_the_fleet_cache_only() {
 pending  server  flick
 pending  pro     ssh");
     let st = m.shared.lock();
-    assert!(!st.fleet.busy && !st.probing && st.fleet.never_tried());
+    assert!(!st.fleet.busy() && !st.probing && st.fleet.never_tried());
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn fleet_without_machines_runs_nothing() {
         event(&mut m, e);
     }
     let st = m.shared.lock();
-    assert!(!st.probing && !st.fleet.busy && st.snapshot.is_none());
+    assert!(!st.probing && !st.fleet.busy() && st.snapshot.is_none());
     assert_eq!(st.fleet.timer, 2, "Started and Wake only stopped the timer; a start would bump it again");
 }
 

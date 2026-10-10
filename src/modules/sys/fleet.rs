@@ -10,6 +10,10 @@ use super::settings::{Machine, Via};
 
 /// Poll cadence while the fleet view shows, seconds.
 pub const VISIBLE_EVERY: u64 = 15;
+/// While it shows, a machine (or this Mac's cache) read this long ago is due: a little under
+/// the cadence, so a read that ended after the tick that started it (the probe takes up to
+/// 2 s, clocks round to seconds) is still due at the next tick.
+pub const VISIBLE_DUE: u64 = VISIBLE_EVERY - 3;
 
 /// One machine and what the fleet knows about it.
 #[derive(Clone, Debug, PartialEq)]
@@ -27,6 +31,9 @@ pub struct Slot {
     pub source: Option<Via>,
     /// Why a fallback was taken (`flick too old ...`).
     pub note: Option<String>,
+    /// A read of this machine runs. Per machine, so one slow ssh read does not hold the
+    /// others' next reads (flick-fd36).
+    pub busy: bool,
 }
 
 /// A good answer from one machine.
@@ -42,10 +49,10 @@ pub struct Fleet {
     pub slots: Vec<Slot>,
     /// Bumped by a reload and by sleep: results of rounds started before are dropped.
     pub epoch: u64,
-    /// A round runs.
-    pub busy: bool,
     /// Bumped to end the background timer.
     pub timer: u64,
+    /// A visible tick is pending (`poll::tick_after`).
+    pub ticking: bool,
 }
 
 /// This Mac's own snapshot for a `via = "local"` machine.
@@ -72,32 +79,51 @@ impl Fleet {
                     error: None,
                     source: None,
                     note: None,
+                    busy: false,
                 })
             })
             .collect();
         self.forget_round();
     }
 
-    /// Drop the round in flight (reload, sleep): its late results are not applied.
+    /// Drop the reads in flight (reload, sleep): their late results are not applied.
     pub fn forget_round(&mut self) {
         self.epoch += 1;
-        self.busy = false;
+        for slot in &mut self.slots {
+            slot.busy = false;
+        }
+    }
+
+    /// A read of some machine runs.
+    pub fn busy(&self) -> bool {
+        self.slots.iter().any(|s| s.busy)
     }
 
     pub fn has_local(&self) -> bool {
         self.slots.iter().any(|s| s.machine.via == Via::Local)
     }
 
-    /// Remote machines (by index) whose last attempt ended `min_age` seconds ago or longer.
+    /// Remote machines (by index) not being read whose last attempt ended `min_age` seconds
+    /// ago or longer.
     pub fn due(&self, now: u64, min_age: u64) -> Vec<(usize, Machine)> {
-        let due = |s: &&Slot| s.tried_at.is_none_or(|t| now.saturating_sub(t) >= min_age);
+        let due = |s: &&Slot| !s.busy && s.tried_at.is_none_or(|t| now.saturating_sub(t) >= min_age);
         let remote = self.slots.iter().enumerate().filter(|(_, s)| s.machine.via != Via::Local);
         remote.filter(|(_, s)| due(s)).map(|(i, s)| (i, s.machine.clone())).collect()
     }
 
+    /// Machine `i`'s read from `epoch` ended: it is no longer busy, unless a reload or sleep
+    /// dropped that read (a newer one may run).
+    pub fn release(&mut self, epoch: u64, i: usize) {
+        if let Some(slot) = self.slots.get_mut(i).filter(|_| epoch == self.epoch) {
+            slot.busy = false;
+        }
+    }
+
     /// Store machine `i`'s result from round `epoch`, unless the round was dropped or the
-    /// machine changed meanwhile. Whether it was stored.
+    /// machine changed meanwhile; either way its read is over (`release`). Whether it was
+    /// stored.
     pub fn apply(&mut self, epoch: u64, i: usize, machine: &Machine, got: Result<Fetched, String>, now: u64) -> bool {
+        self.release(epoch, i);
         if epoch != self.epoch {
             return false;
         }
