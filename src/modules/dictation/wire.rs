@@ -1,10 +1,11 @@
 //! The real `Hooks`: file checks through `std::fs`, the home directory, and the microphone
-//! check (none yet: flick-0654 adds `platform` authorization and wires it here).
+//! authorization through `platform::mic`.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::{Hooks, Mic, Probe};
+use crate::platform::mic::{self, Access};
 
 pub static REAL: Hooks = Hooks { probe, mic, home };
 
@@ -17,9 +18,18 @@ fn probe(path: &Path) -> Probe {
     }
 }
 
-// TODO(flick-0654): return platform::mic's AVCaptureDevice audio authorization.
 fn mic() -> Mic {
-    Mic::Unchecked
+    from_access(mic::status())
+}
+
+fn from_access(access: Option<Access>) -> Mic {
+    match access {
+        Some(Access::Authorized) => Mic::Authorized,
+        Some(Access::Denied) => Mic::Denied,
+        Some(Access::Restricted) => Mic::Restricted,
+        Some(Access::NotDetermined) => Mic::NotDetermined,
+        None => Mic::Unchecked,
+    }
 }
 
 fn home() -> PathBuf {
@@ -36,7 +46,22 @@ mod tests {
         assert_eq!(probe(Path::new("/etc/shells")), Probe::File);
         assert_eq!(probe(Path::new("/bin")), Probe::Missing);
         assert_eq!(probe(Path::new("/no/such/flick/path")), Probe::Missing);
-        assert_eq!(mic(), Mic::Unchecked);
         assert!(home().is_absolute());
+    }
+
+    #[test]
+    fn microphone_access_maps_to_status() {
+        let pairs = [
+            (Some(Access::Authorized), Mic::Authorized),
+            (Some(Access::Denied), Mic::Denied),
+            (Some(Access::Restricted), Mic::Restricted),
+            (Some(Access::NotDetermined), Mic::NotDetermined),
+            (None, Mic::Unchecked),
+        ];
+        for (access, want) in pairs {
+            assert_eq!(from_access(access), want);
+        }
+        // The real check answers (it never prompts).
+        assert_ne!(mic(), Mic::Unchecked);
     }
 }

@@ -18,6 +18,7 @@ pub mod hotkeys;
 pub mod hud;
 pub mod ink;
 pub mod keytap;
+pub mod mic;
 pub mod notify;
 pub mod panel;
 pub mod pasteboard;
