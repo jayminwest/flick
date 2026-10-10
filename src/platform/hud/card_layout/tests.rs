@@ -107,20 +107,6 @@ fn tooltips_say_why_a_button_is_off_or_that_it_asks() {
 }
 
 #[test]
-fn markdown_is_cleaned_to_plain_text() {
-    let md = "\n\n# Deploy\n\nShip **v2** to `prod`?\n\n\n\n- one\n  * two [docs](https://x.y)\n\
-              + three [](https://u.v) and [not a link] and [a](b\n#tag stays\n### \n__done__\n\n";
-    assert_eq!(
-        clean_md(md),
-        "Deploy\n\nShip v2 to prod?\n\n• one\n  • two docs\n• three https://u.v and [not a link] \
-         and [a](b\n#tag stays\n\ndone"
-    );
-    assert_eq!(clean_md("[x [y](z)"), "[x y");
-    assert_eq!(clean_md("é- not a bullet"), "é- not a bullet");
-    assert_eq!(clean_md(""), "");
-}
-
-#[test]
 fn labels_for_lists_and_progress() {
     assert_eq!(list_row(0, "a", false), "• a");
     assert_eq!(list_row(2, "c", true), "3. c");

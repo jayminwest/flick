@@ -1,5 +1,5 @@
 //! The pure side of the card renderer (`card_view`): what the module tells it beyond the card
-//! (`CardUi`), the status a card shows, the confirm step, the text cleanup for `md`, labels,
+//! (`CardUi`), the status a card shows, the confirm step, labels,
 //! sizes, the button flow and the carry-over of live input values across a redraw. No
 //! `AppKit` here, so all of it is unit-tested.
 
@@ -130,63 +130,6 @@ pub fn tooltip(action: &Action) -> Option<String> {
         Kind::Local { run: Do::Shell(cmd), .. } => Some(format!("Asks before running: {cmd}")),
         _ => None,
     }
-}
-
-/// `md` as plain text, lightly cleaned (a markup renderer comes later, flick-ef02): heading
-/// marks and emphasis markers dropped, `- ` / `* ` / `+ ` bullets as `•`, `[text](url)` as
-/// `text`, runs of blank lines as one, no blank lines at either end.
-pub fn clean_md(md: &str) -> String {
-    let mut out: Vec<String> = Vec::new();
-    for raw in md.lines() {
-        let line = raw.trim_end();
-        let indent = &line[..line.len() - line.trim_start().len()];
-        let body = line.trim_start();
-        let body = match body.trim_start_matches('#') {
-            rest if rest.len() < body.len() && (rest.is_empty() || rest.starts_with(' ')) => {
-                rest.trim_start()
-            }
-            _ => body,
-        };
-        let body = match body.get(..2) {
-            Some("- " | "* " | "+ ") => format!("• {}", &body[2..]),
-            _ => body.to_string(),
-        };
-        let body = links(&body).replace("**", "").replace("__", "").replace('`', "");
-        if body.is_empty() && out.last().is_none_or(String::is_empty) {
-            continue;
-        }
-        out.push(format!("{indent}{body}"));
-    }
-    while out.last().is_some_and(String::is_empty) {
-        out.pop();
-    }
-    out.join("\n")
-}
-
-/// `[text](url)` as `text` (the url when `text` is empty); anything else unchanged.
-fn links(s: &str) -> String {
-    let mut out = String::new();
-    let mut rest = s;
-    while let Some(open) = rest.find('[') {
-        let after = &rest[open + 1..];
-        let link = after.find("](").and_then(|close| {
-            let url_end = after[close + 2..].find(')')?;
-            Some((&after[..close], &after[close + 2..close + 2 + url_end], close + 2 + url_end + 1))
-        });
-        match link {
-            Some((text, url, used)) if !text.contains('[') => {
-                out.push_str(&rest[..open]);
-                out.push_str(if text.is_empty() { url } else { text });
-                rest = &after[used..];
-            }
-            _ => {
-                out.push_str(&rest[..=open]);
-                rest = after;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// A `list` row: `1. item` when ordered, else `• item`.
