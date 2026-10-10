@@ -126,7 +126,12 @@ fn a_result_for_a_reposted_or_dismissed_card_is_ignored() {
     f.cx("", false, |cx| m.drain(cx));
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
     settle(&mut f, &mut m);
-    thread::sleep(Duration::from_millis(50));
+    // Wait for the stale result itself (a fixed sleep missed it on loaded machines, and
+    // it then landed in the second half of this test).
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while m.worker.running() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
     settle(&mut f, &mut m);
     assert!(m.ui.is_empty(), "{:?}", m.ui);
     assert!(!take_log().iter().any(|l| l.starts_with("wake")));
