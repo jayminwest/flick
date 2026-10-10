@@ -37,6 +37,10 @@ const LINE_MAX: usize = 160;
 pub struct Request {
     /// The checkout (or another worktree) to build.
     pub source: PathBuf,
+    /// The checkout baked as `FLICK_BUILD_SOURCE`, the installed app's default `[flick]
+    /// source`: the one this Flick tracks, not a `--source` worktree, so its later checks
+    /// still compare against that checkout (flick-be14).
+    pub home: PathBuf,
     /// The local rev to export (e.g. `HEAD`); `None` builds the tree as it is.
     pub rev: Option<String>,
     /// Run `scripts/check-all.sh --bail` before bundling.
@@ -274,7 +278,7 @@ fn build(shared: &Mutex<Shared>, paths: &Paths, hooks: Hooks, req: &Request, mut
         .env("FLICK_CARGO_ARGS", CARGO_ARGS)
         .env("FLICK_BUILD_SHA", &sha)
         .env("FLICK_BUILD_DIRTY", if req.rev.is_some() { "0" } else { "1" })
-        .env("FLICK_BUILD_SOURCE", &req.source)
+        .env("FLICK_BUILD_SOURCE", &req.home)
         .env_remove("FLICK_BUILD_TIME");
     let _ = writeln!(log, "$ cd {} && {script}", dir.display());
     run_child(shared, hooks, cmd, log, &paths.log).map_err(|e| explain(&e, &tail(&paths.log), &req.source))?;

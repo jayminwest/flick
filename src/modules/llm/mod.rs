@@ -21,9 +21,11 @@
 //!   `Sleep`, reload (`configure`) and quit.
 //!
 //! `flick llm ping [server]` and `flick llm models [server] [--json]` fetch a normal (not
-//! private) server's `/v1/models`, waiting at most `ASK_WAIT`. Every `llm` verb is denied
-//! over the network (`NET_DENIED`): they make this Mac send requests. The private chat has no
-//! verb at all.
+//! private) server's `/v1/models`, waiting at most `ASK_WAIT`. `flick llm ping private
+//! [server]` (flick-72b5) fetches a private server's list the same way and prints only the
+//! name, the time and the model count: a `GET` with no body, no chat text, nothing stored. It
+//! is the one verb that reaches a private server. Every `llm` verb is denied over the network
+//! (`NET_DENIED`): they make this Mac send requests. The private chat itself has no verb.
 //!
 //! Nothing here logs prompts or replies; errors carry at most 200 characters of a server's
 //! error message.
@@ -83,9 +85,9 @@ impl Llm {
         Llm { settings: Settings::default(), shared: Arc::default(), hooks, ask_wait: ASK_WAIT, chat, private }
     }
 
-    /// Fetch a normal server's model list now and wait for it, at most `ask_wait`.
-    fn ask(&self, name: Option<&str>) -> Result<(String, Vec<openai::Model>, Duration), String> {
-        let server = self.settings.normal(name)?;
+    /// Fetch `server`'s model list now and wait for it, at most `ask_wait`. Only a `GET` of
+    /// `/v1/models`: safe for a private server too (`llm ping private`).
+    fn ask(&self, server: &settings::Server) -> Result<(String, Vec<openai::Model>, Duration), String> {
         let seq = io::fetch_models(&self.shared, server, self.hooks);
         let key = server.name.as_str();
         let landed = |st: &io::State| st.models.get(key).is_some_and(|m| m.seq >= seq);
@@ -183,8 +185,13 @@ impl Module for Llm {
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
+            // A private server: only whether it answers, never its models' names.
+            ["ping", "private", rest @ ..] if rest.len() <= 1 => {
+                let (server, list, took) = self.ask(self.settings.private(rest.first().copied())?)?;
+                Ok(report::ping_text(&server, &list, took))
+            }
             ["ping" | "models", rest @ ..] if rest.len() <= 1 => {
-                let (server, list, took) = self.ask(rest.first().copied())?;
+                let (server, list, took) = self.ask(self.settings.normal(rest.first().copied())?)?;
                 Ok(match words[0] {
                     "ping" => report::ping_text(&server, &list, took),
                     _ if cx.json => report::models_json(&server, &list, took).to_string(),
@@ -196,7 +203,7 @@ impl Module for Llm {
     }
 
     fn verbs(&self) -> &'static str {
-        "llm ping [server] | llm models [server]"
+        "llm ping [server] | llm ping private [server] | llm models [server]"
     }
 }
 

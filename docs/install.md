@@ -69,7 +69,7 @@ Details:
 - The build is offline. If the checkout needs a crate that cargo has not downloaded, the build fails with a hint: run `cargo fetch` in the checkout, then rebuild.
 - Compiled output goes to `<checkout>/target/flick-rebuild`, apart from `target/`, so a rebuild does not wait on other cargo commands. It takes about 1 GB; `cargo clean --target-dir target/flick-rebuild` removes it. The exported tree is in `~/Library/Caches/Flick/rebuild`.
 - The log is `~/Library/Logs/Flick/rebuild.log`. The log of the build before it is `rebuild.log.1`.
-- `--source <dir>` builds another checkout or worktree, for example an agent's worktree, to try it before you merge it. The installed app then records that directory as its checkout, so **Flick Version** and **Rebuild Available** compare against it until you rebuild from the main checkout (flick-be14).
+- `--source <dir>` builds another checkout or worktree, for example an agent's worktree, to try it before you merge it. The installed app keeps the checkout it had (`[flick] source`, else the one it was built from), so **Flick Version** and **Rebuild Available** still compare against the main checkout, and **Rebuild Available** takes you back to it.
 - Without an Apple Development identity the bundle is signed ad hoc, and macOS asks for Accessibility again after each rebuild.
 
 ## Rebuild settings

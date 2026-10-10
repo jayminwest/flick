@@ -61,6 +61,28 @@ fn errors_name_the_server() {
     assert!(m.verbs().contains("llm ping") && m.verbs().contains("llm models"));
 }
 
+/// flick-72b5: `ping private` reaches a private server with a bodiless `GET /v1/models`
+/// and says only whether it answers; `models` and a plain `ping` still refuse it.
+#[test]
+fn ping_private_asks_only_a_private_server_for_its_list() {
+    let mut m = configured(SERVERS).unwrap();
+    let ping = command(&mut m, &["ping", "private"], false).unwrap();
+    assert!(ping.starts_with("llm: vault answers in ") && ping.ends_with(" ms (2 models)"), "{ping}");
+    assert!(!ping.contains("qwen"), "{ping}");
+    assert_eq!(command(&mut m, &["ping", "private", "vault"], true).unwrap().split(" in ").next(), Some("llm: vault answers"));
+    let sent = testkit::sent("http://mlx:11235/v1/models");
+    assert!(!sent.is_empty() && sent.iter().all(|s| s.stdin.is_empty()));
+    let normal = "llm: mlx is not private; the private chat never uses it";
+    assert_eq!(command(&mut m, &["ping", "private", "mlx"], false).unwrap_err(), normal);
+    assert!(command(&mut m, &["ping", "private", "vault", "x"], false).unwrap_err().contains("llm"));
+    assert!(command(&mut m, &["models", "private"], false).unwrap_err().contains("no server \"private\""));
+    let mut none = configured("[[llm.servers]]\nname = \"mlx\"\nurl = \"http://mlx\"\n").unwrap();
+    assert_eq!(command(&mut none, &["ping", "private"], false).unwrap_err(), settings::NO_PRIVATE);
+    assert!(m.verbs().contains("llm ping private"));
+    // It opens no private session and takes no `Cx` path to the store.
+    assert!(m.private.room.lock().unwrap().is_none());
+}
+
 #[test]
 fn a_slow_server_is_not_waited_on_past_the_budget() {
     let mut m = configured(SERVERS).unwrap();

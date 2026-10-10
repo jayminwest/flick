@@ -464,6 +464,8 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   closed, `Event::Locked`, `Event::Sleep` (`wipe_on`), config reload, quit, by hand.
 - With no `[[llm.servers]]` nothing runs; `llm ping|models` start a fetch only when asked
   and wait for it at most 3.5 s on the main thread (the child runs on its thread).
+  `llm ping private [server]` (flick-72b5) is the one verb that reaches a private server:
+  the same bodiless `GET /v1/models`, answering only name, time and model count.
 - Normal chat (`chat.rs`, `view.rs`, `views.rs`, flick-6a0d): with a normal server the root
   item `llm:chat` (⌘K: `models` view, `threads` view) and `[llm] hotkey` show the
   `platform::surface` "llm" (`Input::Multi`, not private, built on the first summon, never
@@ -476,7 +478,7 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   ⌘. is `io::cancel` (the reply so far is kept as stopped), ⌘N a new thread (a reply in
   flight is stopped and kept in its own), ⌘W hide. The model is the `models` view's pick,
   else `default_model`, else the first one `/v1/models` lists (fetched on the first send; the
-  prompt waits for it). `models` lists `llm:model:<server>/<model>` from `State::models`,
+  prompt waits for a list fetched after it, `Chat::asked`, so an old error does not refuse it). `models` lists `llm:model:<server>/<model>` from `State::models`,
   refetched on open; a server's error row `llm:retry:<server>` refetches. `threads` lists
   `llm:thread:<id>`. All window calls go through `chat::Ui` (`wire::UI`; fakes in
   `testkit::UI`).
@@ -487,7 +489,7 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   no `private = true` server the item answers `NO_PRIVATE` and the hotkey returns the
   `private` view saying it; nothing falls back to a normal server. Its handlers queue
   `chat::Note`s in their own static. Its functions take no `Cx`, so they cannot reach the
-  store; it has no control verb, no notification and no log line; its header and window
+  store; it has no control verb (`llm ping private` only lists models), no notification and no log line; its header and window
   title never hold chat text. Model: `default_model` if the private server lists it, else
   the first listed; a prompt sent with no model waits for a list fetched after it (`Open::asked`). ⌘C with nothing selected copies the last reply with
   `pasteboard::set_text_concealed`. Wipes (drop the session, `io::cancel` its stream and
@@ -794,7 +796,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `CARGO_TARGET_DIR=<source>/target/flick-rebuild` and `--locked --offline`, optionally after
   `scripts/check-all.sh --bail` (`[flick] gates`). Output: `~/Library/Logs/Flick/rebuild.log`.
   The build and relaunch.sh each run in their own process group: Cancel kills the build's
-  group, and the installer outlives Flick when it restarts it.
+  group, and the installer outlives Flick when it restarts it. Every build bakes this Flick's
+  checkout (`[flick] source`, else its own `FLICK_BUILD_SOURCE`) as `FLICK_BUILD_SOURCE`, also
+  for `--source <worktree>`, so the installed app keeps checking that checkout (flick-be14).
 - No network: `git::git` allows only `rev-parse`, `rev-list`, `log`, `status`, `archive`
   and `merge-base`, and a unit test pins that list.
 - Tests never install or restart the real app: they set `restart = false` and a temp
@@ -821,7 +825,8 @@ restarts the real Flick, so run it by hand, not from tests or agents:
    gui/$(id -u)/org.nix-community.home.flick`) and without it. Each time one Flick runs, and
    with an Apple Development identity, window snap works without an Accessibility prompt.
 9. `flick flick rebuild --source <agent worktree>` installs that worktree's `HEAD`, and
-   `flick flick version` reports its sha.
+   `flick flick version` reports its sha with `source` still the main checkout; **Rebuild
+   Available** offers the main checkout's `HEAD`.
 10. With no build running, Activity Monitor shows Flick near 0% CPU over 60 s.
 
 ## How to add a module
