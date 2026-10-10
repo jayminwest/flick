@@ -29,6 +29,7 @@
 use serde::Serialize;
 
 use super::dispatch::{Pressed, Ui};
+use super::seen::{Dismissal, Seen};
 use super::store::{Message, Messages};
 use super::{Inbox, text};
 use crate::core::Cx;
@@ -40,10 +41,6 @@ const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | 
 /// The card spec for KOTA (`message card spec`): `docs/cards.md`, compiled in so a peer reads
 /// the contract of the Flick it talks to. A test parses every `json` block in it as a card.
 pub const SPEC: &str = include_str!("../../../docs/cards.md");
-
-/// Most dismissed ids remembered; past it the set starts over (a forgotten id only means a
-/// `done` update of it shows again).
-const DISMISSED_MAX: usize = 256;
 
 /// The JSON answer of `card post`.
 #[derive(Serialize)]
@@ -127,7 +124,7 @@ impl Inbox {
             }
             ["show", id] => {
                 let m = card_row(id, cx)?;
-                self.dismissed.remove(&m.id);
+                cx.store.set_dismissed(&m.id, None);
                 self.display(&m, true);
                 Ok(format!("Showing {id}"))
             }
@@ -135,7 +132,7 @@ impl Inbox {
                 let cards = cx.store.cards(self.settings.max_history);
                 let shown = cards.iter().filter(|m| (self.env.dismiss)(&m.id)).count();
                 for m in cards {
-                    self.forget(m.id);
+                    self.forget(&m.id, cx);
                 }
                 Ok(format!("Dismissed {shown} card{}", if shown == 1 { "" } else { "s" }))
             }
@@ -147,28 +144,25 @@ impl Inbox {
             ["dismiss", id] => {
                 let m = card_row(id, cx)?;
                 (self.env.dismiss)(&m.id);
-                self.forget(m.id);
+                self.forget(&m.id, cx);
                 Ok(format!("Dismissed {id}"))
             }
             _ => Err(USAGE.into()),
         }
     }
 
-    /// Remember that the user's side dismissed card `id`, and drop its press state.
-    pub(super) fn forget(&mut self, id: String) {
-        self.ui.remove(&id);
-        self.expired.remove(&id);
-        if self.dismissed.len() >= DISMISSED_MAX {
-            self.dismissed.clear();
-            self.expired.clear();
-        }
-        self.dismissed.insert(id);
+    /// Store that the user's side dismissed card `id` (which reads a post), and drop its
+    /// press state.
+    pub(super) fn forget(&mut self, id: &str, cx: &Cx) {
+        self.ui.remove(id);
+        cx.store.set_dismissed(id, Some(Dismissal::User));
     }
 
-    /// Card `id` timed out: dismissed as `forget` has it, but it still waits on the user.
-    pub(super) fn expire(&mut self, id: String) {
-        self.forget(id.clone());
-        self.expired.insert(id);
+    /// Card `id` timed out: its press state goes as `forget` has it, but it still waits on
+    /// the user (and a post stays unread).
+    pub(super) fn expire(&mut self, id: &str, cx: &Cx) {
+        self.ui.remove(id);
+        cx.store.set_dismissed(id, Some(Dismissal::Timeout));
     }
 
     fn post_card(&mut self, json: &str, cx: &Cx) -> Result<String, String> {
@@ -176,7 +170,10 @@ impl Inbox {
         let own = parsed.card.thread.take();
         parsed.card.thread = super::thread::inherit(own, &parsed.card.id, parsed.card.reply_to.as_deref(), cx);
         let c = &parsed.card;
-        let existed = cx.store.message(&c.id).is_some();
+        let old = cx.store.message(&c.id).map(|m| m.dismissed);
+        let existed = old.is_some();
+        // Only the user's dismissal silences an update; a card that timed out shows it.
+        let silent = matches!(c.state, State::Done | State::Pending) && old == Some(Some(Dismissal::User));
         let (context, took) = super::quote(c.reply_to.as_deref(), cx);
         let m = Message {
             id: c.id.clone(),
@@ -187,16 +184,12 @@ impl Inbox {
             card: Some(card::to_json(c)),
             remote: cx.remote,
             thread: c.thread.clone(),
+            dismissed: old.flatten().filter(|_| silent),
             ..Message::default()
         };
         self.save(&m, took, cx)?;
         self.ui.remove(&m.id);
-        // Only the user's dismissal silences an update; a card that timed out shows it.
-        let closed = self.dismissed.contains(&m.id) && !self.expired.contains(&m.id);
-        let silent = matches!(c.state, State::Done | State::Pending) && closed;
         if !silent {
-            self.dismissed.remove(&m.id);
-            self.expired.remove(&m.id);
             if super::chat::model::alert(&m, !existed, self.chat_showing()).hud {
                 self.display(&m, false);
             } else {

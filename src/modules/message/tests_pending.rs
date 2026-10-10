@@ -18,7 +18,8 @@ fn started_sends_the_first_count_and_changes_only_after() {
     // Other events are ignored; an unchanged count is not sent again.
     f.cx("", false, |cx| m.on_event(Event::Wake, cx));
     started(&mut f, &mut m);
-    f.run(&mut m, false, &["post", "hello"]).unwrap();
+    // A reply is no card and not unread (an unprompted post is: `tests_unread.rs`).
+    f.run(&mut m, false, &["post", "--reply-to", "x", "hello"]).unwrap();
     assert_eq!(take_pending(), [0; 0]);
     // An open card with an enabled action waits on the user.
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
@@ -72,12 +73,12 @@ fn a_timed_out_card_still_waits_but_a_dismissed_one_does_not() {
     queue(Note::Expired("c1".into()));
     settle(&mut f, &mut m);
     // Gone from the corner like a dismissal (though a done update would show again)...
-    assert!(m.dismissed.contains("c1") && m.expired.contains("c1"));
+    assert_eq!(f.dismissal("c1"), Some(seen::Dismissal::Timeout));
     assert_eq!(take_pending(), [0; 0]);
     // ...until the user dismisses it.
     queue(Note::Dismissed("c1".into()));
     settle(&mut f, &mut m);
-    assert!(!m.expired.contains("c1"));
+    assert!(f.closed("c1"));
     assert_eq!(take_pending(), [0]);
     // An open re-post brings it back.
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
@@ -87,18 +88,26 @@ fn a_timed_out_card_still_waits_but_a_dismissed_one_does_not() {
     queue(Note::Expired("c1".into()));
     settle(&mut f, &mut m);
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
-    assert!(!m.expired.contains("c1"));
+    assert_eq!(f.dismissal("c1"), None);
     take_log();
 }
 
 #[test]
-fn dismissals_are_forgotten_on_restart() {
+fn dismissals_survive_a_restart() {
+    // flick-07cd: a new process over the same store does not count a dismissed card again.
     let (mut f, mut m) = posted("");
     f.run(&mut m, false, &["card", "dismiss", "--all"]).unwrap();
     assert_eq!(take_pending(), [1, 0]);
-    // A new process over the same store counts the open card again.
     let mut fresh = inbox("");
     started(&mut f, &mut fresh);
+    assert_eq!(take_pending(), [0]);
+    // One that only timed out still waits after a restart.
+    f.run(&mut fresh, false, &["card", "post", ASK]).unwrap();
+    queue(Note::Expired("c1".into()));
+    settle(&mut f, &mut fresh);
+    assert_eq!(take_pending(), [1]);
+    let mut again = inbox("");
+    started(&mut f, &mut again);
     assert_eq!(take_pending(), [1]);
     take_log();
 }

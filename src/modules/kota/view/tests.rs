@@ -26,10 +26,13 @@ fn glyphs_and_titles() {
         assert_eq!(glyph(&p), glyph_want);
     }
     let mut p = presence(State::Thinking);
-    assert_eq!(title(&p, 0), "K…");
-    assert_eq!(title(&p, 2), "K… 2");
+    let badge = |pending, unread| Badge { pending, unread };
+    assert_eq!(title(&p, badge(0, 0)), "K…");
+    assert_eq!(title(&p, badge(2, 0)), "K… 2");
+    // Unread posts add to the cards waiting.
+    assert_eq!(title(&p, badge(2, 1)), "K… 3");
     p.mark_stale();
-    assert_eq!(title(&p, 1), "K? 1");
+    assert_eq!(title(&p, badge(0, 1)), "K? 1");
 }
 
 #[test]
@@ -64,7 +67,7 @@ fn headline_tooltip_and_info_rows() {
 #[test]
 fn the_menu_lists_state_then_actions() {
     let p = presence(State::Idle);
-    let menu_rows = menu(&p, 3, 1_000, 0);
+    let menu_rows = menu(&p, Badge { pending: 3, unread: 0 }, 1_000, 0);
     assert_eq!(menu_rows[0], Entry::Info("KOTA: idle · <1m".into()));
     assert_eq!(
         menu_rows[4..],
@@ -76,36 +79,39 @@ fn the_menu_lists_state_then_actions() {
             Entry::Pick { title: "Refresh Now".into(), key: "refresh" },
         ]
     );
-    let none = menu(&Presence::default(), 0, 0, 0);
+    let none = menu(&Presence::default(), Badge::default(), 0, 0);
     assert_eq!(none[4], Entry::Open { title: "Inbox".into(), key: "inbox" });
+    let inbox = |pending, unread| menu(&Presence::default(), Badge { pending, unread }, 0, 0).swap_remove(4);
+    assert_eq!(inbox(0, 1), Entry::Open { title: "Inbox (1 unread)".into(), key: "inbox" });
+    assert_eq!(inbox(2, 1), Entry::Open { title: "Inbox (2 waiting, 1 unread)".into(), key: "inbox" });
 }
 
 #[test]
 fn status_as_json_and_text() {
     let mut p = presence(State::Thinking);
     p.errors = vec!["dash: refused".into()];
-    let extra = Extra { pending: 2, polling: Polling::Every(60) };
+    let extra = Extra { badge: Badge { pending: 2, unread: 1 }, polling: Polling::Every(60) };
     assert_eq!(
         status_json(&p, extra),
         json!({
             "state": "thinking", "stale": false, "since": 1_000,
             "pane": { "id": "wD:p1", "name": "", "status": "working", "title": "Fix the cards" },
             "failing": ["queue", "memory"], "errors": ["dash: refused"],
-            "checked_at": 1_000, "pending": 2, "polling": "every 60 s",
+            "checked_at": 1_000, "pending": 2, "unread": 1, "polling": "every 60 s",
         })
     );
     let text = status_text(&p, extra, 1_000, 0);
     assert!(text.starts_with("KOTA: thinking · <1m\nFix the cards\nChecks: queue, memory failing\nChecked "), "{text}");
-    assert!(text.ends_with("\ndash: refused\n2 waiting\npolling: every 60 s"), "{text}");
-    let none = Extra { pending: 0, polling: Polling::Off };
+    assert!(text.ends_with("\ndash: refused\n2 waiting\n1 unread\npolling: every 60 s"), "{text}");
+    let none = Extra { badge: Badge::default(), polling: Polling::Off };
     assert_eq!(
         status_json(&Presence::default(), none),
         json!({
             "state": "unknown", "stale": false, "since": null, "pane": null, "failing": [],
-            "errors": [], "checked_at": null, "pending": 0, "polling": "off (set a key in [kota] to poll)",
+            "errors": [], "checked_at": null, "pending": 0, "unread": 0, "polling": "off (set a key in [kota] to poll)",
         })
     );
-    let on_demand = Extra { pending: 0, polling: Polling::OnDemand };
+    let on_demand = Extra { badge: Badge::default(), polling: Polling::OnDemand };
     assert_eq!(status_text(&Presence::default(), on_demand, 0, 0), "KOTA: unknown\nNot checked yet\npolling: on demand");
 }
 

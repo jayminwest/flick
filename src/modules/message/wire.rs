@@ -59,8 +59,9 @@ pub struct Env {
     pub changed: fn(),
     /// Post `ModuleChanged` after this many seconds (the pending watchdog).
     pub wake_after: fn(u64),
-    /// Tell every module how many cards wait on the user (`Event::CardsPending`).
-    pub pending: fn(u32),
+    /// Tell every module how many cards wait on the user and how many posts are unread
+    /// (`Event::CardsPending`).
+    pub pending: fn(u32, u32),
 }
 
 impl Default for Env {
@@ -91,7 +92,7 @@ impl Default for Env {
             exec: run::exec,
             changed,
             wake_after: |secs| timer::after(secs as f64, changed),
-            pending: |count| events::post(Event::CardsPending { count }),
+            pending: |count, unread| events::post(Event::CardsPending { count, unread }),
         }
     }
 }

@@ -46,9 +46,10 @@ pub enum Event {
     /// The running task changed: `task` is its id, `None` when no task runs. Posted by the
     /// `task` module with `events::post` on start, stop, switch and `Started`.
     TaskChanged { task: Option<i64> },
-    /// The number of cards that wait on the user changed (or `Started`): `count` of them.
-    /// Posted by the `message` module, which owns the cards, with `events::post`.
-    CardsPending { count: u32 },
+    /// The number of cards that wait on the user (`count`) or of unread posts nobody asked
+    /// for (`unread`) changed (or `Started`). Posted by the `message` module, which owns
+    /// them, with `events::post`.
+    CardsPending { count: u32, unread: u32 },
 }
 
 /// Pids of activated apps, most recent first, at most `RECENT_MAX`.
@@ -109,7 +110,10 @@ mod tests {
             (Event::Unlocked, r#"{"event":"unlocked"}"#),
             (Event::TaskChanged { task: Some(3) }, r#"{"event":"task_changed","task":3}"#),
             (Event::TaskChanged { task: None }, r#"{"event":"task_changed","task":null}"#),
-            (Event::CardsPending { count: 2 }, r#"{"event":"cards_pending","count":2}"#),
+            (
+                Event::CardsPending { count: 2, unread: 1 },
+                r#"{"event":"cards_pending","count":2,"unread":1}"#,
+            ),
         ];
         for (event, json) in cases {
             assert_eq!(serde_json::to_string(&event).unwrap(), json);
