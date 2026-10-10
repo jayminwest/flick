@@ -16,7 +16,7 @@ use super::transport::{Child, Spawned};
 use crate::platform::surface::Row;
 
 pub const STREAM: &str = include_str!("fixtures/chat_stream.txt");
-pub const REASONING: &str = include_str!("fixtures/chat_reasoning.txt");
+pub const REASONING: &str = include_str!("fixtures/mlx_serve_reasoning.txt");
 pub const MLX_MODELS: &str = include_str!("fixtures/models_mlx.json");
 
 pub const HOOKS: Hooks = Hooks { spawn, post: || {}, sleep: |d| std::thread::sleep(d / 50) };
