@@ -96,6 +96,12 @@ fn policy_refuses_unsafe_targets() {
             "open_app: empty or invalid app name"
         );
     }
+    for path in ["/Applications/X.app", "~/Downloads/x.app", "Foo/Bar"] {
+        assert_eq!(
+            refused(Do::OpenApp(path.to_string()), Origin::Local),
+            "open_app: a name or bundle id, not a path"
+        );
+    }
     assert_eq!(Do::Copy(String::new()).check(Origin::Remote), Ok(()));
     let script = Do::Script { name: " ".into(), query: None };
     assert_eq!(refused(script, Origin::Local), "script: empty name");
@@ -113,6 +119,10 @@ fn flick_words_are_checked_and_net_policy_applies_to_remote_cards() {
     assert_eq!(refused(&[], Origin::Local), "flick: the first word must be a module");
     assert_eq!(refused(&["--host", "x"], Origin::Local), "flick: the first word must be a module");
     assert_eq!(refused(&["events"], Origin::Local), "flick: events is a stream, not an action");
+    // The CLI runs these itself: a self-exec would skip the control path.
+    for cmd in ["snapshot", "import-raycast", "help", "config"] {
+        assert_eq!(refused(&[cmd, "x"], Origin::Local), format!("flick: {cmd} is not a module"));
+    }
     for flag in ["--host", "--json", "--remote", "--stdin", "--host=mac"] {
         assert_eq!(
             refused(&["task", "ls", flag], Origin::Local),

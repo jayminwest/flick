@@ -35,8 +35,19 @@ fn exec(job: &run::Job) -> run::Exit {
     }
 }
 
+/// A fake local run, on the worker thread: never spawns anything. A job whose last word is
+/// `fail` fails; others answer their argv, so tests read it off the card's line.
+fn run_local(job: &local::Job) -> local::Ran {
+    let remote = if job.origin == Some(crate::core::card::Origin::Remote) { " [remote]" } else { "" };
+    let argv = format!("{}{remote}", job.argv.join(" "));
+    if job.argv.last().is_some_and(|w| w == "fail") { local::Ran::Failed(format!("{} failed (exit 1): no", job.label)) } else { local::Ran::Ok(format!("ran {argv}")) }
+}
+
 fn ui_line(ui: &CardUi) -> String {
-    format!("{}|{:?}|{:?}", ui.pending, ui.error, ui.confirm)
+    match ui.note {
+        Some(note) => format!("{}|{:?}|{:?}|{note}", ui.pending, ui.error, ui.confirm),
+        None => format!("{}|{:?}|{:?}", ui.pending, ui.error, ui.confirm),
+    }
 }
 
 fn log(line: String) {
@@ -74,6 +85,12 @@ pub(super) fn inbox(config: &str) -> Inbox {
             notify: |id, title, body| log(format!("notify {id}|{title}|{body}")),
             copy: |text| log(format!("copy {text}")),
             open_url: |url| log(format!("open {url}")),
+            open_app: |app| {
+                log(format!("app {app}"));
+                if app == "Nope" { Err(format!("open_app: no app {app:?}")) } else { Ok(()) }
+            },
+            self_exe: || Ok("/Flick.app/Contents/MacOS/Flick".into()),
+            run_local,
             show_card: |c, ui, p, o| {
                 log(format!(
                     "card {} {} {:?}|{}|{:?}|{}|{}|{}|{}",
@@ -96,6 +113,7 @@ pub(super) fn inbox(config: &str) -> Inbox {
         ui: dispatch::Uis::new(),
         presses: 0,
         worker: run::Worker::default(),
+        local: run::Worker::default(),
     };
     m.configure(&parse(config).unwrap().section("message").unwrap().unwrap()).unwrap();
     m

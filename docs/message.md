@@ -63,7 +63,11 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
   - Exit 0: the card stays pending until KOTA posts the same id again (which redraws it and clears the pending state). If no update comes within `pending_timeout_secs`, the card shows "No update from KOTA" and its actions come back.
   - Exit 2: the card shows "KOTA rejected: <last stderr line>"; other exits, a timeout or a command that cannot start show an error line. Either way the actions come back, so you can retry.
   - Presses on a pending card are ignored, so a press is never sent twice. Without `action_command` a press shows "Set [message] action_command to send presses to KOTA".
-- `"do": "dismiss"` closes the card (with `"reply": true`, after the press reaches KOTA). A `shell` action never runs on the first press: the card shows the exact command with Cancel and Run. Running it and the other local actions (`open_url`, `open_app`, `copy`, `script`, `flick`) come with a later step (flick-e244); for now they show an error line. A local action with `"reply": true` already sends its press.
+- `"do": "dismiss"` closes the card (with `"reply": true`, after the press reaches KOTA). Other local actions run on this Mac when pressed, checked again at press time against where the card came from (a card from a peer may not run a `flick` verb peers may not send):
+  - `open_url`, `open_app` (a name or bundle id) and `copy` run at once; the card shows a short line ("Opened the link", "Opened Safari", "Copied").
+  - `script` (`flick script run <name> [query]`) and `flick` (any request, e.g. `["task","start","x"]`) run Flick's own binary as a command line client in the background, killed after 30 s; the card shows "Running …", then the last line of the reply, or an error line. For a peer's card the request is marked `--remote`.
+  - `shell` never runs on the first press: the card shows the exact command with Cancel and Run. Run executes it with `/bin/sh -c` in your home folder, killed (with what it started) after 60 s; the card shows the last output line or "command failed (exit n): <last stderr line>". Output is never stored.
+  - With `"reply": true` the local part runs first; if it works, the press is sent to KOTA as above. If it fails, the card shows the error and nothing is sent.
 - Pending, error and confirm states live in memory only.
 - Invalid JSON, a card over 16 KiB, or a missing/invalid `id`, `title`, `v` or `state` is an error reply `invalid card: <reason>` (exit 1); nothing is shown or stored. Anything else is shown as well as it can be, with a warning.
 - Cards posted over the network are marked remote: a `flick` action naming a verb peers may not send is shown disabled.
@@ -85,7 +89,10 @@ flick message card get <id>      # the stored (normalized) card JSON
 flick message card ls [--limit n]  # <id>\t<time>\t<state>\t<title>, newest first (--json: [{id,ts,remote,card}])
 flick message card show <id>     # show the card again
 flick message card dismiss <id>|--all  # remove the card (every card)
+flick message card press <id> <action> [values-json]  # press a button as a click does (this Mac only)
 ```
+
+`card press` takes the same path as a click: values default to the card's initial field and choice values, and it answers what happened (`Sent go to KOTA…`, `Running script deploy…`, `Copied`, `Closed c1`) or the refusal. On a `shell` action the first `card press` shows the confirm on the card (and prints the command); a second `card press` of the same action is Run, and `card press <id> :cancel` is Cancel.
 
 `card post --json` answers `{"id":"…","replaced":true|false,"warnings":["…"]}`; `replaced` is true when a card with that id existed or `reply_to` took a pending message. The client exits 1 when Flick answered with an error (fix the card) and 3 when it got no reply (Flick unreachable).
 
@@ -105,3 +112,5 @@ flick message card dismiss <id>|--all  # remove the card (every card)
 8. From a peer: `flick --host <this Mac> message post --title KOTA "from the server"` shows the card.
 9. `printf %s '{"id":"c1","title":"Deploy?","blocks":[{"type":"text","md":"Ship **v2**"}],"actions":[{"id":"go","label":"Ship"}]}' | flick message card post --stdin`: a card "Deploy?" with "Ship v2" and "[Ship]" stays (Esc does not close it). Post it again with `"state":"done"`: it redraws in place and hides after `timeout_secs`. `flick message card post '{"id":"x"}'` prints `flick: invalid card: …` and exits 1.
 10. Set `action_command = ["/bin/sh", "-c", "cat > /tmp/press.json; echo \"$@\" >> /tmp/press.json", "sh"]` and reload. Post a card with a field and a `Ship` action without `do`, type in the field and press Ship: the card shows "Sent to KOTA…", `/tmp/press.json` holds the values JSON and `--action --card <id> --action-id ship`. Re-post the card: it redraws with Ship enabled. With `pending_timeout_secs = 10`, press again and wait: "No update from KOTA" shows. With `exit 2` in the script (writing a line to stderr first), the card shows "KOTA rejected: <that line>".
+11. Post a local card with actions `{"do":{"open_url":"https://example.com"}}`, `{"do":{"open_app":"Calculator"}}`, `{"do":{"copy":"hello"}}`, `{"do":{"flick":["task","ls"]}}` and `{"do":{"shell":"echo hi; sleep 1; echo bye"}}`. Each press works and leaves a short line; the flick one shows the request's last reply line; the shell one shows the command, runs only on Run, shows "Running command…" for a second and then "bye". Typing in the front app keeps working throughout. A shell `sleep 90` shows "command took over 60 s; stopped" and leaves no `sleep` process.
+12. From a peer, post a card with `{"do":{"flick":["reload"]}}`: the button is disabled with "flick: reload: not allowed over the network"; `flick message card press <id> <action>` prints the same refusal.

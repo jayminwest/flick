@@ -1,5 +1,6 @@
 //! What `message` does to the system: the clock, the HUD, notifications, the pasteboard,
-//! opening links, the KOTA action command and the HUD's press and dismiss handlers.
+//! opening links and apps, the KOTA action command, local runs (`local.rs`), the path of
+//! this binary and the HUD's press and dismiss handlers.
 //! `Env::default()` is the real thing; tests swap in plain functions and never register the
 //! real handlers (mx-444675).
 
@@ -7,7 +8,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use std::path::PathBuf;
+
 use super::dispatch::Note;
+use super::local::{self, Ran};
 use super::run::{self, Exit, Job};
 use crate::core::Event;
 use crate::core::card::Card;
@@ -30,6 +34,12 @@ pub struct Env {
     pub notify: fn(&str, &str, &str),
     pub copy: fn(&str),
     pub open_url: fn(&str),
+    /// Open an app by name or bundle id; `Err` when none matches.
+    pub open_app: fn(&str) -> Result<(), String>,
+    /// This binary, which `script` and `flick` actions re-run as a client.
+    pub self_exe: fn() -> Result<PathBuf, String>,
+    /// Run one local process (on the worker thread).
+    pub run_local: fn(&local::Job) -> Ran,
     /// Show or redraw a structured card with its press state; true when it is new.
     pub show_card: fn(&Card, &CardUi, &Placement, &Options) -> bool,
     /// Redraw a structured card if it shows; true when it does.
@@ -62,6 +72,9 @@ impl Default for Env {
             },
             copy: pasteboard::set_text,
             open_url: workspace::open_url,
+            open_app,
+            self_exe: || std::env::current_exe().map_err(|e| format!("cannot find Flick's binary: {e}")),
+            run_local: local::exec,
             show_card: hud::show_card,
             update_card: hud::update_card,
             subscribe,
@@ -89,6 +102,12 @@ fn queue(note: Note) {
 
 fn take_notes() -> Vec<Note> {
     std::mem::take(&mut *NOTES.lock().unwrap_or_else(PoisonError::into_inner))
+}
+
+fn open_app(app: &str) -> Result<(), String> {
+    let path = workspace::find_app(app).ok_or_else(|| format!("open_app: no app {app:?}"))?;
+    workspace::open_file(&path);
+    Ok(())
 }
 
 fn subscribe() {

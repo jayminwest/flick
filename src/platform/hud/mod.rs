@@ -441,7 +441,7 @@ fn refill_with_error(id: &str, error: &str) {
         let Some(e) = s.cards.iter_mut().find(|e| e.id == id) else { return };
         let Some(c) = &e.controls else { return };
         let (card, pending, confirm) = (c.card.clone(), c.pending, c.confirm.clone());
-        let ui = CardUi { pending, error: Some(error), confirm: confirm.as_deref() };
+        let ui = CardUi { pending, error: Some(error), confirm: confirm.as_deref(), note: None };
         let (width, opts, epoch) = (e.size.0, e.opts, e.epoch);
         fill(mtm, e, Draw::Card(&card, &ui), width, opts, epoch);
         relayout(s, mtm);
