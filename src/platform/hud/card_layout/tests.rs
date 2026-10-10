@@ -21,7 +21,7 @@ fn pending_wins_then_the_module_error_then_the_card_state() {
         Status { symbol: "text.bubble.fill", line: None, spinner: false, enabled: true }
     );
 
-    let pending = CardUi { pending: true, error: Some("boom"), confirm: None };
+    let pending = CardUi { pending: true, error: Some("boom"), ..ui };
     let s = status(State::Open, &pending);
     assert_eq!(s.line, Some((Tone::Muted, "Sent to KOTA…".into())));
     assert!(s.spinner && !s.enabled);
@@ -42,6 +42,33 @@ fn pending_wins_then_the_module_error_then_the_card_state() {
 }
 
 #[test]
+fn a_note_shows_muted_and_names_what_runs() {
+    let ui = CardUi { note: Some("Copied"), ..CardUi::default() };
+    let s = status(State::Open, &ui);
+    assert_eq!(s.line, Some((Tone::Muted, "Copied".into())));
+    assert!(s.enabled && !s.spinner);
+    assert_eq!(s.symbol, "text.bubble.fill");
+    // A note replaces Done but keeps the state's symbol and enabled flag.
+    let s = status(State::Done, &ui);
+    assert_eq!(
+        (s.line, s.symbol, s.enabled),
+        (Some((Tone::Muted, "Copied".into())), "checkmark.circle.fill", false)
+    );
+    // An error wins over a note.
+    let s = status(State::Open, &CardUi { error: Some("boom"), ..ui });
+    assert_eq!(s.line, Some((Tone::Error, "boom".into())));
+    // While pending the note says what runs.
+    let running =
+        CardUi { pending: true, note: Some("Running script deploy…"), ..CardUi::default() };
+    let s = status(State::Open, &running);
+    assert_eq!(s.line, Some((Tone::Muted, "Running script deploy…".into())));
+    assert!(s.spinner && !s.enabled);
+    // KOTA's own pending state ignores a stale note.
+    let s = status(State::Pending, &ui);
+    assert_eq!(s.line, Some((Tone::Muted, "Sent to KOTA…".into())));
+}
+
+#[test]
 fn only_an_enabled_shell_action_on_a_live_card_confirms() {
     let c = card(
         r#"{"id":"c","title":"T","actions":[
@@ -56,7 +83,7 @@ fn only_an_enabled_shell_action_on_a_live_card_confirms() {
     assert!(confirming(&c, &ui(Some("bad"))).is_none());
     assert!(confirming(&c, &ui(Some("nope"))).is_none());
     assert!(confirming(&c, &ui(None)).is_none());
-    let pending = CardUi { pending: true, confirm: Some("run"), error: None };
+    let pending = CardUi { pending: true, confirm: Some("run"), ..CardUi::default() };
     assert!(confirming(&c, &pending).is_none());
 }
 

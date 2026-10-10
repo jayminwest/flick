@@ -9,16 +9,20 @@
 //! `pending_timeout_secs`, `card_timeout_secs`. Table `messages` holds the history. Each
 //! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
-//! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`.
+//! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`,
+//! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`.
 
 mod card;
 mod dispatch;
+mod local;
 mod run;
 pub mod store;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_card;
+#[cfg(test)]
+mod tests_local;
 #[cfg(test)]
 mod tests_press;
 mod text;
@@ -134,7 +138,10 @@ pub struct Inbox {
     ui: dispatch::Uis,
     /// Presses sent so far; numbers each send.
     presses: u64,
-    worker: run::Worker,
+    /// KOTA sends in flight.
+    worker: run::Worker<run::Done>,
+    /// Local runs in flight (`local.rs`).
+    local: run::Worker<local::Done>,
 }
 
 /// The JSON answer of `post`.
@@ -450,6 +457,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card press <id> <action> [values-json]"
     }
 }
