@@ -363,7 +363,9 @@ presses queue `Note::Press` and go through `dispatch::press`, as corner cards' d
 [--thread t] <text...>` (answers once ssh is done, `core::later`); the launcher view
 `message/threads` (⌘K Chat Threads on the root item) lists threads as
 `message:thread:<t>`, Enter opens the window on one. All macOS and ssh calls go through
-`chat::session::Hooks` (`chat/wire.rs`; fakes in `chat/fake.rs`).
+`chat::session::Hooks` (`chat/wire.rs`; fakes in `chat/fake.rs`). User docs, the KOTA-side
+contract (ask argv, `[context]` block and caps, screenshot upload, reply and streaming posts)
+and the smoke checklist: `docs/message.md#chat`.
 
 Dictation (`src/modules/dictation/`): two child processes and the main-thread steps around
 them; every program and macOS call goes through `dictation::Hooks` (`wire::REAL`; scripted
