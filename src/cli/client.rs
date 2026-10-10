@@ -62,10 +62,15 @@ pub enum Target {
 trait Conn: Read + Write {}
 impl<T: Read + Write> Conn for T {}
 
+/// The exit code of a request that got no reply: Flick not running or unreachable, the
+/// connection dropped. Distinct from 1 (Flick answered with an error) so a script can tell
+/// "fix the request" from "try another way" (KOTA falls back to iMessage only on this).
+pub const UNREACHABLE: i32 = 3;
+
 /// Send `words` to the Flick at `target` and print the reply: its text, or with `flags.json`
 /// the raw reply line. With `flags.json` the request ends in `--json`, so a module may answer
 /// with structured JSON; `flags.remote` adds `--remote` before it. Returns the exit code: 0
-/// for an ok reply, 1 otherwise.
+/// for an ok reply, 1 for an error reply, `UNREACHABLE` when no reply came.
 pub fn request(target: &Target, words: &[String], flags: Flags) -> i32 {
     let json = flags.json;
     let words = with_flags(words, flags);
@@ -79,7 +84,7 @@ pub fn request(target: &Target, words: &[String], flags: Flags) -> i32 {
         }
         Err(e) => {
             eprintln!("flick: {e}");
-            1
+            UNREACHABLE
         }
     }
 }
@@ -287,16 +292,16 @@ mod tests {
     }
 
     #[test]
-    fn an_unreachable_host_is_exit_1_with_its_address() {
+    fn an_unreachable_host_is_exit_3_with_its_address() {
         // Bind then drop: nothing listens on that port.
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let host = Target::Host(Host { name: "127.0.0.1".into(), port });
         let e = connect(&host).err().unwrap().to_string();
         assert!(e.contains(&format!("127.0.0.1:{port}")) && e.contains("network access"), "{e}");
-        assert_eq!(request(&host, &["x".into()], Flags::default()), 1);
+        assert_eq!(request(&host, &["x".into()], Flags::default()), UNREACHABLE);
         assert_eq!(events(&host), 1);
         let nowhere = Target::Host(Host { name: "no-such-host.invalid".into(), port });
-        assert_eq!(request(&nowhere, &["x".into()], Flags::default()), 1);
+        assert_eq!(request(&nowhere, &["x".into()], Flags::default()), UNREACHABLE);
     }
 
     #[test]
@@ -309,7 +314,7 @@ mod tests {
         let socket = Target::Socket(path.clone());
         let missing = connect(&socket).err().unwrap().to_string();
         assert!(missing.contains("is it running?"), "{missing}");
-        assert_eq!(request(&socket, &["x".into()], Flags::default()), 1);
+        assert_eq!(request(&socket, &["x".into()], Flags::default()), UNREACHABLE);
         server::spawn(server::bind(&path).unwrap(), upper, &HUB).unwrap();
         let words = ["clip".to_string(), "get".into(), "a b".into()];
         let line = exchange(connect(&socket).unwrap(), &words).unwrap();
