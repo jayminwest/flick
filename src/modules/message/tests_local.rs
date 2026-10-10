@@ -157,12 +157,14 @@ fn a_run_for_a_dismissed_or_reposted_card_is_ignored() {
     let (mut f, mut m) = posted("");
     press("sh");
     press("sh");
-    f.cx("", false, |cx| m.drain(cx));
-    // Dismissed while it runs: the result arrives and changes nothing.
+    // Dismissed while it runs: the result arrives and changes nothing. The dismissal is
+    // queued with the presses so one drain handles all three before any result (a fast
+    // run could otherwise finish inside the drain that started it).
     queue_dismiss();
+    f.cx("", false, |cx| m.drain(cx));
     settle(&mut f, &mut m);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while m.local.len() == 0 && std::time::Instant::now() < deadline {
+    while m.local.running() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     settle(&mut f, &mut m);
