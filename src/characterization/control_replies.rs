@@ -266,6 +266,11 @@ fn peers_reach_the_card_verbs() {
     );
     assert_eq!(net_reply(&["message", "card", "ls", "--json"]), r#"{"ok":[]}"#);
     assert_eq!(net_reply(&["message", "card", "get", "c1"]), r#"{"error":"No card c1"}"#);
+    // The spec is for peers: KOTA reads the contract of the Flick it posts to.
+    let spec = Reply::Ok(include_str!("../../docs/cards.md").into()).to_line();
+    assert_eq!(net_reply(&["message", "card", "spec"]), spec);
+    assert!(spec.starts_with(r##"{"ok":"# Cards: the KOTA spec"##), "{spec}");
+    assert_eq!(net_reply(&["message", "card", "spec", "--json"]), spec);
 }
 
 #[test]

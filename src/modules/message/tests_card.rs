@@ -156,3 +156,45 @@ fn card_focus_moves_the_keyboard_into_the_newest_card() {
     assert!(f.run(&mut m, false, &["card", "focus", "c1"]).unwrap_err().starts_with("usage:"));
     set_keyboard(1);
 }
+
+/// The bodies of the fenced `json` code blocks of `md`.
+fn json_blocks(md: &str) -> Vec<String> {
+    let (mut blocks, mut open): (Vec<String>, Option<String>) = (vec![], None);
+    for line in md.lines() {
+        match (open.as_mut(), line.trim_end()) {
+            (None, "```json") => open = Some(String::new()),
+            (Some(_), "```") => blocks.extend(open.take()),
+            (Some(block), _) => {
+                block.push_str(line);
+                block.push('\n');
+            }
+            (None, _) => {}
+        }
+    }
+    assert!(open.is_none(), "an unclosed json block in docs/cards.md");
+    blocks
+}
+
+#[test]
+fn card_spec_prints_the_doc_and_its_examples_parse() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    let spec = f.run(&mut m, false, &["card", "spec"]).unwrap();
+    assert_eq!(spec, card::SPEC);
+    assert!(spec.starts_with("# Cards: the KOTA spec (schema v1)\n"));
+    assert!(spec.contains("message card spec") && spec.len() < 25 * 1024);
+    assert!(f.run(&mut m, false, &["card", "spec", "x"]).unwrap_err().starts_with("usage:"));
+    // Every `json` block is a complete card KOTA could post (remote), clean: no warnings, and
+    // every action it declares is enabled (none refused by the remote policy).
+    let blocks = json_blocks(card::SPEC);
+    assert!(blocks.len() >= 7, "{}", blocks.len());
+    for json in &blocks {
+        let parsed = core_card::parse(json, core_card::Origin::Remote).unwrap_or_else(|e| panic!("{e}\n{json}"));
+        assert!(parsed.warnings.is_empty(), "{:?}\n{json}", parsed.warnings);
+        assert!(parsed.card.actions.iter().all(core_card::Action::enabled), "{json}");
+    }
+    // The form example's untouched inputs are what a press sends by default.
+    let form = blocks.iter().find(|b| b.contains("\"dentist\"")).unwrap();
+    let form = core_card::parse(form, core_card::Origin::Remote).unwrap().card;
+    assert_eq!(core_card::action::values_json(&form.inputs()), Ok(r#"{"note":"","slot":"tue-10","with":[]}"#.into()));
+    assert_eq!(json_blocks("```json\n{}\n```\ntext\n```sh\nx\n```"), ["{}\n"]);
+}
