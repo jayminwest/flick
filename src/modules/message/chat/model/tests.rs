@@ -92,6 +92,25 @@ fn a_question_that_did_not_go_out_says_so_and_can_be_retried() {
 }
 
 #[test]
+fn copy_reply_takes_the_newest_reply_with_text() {
+    let card = Message { card: Some(r#"{"id":"c","title":"Pick one"}"#.into()), ..peer("c", NOW, "Pick one") };
+    let list = vec![
+        peer("a1", NOW - 9, "\n**first** reply\n"),
+        me("q2", NOW - 8, "mine"),
+        Message { state: Progress::Partial, ..peer("a2", NOW - 7, "still ") },
+        card,
+        Message { pending: true, ..peer("p", NOW - 6, "…") },
+        peer("blank", NOW - 5, "  \n"),
+        me("q3", NOW, "newest is mine"),
+    ];
+    // Not the user's question, the card, the pending post or the blank one: the streaming reply.
+    assert_eq!(last_reply(&list), Some("still"));
+    assert_eq!(last_reply(&[list[0].clone(), list[1].clone()]), Some("**first** reply"));
+    assert_eq!(last_reply(&list[1..2]), None);
+    assert_eq!(last_reply(&[]), None);
+}
+
+#[test]
 fn an_unanswered_question_shows_thinking_for_a_while() {
     let list = [me("q1", NOW - 10, "hm?")];
     let rows = transcript(&list, "KOTA", clock(NOW));

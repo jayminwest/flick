@@ -214,6 +214,12 @@ impl Coalesce {
     }
 }
 
+/// What a bubble's Copy Message puts on the pasteboard: the message as written (its
+/// markdown-lite source), without the blank lines and spaces around it.
+pub fn message_text(md: &str) -> &str {
+    md.trim()
+}
+
 /// What a bubble shows for its state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Badge {

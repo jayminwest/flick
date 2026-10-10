@@ -149,8 +149,11 @@ The values shown are the defaults, except `chat_hotkey`. `chat_history` and `cha
 | ⌘R | send the thread's newest question again if it did not go out |
 | ⌘⇧V | attach the clipboard text |
 | ⌘⇧S | attach a screenshot of the display under the pointer |
+| ⌘⇧C | copy KOTA's newest reply (its text as written) |
 | ⌘W, Esc | hide the window |
-| ⌘X ⌘C ⌘V ⌘A ⌘Z | edit the input |
+| ⌘X ⌘C ⌘V ⌘A ⌘Z | edit the input; ⌘C also copies text selected in a bubble |
+
+To copy part of a message, drag across it in its bubble and press ⌘C. To copy a whole message, right-click its bubble and choose **Copy Message**.
 
 ### Threads
 
@@ -284,6 +287,7 @@ On the laptop against live KOTA, with `chat_hotkey` set and Flick reloaded.
 - [ ] **⌘⇧S.** Press ⌘⇧S. The window hides for the shot, comes back, and a `Screenshot` chip shows. Ask. On mbp-server, `ls ~/.cache/flick/attach` has `<req>-1.png` showing the display without the chat window, and the `[context]` block names `~/.cache/flick/attach/<req>-1.png`. A fourth ⌘⇧S on one question says "At most 3 screenshots per question".
 - [ ] **Screen Recording prompt.** With Screen Recording off for Flick, press ⌘⇧S. the notice says how to grant it, and macOS shows its permission prompt if it never asked before. A second ⌘⇧S shows only the notice, never a second prompt. Grant it, restart Flick, and ⌘⇧S works.
 - [ ] **Inline card.** From mbp-server, post a card with `"thread": "<t>"` and a reply action. It shows inline in the open thread, not in the corner. Press the action: "Sent to KOTA…". KOTA's re-post of the card redraws it in place. Re-post it as `"state": "done"` and press again: nothing happens.
+- [ ] **Copy.** In a thread with a multi-line reply, drag across part of the reply, starting in the bubble's padding left of the first word: the text highlights and the window does not move. Press ⌘C and paste in TextEdit: the selected text. Click another app, then drag across a reply again: the first drag selects. Right-click the reply: the menu starts with **Copy Message**; choose it and paste: the whole message as written. Press ⌘⇧C: the notice says "Copied the last reply" and the clipboard holds the newest reply. Dragging the header or the space between rows still moves the window.
 - [ ] **Network.** From a peer, `flick --host <laptop> message chat` and `message ask x` are refused, and `message threads --json` answers.
 
 ## Commands

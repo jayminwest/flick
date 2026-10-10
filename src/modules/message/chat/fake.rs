@@ -153,6 +153,7 @@ pub const HOOKS: Hooks = Hooks {
     },
     context: || CONTEXT.with(|c| c.borrow().clone()),
     clipboard: || CLIPBOARD.with(|c| c.borrow().clone()),
+    copy: |text| log(format!("chat copy {text}")),
     shoot: || {
         log("chat shoot".into());
         queue(Note::Shot(SHOT.with(|s| s.borrow().clone())));
