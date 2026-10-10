@@ -46,7 +46,8 @@ modules! {
         mod activity => "activity", activity::Activity::default;
         mod herdr => "herdr", herdr::Herdr::default;
         mod tasks => "task", tasks::Tasks::default;
-        mod keys => "keys", keys::Keys::default;
+        mod keys => "keys", || keys::Keys::new(crate::control::local);
+        mod dictation => "dictation", dictation::Dictation::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
         mod feedback => "feedback", feedback::Feedback::default;

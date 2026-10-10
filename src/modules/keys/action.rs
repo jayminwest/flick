@@ -1,5 +1,6 @@
 //! What a chord edge runs: an HTTP request or a shell command, on one FIFO worker thread
-//! per module so an `up` never overtakes its `down`, and never on the main or tap thread.
+//! per module so an `up` never overtakes its `down`, and never on the main or tap thread;
+//! or a Flick control request (`flick`), which the module hands to its main-queue hook.
 
 use std::fmt;
 use std::io::{BufRead, BufReader, Write};
@@ -11,16 +12,21 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::words;
+use crate::core::card::{Do, Origin};
+
 /// Connect, write and read limit for one HTTP action, so a dead service never holds the
 /// worker for long.
 const TIMEOUT: Duration = Duration::from_secs(2);
 
-/// `on_down` / `on_up` as written: `{ http = "POST http://..." }` or `{ shell = "..." }`.
+/// `on_down` / `on_up` as written: `{ http = "POST http://..." }`, `{ shell = "..." }` or
+/// `{ flick = "<module> <verb> [args]" }`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Spec {
     Http(String),
     Shell(String),
+    Flick(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,6 +34,8 @@ pub enum Action {
     Http(Request),
     /// Run with `/bin/sh -c`.
     Shell(String),
+    /// A local control request, `["<module>", "<verb>", args...]` (split by `words::split`).
+    Flick(Vec<String>),
 }
 
 /// An `http://` request with an empty body.
@@ -42,12 +50,20 @@ pub struct Request {
 
 impl Action {
     /// Checks `spec`: `http` takes `[METHOD ]http://host[:port][/path]` (method defaults to
-    /// POST; no https), `shell` a non-empty command.
+    /// POST; no https), `shell` a non-empty command, `flick` at least one word.
     pub fn parse(spec: Spec) -> Result<Action, String> {
         match spec {
             Spec::Http(text) => Request::parse(&text).map(Action::Http),
             Spec::Shell(cmd) if cmd.trim().is_empty() => Err("shell: empty command".into()),
             Spec::Shell(cmd) => Ok(Action::Shell(cmd)),
+            Spec::Flick(text) => {
+                let bad = |e: String| format!("flick \"{text}\": {}", e.trim_start_matches("flick: "));
+                let words = words::split(&text).map_err(bad)?;
+                // The same word policy as a card's flick action: a module first, no client
+                // flags (--json, --remote, --host, --stdin), no events stream.
+                Do::Flick(words.clone()).check(Origin::Local).map_err(bad)?;
+                Ok(Action::Flick(words))
+            }
         }
     }
 }
@@ -57,6 +73,7 @@ impl fmt::Display for Action {
         match self {
             Action::Http(r) => write!(f, "{} http://{}{}", r.method, r.authority(), r.path),
             Action::Shell(cmd) => write!(f, "shell {cmd}"),
+            Action::Flick(w) => write!(f, "flick {}", words::join(w)),
         }
     }
 }
@@ -168,6 +185,8 @@ impl Job {
     fn run(&self) -> Result<String, String> {
         match &self.action {
             Action::Http(req) => req.send(),
+            // `Keys::fire` hands these to the main-queue hook; they never reach the worker.
+            Action::Flick(_) => Err("flick actions run on the main queue".into()),
             Action::Shell(cmd) => {
                 let mut child = self.spawn(cmd).map_err(|e| e.to_string())?;
                 let pid = child.id();
@@ -246,7 +265,7 @@ pub mod tests {
     fn http(text: &str) -> Result<Request, String> {
         match Action::parse(Spec::Http(text.into()))? {
             Action::Http(r) => Ok(r),
-            Action::Shell(_) => unreachable!(),
+            _ => unreachable!(),
         }
     }
 
@@ -276,6 +295,23 @@ pub mod tests {
         }
         assert_eq!(Action::parse(Spec::Shell(" ".into())).unwrap_err(), "shell: empty command");
         assert_eq!(Action::parse(Spec::Shell("true".into())).unwrap().to_string(), "shell true");
+    }
+
+    #[test]
+    fn parses_flick_actions() {
+        let flick = Action::parse(Spec::Flick(" dictation  start ".into())).unwrap();
+        assert_eq!(flick, Action::Flick(vec!["dictation".into(), "start".into()]));
+        assert_eq!(flick.to_string(), "flick dictation start");
+        let post = Action::parse(Spec::Flick("message post 'hi there'".into())).unwrap();
+        assert_eq!(post.to_string(), "flick message post 'hi there'");
+        let err = Action::parse(Spec::Flick(" ".into())).unwrap_err();
+        assert_eq!(err, "flick \" \": empty request");
+        let refused = |text: &str| Action::parse(Spec::Flick(text.into())).unwrap_err();
+        assert_eq!(refused("--host x keys list"), "flick \"--host x keys list\": the first word must be a module");
+        assert_eq!(refused("task ls --json"), "flick \"task ls --json\": --json is not allowed in an action");
+        assert_eq!(refused("events"), "flick \"events\": events is a stream, not an action");
+        let job = Job { chord: "d".into(), down: true, action: flick };
+        assert_eq!(job.run().unwrap_err(), "flick actions run on the main queue");
     }
 
     /// A listener on an ephemeral port; `serve` answers each request with `status` and
