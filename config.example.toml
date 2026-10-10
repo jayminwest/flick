@@ -158,6 +158,35 @@
 # Opens the Ask KOTA view (kota/ask): type, then Enter sends; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyO"
 
+# --- llm: chat with OpenAI-compatible model servers (mlx-serve, ollama) on your tailnet.
+# Nothing runs until a server is listed. "flick llm ping [server]" checks one; "flick llm
+# models [server] [--json]" lists its models. Requests go through /usr/bin/curl with the
+# prompt on stdin, never in its arguments. Denied over the network.
+#[llm]
+# The normal server a new chat uses; "" for the first normal server.
+#default_server = ""
+# The model a new chat uses; "" for the first one the server lists.
+#default_model = ""
+# Sent as the first message of every chat; "" for none.
+#system_prompt = ""
+# Keep normal chats in flick.db. Private chats are never kept.
+#history = true
+# Token cap for each reply; 0 for the server's default.
+#max_tokens = 0
+# Seconds one reply may take (1 to 3600).
+#timeout_secs = 300
+# Open the chat window and the private chat window; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyL"
+#private_hotkey = "cmd+ctrl+alt+shift+KeyP"
+
+# A server; none by default. Repeat the table for each. url: the base URL, with or without
+# /v1. private = true: only the private chat may use it, and it uses nothing else. That is
+# your word that the server keeps no logs or caches; Flick cannot check it. Example:
+#[[llm.servers]]
+#name = "mlx"
+#url = "https://mac-pro.example.ts.net:11234"
+#private = false
+
 # --- sys: this Mac's health (CPU load, memory, disks, battery, thermal, uptime) and the
 # services it checks: "flick sys snapshot" and "flick sys services" (add --json for the
 # fields), and the fleet of [[sys.machine]] below: "flick sys fleet". All are read-only, so
