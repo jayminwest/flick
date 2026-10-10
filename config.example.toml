@@ -163,9 +163,11 @@
 #hotkey = "cmd+ctrl+alt+shift+KeyO"
 
 # --- llm: chat with OpenAI-compatible model servers (mlx-serve, ollama) on your tailnet.
-# Nothing runs until a server is listed. "flick llm ping [server]" checks one; "flick llm
-# models [server] [--json]" lists its models. Requests go through /usr/bin/curl with the
-# prompt on stdin, never in its arguments. Denied over the network.
+# Nothing runs until a server is listed. Then "Local Model Chat" in the launcher (or the
+# hotkey) opens the chat window; its cmd+K has Choose Model... and Chat History. "flick llm
+# ping [server]" checks a server; "flick llm models [server] [--json]" lists its models.
+# Requests go through /usr/bin/curl with the prompt on stdin, never in its arguments.
+# Denied over the network.
 #[llm]
 # The normal server a new chat uses; "" for the first normal server.
 #default_server = ""
@@ -175,6 +177,8 @@
 #system_prompt = ""
 # Keep normal chats in flick.db. Private chats are never kept.
 #history = true
+# The most normal chats kept; saving one past it drops the oldest (1 to 10000).
+#max_threads = 100
 # Token cap for each reply; 0 for the server's default.
 #max_tokens = 0
 # Seconds one reply may take (1 to 3600).

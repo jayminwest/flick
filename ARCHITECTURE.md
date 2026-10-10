@@ -194,7 +194,7 @@ Sources:
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
   modifier-release poll), `kota` (its poll round, its timer, its ask thread, and its menu
   bar item's picks and menu opens), `llm` (its model-list and reply-stream threads, at most
-  one undelivered event at a time).
+  one undelivered event at a time, and its chat window's handlers).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -416,6 +416,22 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   closed, `Event::Locked`, `Event::Sleep` (`wipe_on`), config reload, quit, by hand.
 - With no `[[llm.servers]]` nothing runs; `llm ping|models` start a fetch only when asked
   and wait for it at most 3.5 s on the main thread (the child runs on its thread).
+- Normal chat (`chat.rs`, `view.rs`, `views.rs`, flick-6a0d): with a normal server the root
+  item `llm:chat` (⌘K: `models` view, `threads` view) and `[llm] hotkey` show the
+  `platform::surface` "llm" (`Input::Multi`, not private, built on the first summon, never
+  at `Started` or in `configure`); the hotkey hides it when it has the keyboard and returns
+  no view. As with KOTA chat, the pid in front at summon is made frontmost again on hide if
+  it still is in front. Every surface handler queues a `chat::Note` in a static and posts
+  `ModuleChanged { module: "llm" }`; `on_event` drains the notes, then `Shared::take`s the
+  reply's pieces, then redraws if the window shows. Return sends the whole thread
+  (`system_prompt` first) through `openai::chat_body` and `io::chat`; one reply at a time.
+  ⌘. is `io::cancel` (the reply so far is kept as stopped), ⌘N a new thread (a reply in
+  flight is stopped and kept in its own), ⌘W hide. The model is the `models` view's pick,
+  else `default_model`, else the first one `/v1/models` lists (fetched on the first send; the
+  prompt waits for it). `models` lists `llm:model:<server>/<model>` from `State::models`,
+  refetched on open; a server's error row `llm:retry:<server>` refetches. `threads` lists
+  `llm:thread:<id>`. All window calls go through `chat::Ui` (`wire::UI`; fakes in
+  `testkit::UI`).
 
 ### Key tap
 
@@ -485,6 +501,12 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   as before. Trimming is per scope: unthreaded rows to `max_history`, each thread to
   `chat_history`, and the thread posted to plus the `chat_threads - 1` others with the newest
   message; a chat post never evicts unthreaded history.
+- `llm_threads` and `llm_messages` (owner `llm`, `src/modules/llm/store.rs`) hold the normal
+  chat (flick-6a0d): a thread's server, model, title and times; each message's `seq`, role
+  (`user`, `assistant`), model, body and `state` (NULL done, `'stopped'`, `'failed'` with
+  `error`). Written only with `[llm] history` on: a prompt when sent, a reply when it ends.
+  Each write moves its thread to the top and drops the oldest threads past `max_threads`
+  with their messages. The private chat has no path here.
 
 ## Config
 
