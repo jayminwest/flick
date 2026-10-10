@@ -1,6 +1,6 @@
 //! Core types every feature shares: items and their ids, outcomes, list views, forms,
 //! item actions and confirmations, the `Module` contract and its registry, ranking, the key
-//! engine, and the card model (`card`).
+//! engine, the card model (`card`) and the markdown-lite parser (`markup`).
 //! Plain Rust: no `crate::platform`, so everything here unit-tests without `AppKit`.
 
 mod action;
@@ -18,6 +18,14 @@ mod event;
 mod form;
 mod item;
 pub mod keys;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "styles, links and heading levels are first read by platform::surface render.rs (flick-59ea)"
+    )
+)]
+pub mod markup;
 mod module;
 mod rank;
 mod registry;
