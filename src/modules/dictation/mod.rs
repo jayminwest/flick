@@ -14,10 +14,22 @@
 //! (flick-a085) build on them.
 
 mod audio;
+#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) runs the workers"))]
+mod clip;
+#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) runs the workers"))]
+mod engine;
+#[cfg(test)]
+mod fake;
+#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) runs the workers"))]
+mod proc;
+#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) runs the workers"))]
+mod recorder;
 mod session;
 mod settings;
 mod transcript;
 mod wire;
+#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) runs the workers"))]
+mod worker;
 
 use std::path::{Path, PathBuf};
 
