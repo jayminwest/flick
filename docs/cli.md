@@ -20,7 +20,7 @@ flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
 ```
 
-The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. An error reply exits with status 1.
+The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. Exit status: 0 for an ok reply, 1 for an error reply (Flick answered and refused: fix the request), 3 when no reply came (Flick not running, host unreachable, connection dropped: try another way), 2 for a usage mistake.
 
 A request word that is exactly `--stdin` is replaced by everything the client reads from stdin, verbatim (no trimming), before the request is sent, locally or with `--host`. It keeps large or sensitive arguments off the command line: `printf %s "$json" | flick --host mac-studio message card post --stdin`. It may appear once, in any position; twice, or with stdin a terminal, is a usage error (exit 2). Empty stdin is an empty argument. More than 16 KiB (16384 bytes) or input that is not UTF-8 exits 1 without sending anything. Without the word, stdin is not read.
 
