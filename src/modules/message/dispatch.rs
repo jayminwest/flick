@@ -21,7 +21,8 @@
 //!   to KOTA as a reply action does (`dismiss` closes the card once the send succeeds). A
 //!   local part that fails shows its error and sends nothing.
 //! - A dismissal by the user or a timeout marks the card dismissed (plan risk 10) and drops
-//!   its press state; a run or send that ends afterwards is ignored.
+//!   its press state; a run or send that ends afterwards is ignored. A timed-out card still
+//!   counts as waiting on the user (`pending.rs`).
 //!
 //! Press state is in memory only; local output is never stored.
 
@@ -46,8 +47,11 @@ pub const NO_UPDATE: &str = "No update from KOTA";
 pub enum Note {
     /// An action button: card id, action id, values JSON.
     Press { card: String, action: String, values: String },
-    /// The user or a timeout dismissed the card with this id.
+    /// The user dismissed the card with this id.
     Dismissed(String),
+    /// The card with this id timed out: gone from the corner, still waiting on the user
+    /// (`pending.rs`).
+    Expired(String),
 }
 
 /// Where a press is.
@@ -135,6 +139,7 @@ impl Inbox {
                     let _ = self.press(&card, &action, values, cx);
                 }
                 Note::Dismissed(id) => self.forget(id),
+                Note::Expired(id) => self.expire(id),
             }
         }
         for done in self.worker.take() {

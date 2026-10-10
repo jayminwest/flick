@@ -142,7 +142,7 @@ impl Polling {
 /// Facts for `kota status` besides the presence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Extra {
-    /// Cards waiting on the user (flick-316c brings the count; 0 until then).
+    /// Cards waiting on the user (`Event::CardsPending`).
     pub pending: u32,
     pub polling: Polling,
 }

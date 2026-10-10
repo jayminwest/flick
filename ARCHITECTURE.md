@@ -143,7 +143,8 @@ the list, refreshed) or `Hide`.
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
 `ModuleChanged { module }`, `Chord { index, down }`, `WindowChanged { pid }`, `Sleep`,
 `Locked`, `Unlocked`, `TaskChanged { task }` (the `task` module's running task, posted with
-`events::post`). Each serializes as `{"event":"<snake_case>",...}`.
+`events::post`), `CardsPending { count }` (cards waiting on the user). Each serializes as
+`{"event":"<snake_case>",...}`.
 `ModuleChanged` is a module's background thread reporting progress (`events::post`); the
 named module's view is stale whatever its `on_event` returns. Root search lists every
 module's items, so a visible root search refreshes on any `ModuleChanged` too. Both refreshes
@@ -197,6 +198,14 @@ Sources:
   task id (`activity_spans.task`); `task` marks its views stale. `flick events` publishes it.
   The `task` timer is its own `core::track::Clock` on `Idle`/`Active`, `Sleep`/`Wake` and
   `Locked`/`Unlocked`, so a task's `task_time` and the activity spans tagged with it agree.
+- `CardsPending { count }` is the one link between `message` (which owns the cards) and
+  `kota` (its menu bar badge and `kota status`), which never reads the `messages` table.
+  Producer: `message` (`src/modules/message/pending.rs`), with `events::post` at `Started`
+  and after any drain or verb that changed the count. A card counts when it is `open` with
+  an enabled action (`Card::waits_on_user`), no send, KOTA wait or local run is in flight
+  for it, and the user has not dismissed it (a timeout does not count as a dismissal).
+  Dismissals are in memory, so a restart counts every stored open card again. Consumer:
+  `kota` keeps the last count. `flick events` publishes it.
 
 Flow: observer → `app::on_event` → `Registry::dispatch` (every module, registration order) →
 `control::publish` → refresh of a visible stale view. On `DisplaysChanged` the controller

@@ -164,3 +164,14 @@ fn verbs_and_unknown_commands() {
     assert_eq!(Kota::default().settings, Settings::default());
     assert!(unix_now() > 1_700_000_000);
 }
+
+#[test]
+fn cards_pending_feeds_status() {
+    let mut k = configured("").unwrap();
+    event(&mut k, Event::CardsPending { count: 2 });
+    let json: serde_json::Value = serde_json::from_str(&command(&mut k, &["status"], true).unwrap()).unwrap();
+    assert_eq!(json["pending"], 2);
+    assert!(command(&mut k, &["status"], false).unwrap().contains("\n2 waiting\n"));
+    event(&mut k, Event::CardsPending { count: 0 });
+    assert!(!command(&mut k, &["status"], false).unwrap().contains("waiting"));
+}

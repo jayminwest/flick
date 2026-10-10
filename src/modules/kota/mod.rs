@@ -55,6 +55,9 @@ pub struct Kota {
     started: bool,
     shared: Arc<Shared>,
     hooks: Hooks,
+    /// Cards waiting on the user, from the last `Event::CardsPending` (the `message`
+    /// module owns the cards).
+    pending: u32,
 }
 
 impl Default for Kota {
@@ -71,7 +74,7 @@ impl Drop for Kota {
 
 impl Kota {
     fn with_hooks(hooks: Hooks) -> Kota {
-        Kota { settings: Settings::default(), active: false, started: false, shared: Arc::default(), hooks }
+        Kota { settings: Settings::default(), active: false, started: false, shared: Arc::default(), hooks, pending: 0 }
     }
 
     /// Timed rounds run.
@@ -85,8 +88,7 @@ impl Kota {
             (true, 0) => Polling::OnDemand,
             (true, secs) => Polling::Every(secs),
         };
-        // flick-316c brings the count of cards waiting on the user.
-        let extra = Extra { pending: 0, polling };
+        let extra = Extra { pending: self.pending, polling };
         let p = self.shared.lock();
         if json {
             return view::status_json(&p.presence, extra).to_string();
@@ -124,8 +126,10 @@ impl Module for Kota {
     }
 
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        if event == Event::Started {
-            self.started = true;
+        match event {
+            Event::Started => self.started = true,
+            Event::CardsPending { count } => self.pending = count,
+            _ => {}
         }
         if !self.polling() {
             return false;
