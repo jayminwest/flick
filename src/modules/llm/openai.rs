@@ -1,6 +1,7 @@
-//! The `OpenAI` wire, pure: the chat request body, one server-sent-events line of a streamed
-//! reply (`chat.completion.chunk`, with content and reasoning deltas, the finish reason, the
-//! usage chunk and `[DONE]`), error bodies, and the `/v1/models` list. mlx-serve and ollama
+//! The `OpenAI` wire, pure: the chat request body, the server-sent events of a streamed reply
+//! (`chat.completion.chunk`, with content and reasoning deltas, the finish reason, the usage
+//! chunk and `[DONE]`; multi-line `data:` joined, flick-d73a), error bodies, and the
+//! `/v1/models` list. mlx-serve and ollama
 //! both speak it. Nothing here logs or keeps text: it only turns bytes into values.
 
 use serde::Serialize;
@@ -108,35 +109,85 @@ pub fn wipe_pieces(pieces: &mut Vec<Piece>) {
     pieces.clear();
 }
 
-/// One line of a reply.
+/// What one line of a reply completed.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Line {
-    /// Blank, an SSE comment (`: ping`) or a field the stream does not use (`event:`, `id:`).
+    /// Nothing yet: a `data:` line that may go on, a blank line ending no event, an SSE
+    /// comment (`: ping`) or a field the stream does not use (`event:`, `id:`).
     Skip,
-    /// A `data:` line and what it carried.
+    /// An event's data and what it carried.
     Data(Vec<Piece>),
     /// Not SSE at all: part of a plain (error) body.
     Other,
 }
 
-/// Read one line of a streamed reply (without its line end).
-pub fn sse_line(line: &str) -> Line {
-    let line = line.strip_suffix('\r').unwrap_or(line);
-    if line.is_empty() || line.starts_with(':') {
-        return Line::Skip;
+/// Reads a streamed reply line by line (`line`, then `finish`). As in the SSE spec, the
+/// `data:` lines up to a blank line are one event, joined with `\n`. A server that sends a
+/// whole chunk per `data:` line with no blank line between still streams: a new `data:`
+/// line after data that already reads as a whole chunk ends the event first (joining could
+/// not make it valid JSON anyway). Pending text is wiped once read and on drop.
+#[derive(Default)]
+pub struct Events {
+    data: String,
+    lines: usize,
+}
+
+impl Events {
+    /// Read one line (without its line end).
+    pub fn line(&mut self, line: &str) -> Line {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            return self.finish();
+        }
+        if line.starts_with(':') {
+            return Line::Skip;
+        }
+        let Some(data) = line.strip_prefix("data:") else {
+            let field = ["event:", "id:", "retry:"].iter().any(|f| line.starts_with(f));
+            return if field { Line::Skip } else { Line::Other };
+        };
+        let data = data.strip_prefix(' ').unwrap_or(data);
+        let done = if self.lines > 0 { chunk(&self.data).map(|p| self.take(p)) } else { None };
+        if self.lines > 0 {
+            self.data.push('\n');
+        }
+        self.data.push_str(data);
+        self.lines += 1;
+        done.unwrap_or(Line::Skip)
     }
-    let Some(data) = line.strip_prefix("data:") else {
-        let field = ["event:", "id:", "retry:"].iter().any(|f| line.starts_with(f));
-        return if field { Line::Skip } else { Line::Other };
-    };
-    let data = data.strip_prefix(' ').unwrap_or(data);
+
+    /// End the event in progress (a blank line, or the stream's end without one).
+    pub fn finish(&mut self) -> Line {
+        if self.lines == 0 {
+            return Line::Skip;
+        }
+        if self.data.trim().is_empty() {
+            return self.take(vec![]);
+        }
+        let pieces = chunk(&self.data).unwrap_or_else(|| vec![Piece::Error("unreadable stream chunk".into())]);
+        self.take(pieces)
+    }
+
+    /// Forget (and wipe) the pending data; `pieces` is what it carried.
+    fn take(&mut self, pieces: Vec<Piece>) -> Line {
+        wipe_string(&mut self.data);
+        self.lines = 0;
+        Line::Data(pieces)
+    }
+}
+
+impl Drop for Events {
+    fn drop(&mut self) {
+        wipe_string(&mut self.data);
+    }
+}
+
+/// One event's data as pieces; `None` when it is not one JSON value (or `[DONE]`).
+fn chunk(data: &str) -> Option<Vec<Piece>> {
     if data.trim() == "[DONE]" {
-        return Line::Data(vec![Piece::Done]);
+        return Some(vec![Piece::Done]);
     }
-    let Ok(chunk) = serde_json::from_str::<Value>(data) else {
-        return Line::Data(vec![Piece::Error("unreadable stream chunk".into())]);
-    };
-    Line::Data(pieces(&chunk))
+    serde_json::from_str::<Value>(data).ok().map(|c| pieces(&c))
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
@@ -236,15 +287,27 @@ mod tests {
     const MLX_ERROR: &str = include_str!("fixtures/mlx_serve_error.json");
     const OLLAMA_MODELS: &str = include_str!("fixtures/models_ollama.json");
 
+    /// Every piece of `stream`, read line by line as `io` does.
     fn all(stream: &str) -> Vec<Piece> {
-        stream
-            .lines()
-            .flat_map(|l| match sse_line(l) {
-                Line::Data(p) => p,
-                Line::Skip => vec![],
+        let mut events = Events::default();
+        let mut out = vec![];
+        for l in stream.split('\n').chain([""]) {
+            match events.line(l) {
+                Line::Data(p) => out.extend(p),
+                Line::Skip => {}
                 Line::Other => panic!("not sse: {l}"),
-            })
-            .collect()
+            }
+        }
+        out
+    }
+
+    /// One line that is a whole event: the line, then a blank line.
+    fn sse_line(line: &str) -> Line {
+        let mut events = Events::default();
+        match events.line(line) {
+            Line::Skip => events.line(""),
+            other => other,
+        }
     }
 
     #[test]
@@ -311,6 +374,38 @@ mod tests {
         assert_eq!(sse_line(r#"data: {"choices":[]}"#), Line::Data(vec![]));
         let null_usage = r#"data: {"choices":[{"delta":{"content":"a"},"finish_reason":null}],"usage":null}"#;
         assert_eq!(sse_line(null_usage), Line::Data(vec![Piece::Text("a".into())]));
+    }
+
+    #[test]
+    fn multi_line_data_joins_into_one_event() {
+        // A chunk split over two data lines (SSE joins them with \n, JSON whitespace).
+        let bad = "data: {\"choices\":\ndata: oops\n\n";
+        assert_eq!(all(bad), [Piece::Error("unreadable stream chunk".into())]);
+        let good = "data: {\"choices\":[{\"delta\":\ndata:  {\"content\":\"a\\nb\"}}]}\r\n\n: ping\ndata: [DONE]\n";
+        assert_eq!(all(good), [Piece::Text("a\nb".into()), Piece::Done]);
+        let mut events = Events::default();
+        assert_eq!(events.line("data: {\"choices\":"), Line::Skip);
+        assert_eq!(events.line("data: [{\"delta\":{\"content\":\"x\"}}]}"), Line::Skip);
+        assert_eq!(events.line("id: 7"), Line::Skip, "other fields do not end the event");
+        assert_eq!(events.line("\r"), Line::Data(vec![Piece::Text("x".into())]));
+        assert_eq!(events.line(""), Line::Skip, "a blank line with nothing pending");
+        // The stream's end ends an event left without its blank line.
+        assert_eq!(events.line("data: [DONE]"), Line::Skip);
+        assert_eq!(events.finish(), Line::Data(vec![Piece::Done]));
+        assert_eq!(events.finish(), Line::Skip);
+        // Empty data carries nothing.
+        assert_eq!(sse_line("data:"), Line::Data(vec![]));
+    }
+
+    #[test]
+    fn whole_chunks_without_blank_lines_still_stream() {
+        let mut events = Events::default();
+        let a = "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}";
+        let b = "data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}";
+        assert_eq!(events.line(a), Line::Skip);
+        assert_eq!(events.line(b), Line::Data(vec![Piece::Text("a".into())]));
+        assert_eq!(events.line("data: [DONE]"), Line::Data(vec![Piece::Text("b".into())]));
+        assert_eq!(events.finish(), Line::Data(vec![Piece::Done]));
     }
 
     #[test]
