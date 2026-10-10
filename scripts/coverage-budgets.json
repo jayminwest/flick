@@ -15,7 +15,7 @@
     "src/modules/activity/rules.rs": 100.0,
     "src/modules/activity/status.rs": 100.0,
     "src/modules/activity/store.rs": 100.0,
-    "src/modules/activity/urls.rs": 88.8,
+    "src/modules/activity/urls.rs": 90.4,
     "src/modules/apps/leftovers.rs": 100.0,
     "src/modules/bridge/agent.rs": 100.0,
     "src/modules/bridge/brief.rs": 100.0,

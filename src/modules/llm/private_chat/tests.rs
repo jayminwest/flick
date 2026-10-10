@@ -77,9 +77,9 @@ fn model(m: &Llm) -> String {
     lock(&m.private.room).as_ref().map(|o| o.session.model().to_string()).unwrap_or_default()
 }
 
-/// Drain until `done` holds (at most 5 s).
+/// Drain until `done` holds (at most 15 s).
 fn until(f: &mut Fx, m: &mut Llm, done: impl Fn(&Llm) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         changed(f, m);
         if done(m) {

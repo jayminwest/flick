@@ -135,6 +135,9 @@ fn a_jump_focuses_the_pane_and_records_a_failure() {
     wait("local focus", || server.calls().contains(&"agent.focus w1:p2".to_string()));
     jump(&sh, &t, "hub", "w1:p1", "WezTerm", HOOKS);
     wait("remote focus", || cli.args().contains(&"--machine hub agent focus w1:p1".to_string()));
+    // Each jump thread holds a clone of `sh` and stores its outcome last: let the hub jump end
+    // so its success cannot overwrite the failure below.
+    wait("the jumps to end", || Arc::strong_count(&sh) == 1);
     jump(&sh, &t, "off", "w1:p1", "WezTerm", HOOKS);
     wait("failure", || lock(&sh.info).jump.is_some());
     assert_eq!(lock(&sh.info).jump.as_deref(), Some("jump to off/w1:p1: off: unreachable"));

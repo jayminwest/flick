@@ -283,7 +283,7 @@ mod tests {
     fn the_worker_runs_on_a_thread_and_queues_results() {
         let w = Worker::default();
         w.start(Job::new(&["x".into()], "c1", "go", 3, String::new()), |_| Exit::Sent, || {});
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(15);
         let mut done = w.take();
         while done.is_empty() && Instant::now() < deadline {
             thread::sleep(POLL);

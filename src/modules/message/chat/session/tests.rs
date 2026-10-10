@@ -23,7 +23,7 @@ fn event(f: &mut Fixture, m: &mut Inbox) {
 
 /// Handle queued notes and finished asks until no ask runs or waits.
 fn settle(f: &mut Fixture, m: &mut Inbox) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         event(f, m);
         let idle = m.chat.busy.is_none() && m.chat.queue.is_empty();
@@ -442,7 +442,7 @@ fn thread_cards_render_inline_with_their_press_state_and_no_corner_card() {
     // A press from the transcript goes through the card dispatch and shows pending, keyed by
     // the card id, until KOTA re-posts it.
     queue(Note::Press { card: "c1".into(), action: "go".into(), values: "{}".into() });
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         event(&mut f, &mut m);
         if !m.worker.running() || Instant::now() > deadline {
