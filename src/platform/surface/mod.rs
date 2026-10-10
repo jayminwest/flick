@@ -6,9 +6,16 @@
 //!   nothing). `show` puts it on the screen under the pointer and makes it key; `hide`,
 //!   `is_visible`, `is_key`, `snapshot` (draws it to a PNG, for checks without Screen
 //!   Recording, mx-6b45b0).
-//! - Content: a header (`set_header`: title, subtitle, status dot), a rows area (filled by the
-//!   transcript step, flick-59ea), an optional notice line (`set_notice`), removable chips
-//!   (`set_chips`) and the input (`input`, `set_input`; `Input::Single` or `Input::Multi`).
+//! - Content: a header (`set_header`: title, subtitle, status dot), the transcript
+//!   (`set_rows`), an optional notice line (`set_notice`), removable chips (`set_chips`) and
+//!   the input (`input`, `set_input`; `Input::Single` or `Input::Multi`).
+//! - Transcript: `set_rows` replaces the rows (`Row::Bubble`, `Row::Card`, `Row::Divider`).
+//!   Redraws coalesce: the rows show 50 ms after the first call of a burst (or at once on
+//!   `show` and `snapshot`). A row whose kind, key and version match one already shown keeps
+//!   its views (and a card what the user typed); the rest are built anew. The view stays
+//!   scrolled to the bottom only if it was there. Bubbles hold selectable markdown-lite
+//!   (`render`: bold, italic, code, headings, bullets; only `http(s)` links open); cards are
+//!   drawn by the HUD's card renderer, and their presses reach `Handlers::card_action`.
 //! - Keys: the edit keys (⌘X/⌘C/⌘V/⌘A/⌘Z/⇧⌘Z) go to the input through `platform::edit`
 //!   before anything else. Every other ⌘ key, and Return, Escape, Up and Down in the input,
 //!   reach `Handlers::key` as a `Keystroke`; a key it does not take falls back to
@@ -19,14 +26,18 @@
 //!   the input first responder only when it is not already (mx-b73c04), so a redraw never
 //!   moves the caret.
 //! - Threading: main thread only. Handlers run on the main thread with no surface state
-//!   borrowed; `submit`, `chip_removed` and `closed` run on a later run loop turn (deferred
-//!   with `timer::after`), `key` runs synchronously because its answer decides the key's
-//!   fate. Handlers must only queue work or post an event, never borrow app state
+//!   borrowed; `submit`, `chip_removed`, `closed` and `card_action` run on a later run loop
+//!   turn (deferred with `timer::after`), `key` runs synchronously because its answer decides
+//!   the key's fate. Handlers must only queue work or post an event, never borrow app state
 //!   (mx-fcbc43). Surface functions may be called from inside a handler.
 
 mod geometry;
 mod input;
 mod keys;
+pub(super) mod render;
+pub mod rows;
+mod style;
+mod transcript;
 mod window;
 
 use std::cell::RefCell;
@@ -44,6 +55,8 @@ use geometry::{Parts, Rect};
 use input::ns_rect;
 use keys::Fallback;
 pub use keys::{Key, Keystroke};
+pub use rows::Row;
+use rows::{COALESCE_SECS, Owned};
 use window::{Views, ns};
 
 /// Which surface: a fixed name per use ("chat", "private", "fleet").
@@ -115,6 +128,10 @@ pub struct Handlers {
     pub chip_removed: fn(SurfaceId, usize),
     /// The user hid the surface (Escape, or blur with `hide_on_blur`); not after `hide`.
     pub closed: fn(SurfaceId),
+    /// A card row's button: the card id, the action id (or `hud::CANCEL` from a shell
+    /// confirm's Cancel) and the values JSON of its inputs (`core::card::action::values_json`).
+    /// A press whose values are over the cap never arrives; the card shows the error.
+    pub card_action: fn(SurfaceId, &str, &str, String),
 }
 
 struct Surface {
@@ -192,7 +209,7 @@ fn relayout(s: &Surface) {
     s.v.subtitle.setFrame(ns_rect(l.subtitle));
     s.v.dot.setFrame(ns_rect(l.dot));
     s.v.rule.setFrame(ns_rect(l.rule));
-    s.v.body.setFrame(ns_rect(l.body));
+    s.v.rows.set_frame(l.body);
     if let Some(n) = l.notice {
         s.v.notice.setFrame(ns_rect(n));
     }
@@ -218,6 +235,7 @@ pub fn open(id: SurfaceId, spec: &Spec, handlers: Handlers) {
         return;
     }
     privacy(spec.private);
+    super::hud::embed::on_press(card_pressed);
     let v = window::build(mtm(), spec, geometry::min_size(spec.min_size));
     let multi = spec.input == Input::Multi;
     let hide_on_blur = spec.hide_on_blur;
@@ -243,6 +261,7 @@ fn place(s: &Surface) {
 /// Flick does not activate: the app in front stays active.
 pub fn show(id: SurfaceId) {
     let Some(s) = get(id) else { return };
+    s.v.rows.flush();
     place(&s);
     s.v.panel.makeKeyAndOrderFront(None);
     let input = s.v.field.responder();
@@ -271,6 +290,7 @@ pub fn is_key(id: SurfaceId) -> bool {
 /// Draw `id`'s content into a PNG at `path`, shown or not.
 pub fn snapshot(id: SurfaceId, path: &str) -> Result<(), String> {
     let s = get(id).ok_or("no such surface")?;
+    s.v.rows.flush();
     let bounds = s.v.root.bounds();
     let rep =
         s.v.root.bitmapImageRepForCachingDisplayInRect(bounds).ok_or("can't create bitmap")?;
@@ -312,6 +332,29 @@ pub fn set_chips(id: SurfaceId, chips: &[Chip]) {
         old.removeFromSuperview();
     }
     relayout(&s);
+}
+
+/// Replace the transcript with `rows`, top to bottom (see the module docs).
+pub fn set_rows(id: SurfaceId, rows: &[Row]) {
+    let Some(s) = get(id) else { return };
+    if s.v.rows.set(rows.iter().map(Owned::new).collect()) {
+        timer::after(COALESCE_SECS, move || {
+            if let Some(s) = get(id) {
+                s.v.rows.flush();
+            }
+        });
+    }
+}
+
+/// A press on an embedded card (`hud::embed::on_press`): find its surface, then hand the
+/// press to `card_action`, or show the error if its values are over the cap.
+fn card_pressed(host: usize, tag: isize) {
+    let Some(s) = find(|s| s.v.rows.has_card(host)) else { return };
+    match s.v.rows.press(host, tag) {
+        Some((card, action, Ok(values))) => (s.handlers.card_action)(s.id, &card, &action, values),
+        Some((_, _, Err(why))) => s.v.rows.show_error(host, &why),
+        None => {}
+    }
 }
 
 /// The input's text as typed so far.

@@ -108,14 +108,18 @@ define_class!(
     unsafe impl NSTextFieldDelegate for Target {}
 
     impl Target {
-        // A button press. Deferred: the module may redraw the card, removing the sender while
-        // AppKit is still delivering its action.
+        // A button press, with the window and the view the card was drawn into (a push
+        // button's superview). Deferred: the module may redraw the card, removing the sender
+        // while AppKit is still delivering its action.
         #[unsafe(method(press:))]
         fn press(&self, sender: &NSButton) {
             let tag = sender.tag();
+            let addr = |v: &NSObject| std::ptr::from_ref(v).cast::<()>() as usize;
+            // SAFETY: the sender is in its superview while its action is delivered.
+            let host = unsafe { sender.superview() }.map_or(0, |v| addr(&v));
             if let Some(window) = sender.window() {
-                let window = Retained::as_ptr(&window).cast::<()>() as usize;
-                timer::after(0.0, move || super::pressed(window, tag));
+                let window = addr(&window);
+                timer::after(0.0, move || super::pressed(window, host, tag));
             }
         }
 
