@@ -1,13 +1,17 @@
-//! The activity module's tables, `activity_spans` and `activity_state`, and the only SQL
-//! that touches them.
+//! The activity module's tables, `activity_spans`, `activity_state` and
+//! `activity_phone_opens`, and the only SQL that touches them.
 
 use rusqlite::params;
 
 use crate::core::track::{Span, Subject};
 use crate::core::store::Store;
 
+use super::phone::PhoneOpen;
+
 /// Step 1 holds the `task` column for the tasks plan (flick-86be), so that plan needs no
-/// migration on this table. Step 2 adds the front tab `url` (`urls = true`). Append only.
+/// migration on this table. Step 2 adds the front tab `url` (`urls = true`). Step 3 adds the
+/// phone's app opens (`phone`), keyed by device and the phone's event id so a retry stores
+/// nothing twice; `reason` and `minutes` hold the phone's intention prompt. Append only.
 pub const MIGRATIONS: &[&str] = &[
     "CREATE TABLE activity_spans (
         id INTEGER PRIMARY KEY, start INTEGER NOT NULL, end INTEGER NOT NULL,
@@ -15,6 +19,11 @@ pub const MIGRATIONS: &[&str] = &[
     CREATE INDEX activity_spans_start ON activity_spans (start);
     CREATE TABLE activity_state (key TEXT PRIMARY KEY, value TEXT);",
     "ALTER TABLE activity_spans ADD COLUMN url TEXT;",
+    "CREATE TABLE activity_phone_opens (
+        device TEXT NOT NULL, event_id TEXT NOT NULL, app TEXT NOT NULL,
+        opened_at INTEGER NOT NULL, received_at INTEGER NOT NULL, reason TEXT, minutes INTEGER,
+        PRIMARY KEY (device, event_id));
+    CREATE INDEX activity_phone_opens_at ON activity_phone_opens (opened_at);",
 ];
 
 /// `activity_state` key of the recording flag ("1" on; anything else or missing is off).
@@ -164,8 +173,77 @@ impl Spans for Store {
         let conn = self.conn();
         let n = conn.execute("DELETE FROM activity_spans", []).unwrap_or(0);
         let _ = conn.execute("DELETE FROM activity_state", []);
+        let _ = conn.execute("DELETE FROM activity_phone_opens", []);
         let _ = conn.execute_batch("VACUUM");
         n
+    }
+}
+
+/// The phone's app opens on the shared store (`activity_phone_opens`).
+pub trait PhoneOpens {
+    /// Store `open`, received at `now`. `Ok(true)`: stored; `Ok(false)`: the same event was
+    /// already stored (a retry). `Err` names what differs, or the SQL error.
+    fn phone_add(&self, open: &PhoneOpen, now: i64) -> Result<bool, String>;
+    /// Opens at or after `from`, oldest first.
+    fn phone_opens(&self, from: i64) -> Vec<PhoneOpen>;
+    /// Delete opens at or after `ts`; how many.
+    fn phone_forget_since(&self, ts: i64) -> usize;
+    /// Delete opens of app `app`; how many.
+    fn phone_forget_app(&self, app: &str) -> usize;
+}
+
+const PHONE_COLUMNS: &str = "device, event_id, app, opened_at, reason, minutes";
+
+fn phone_row(r: &rusqlite::Row) -> rusqlite::Result<PhoneOpen> {
+    Ok(PhoneOpen {
+        device: r.get(0)?,
+        id: r.get(1)?,
+        app: r.get(2)?,
+        at: r.get(3)?,
+        reason: r.get(4)?,
+        minutes: r.get(5)?,
+    })
+}
+
+impl PhoneOpens for Store {
+    fn phone_add(&self, o: &PhoneOpen, now: i64) -> Result<bool, String> {
+        let conn = self.conn();
+        let failed = |e: rusqlite::Error| format!("activity: could not store the phone open: {e}");
+        let added = conn
+            .execute(
+                "INSERT INTO activity_phone_opens
+                 (device, event_id, app, opened_at, received_at, reason, minutes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT DO NOTHING",
+                params![o.device, o.id, o.app, o.at, now, o.reason, o.minutes],
+            )
+            .map_err(failed)?;
+        if added == 1 {
+            return Ok(true);
+        }
+        let sql = format!("SELECT {PHONE_COLUMNS} FROM activity_phone_opens WHERE device = ?1 AND event_id = ?2");
+        let stored = conn.query_row(&sql, [&o.device, &o.id], phone_row).map_err(failed)?;
+        if stored == *o {
+            Ok(false)
+        } else {
+            Err(format!("activity phone: event {} from {} is already stored with other fields", o.id, o.device))
+        }
+    }
+
+    fn phone_opens(&self, from: i64) -> Vec<PhoneOpen> {
+        let sql = format!(
+            "SELECT {PHONE_COLUMNS} FROM activity_phone_opens WHERE opened_at >= ?1
+             ORDER BY opened_at, device, event_id"
+        );
+        let Ok(mut stmt) = self.conn().prepare(&sql) else { return vec![] };
+        stmt.query_map([from], phone_row).map(|rows| rows.flatten().collect()).unwrap_or_default()
+    }
+
+    fn phone_forget_since(&self, ts: i64) -> usize {
+        self.conn().execute("DELETE FROM activity_phone_opens WHERE opened_at >= ?1", [ts]).unwrap_or(0)
+    }
+
+    fn phone_forget_app(&self, app: &str) -> usize {
+        self.conn().execute("DELETE FROM activity_phone_opens WHERE app = ?1", [app]).unwrap_or(0)
     }
 }
 
@@ -225,6 +303,19 @@ mod tests {
         s.conn().execute("INSERT INTO activity_spans (start, end, app, name) VALUES (1, 5, 'a', 'A')", []).unwrap();
         s.migrate("activity", MIGRATIONS).unwrap();
         assert_eq!(s.spans(0, 9)[0].subject, Subject::new("a", "A", None, None));
+    }
+
+    #[test]
+    fn step_three_adds_the_phone_table_beside_old_rows() {
+        let s = Store::in_memory();
+        s.migrate("activity", &MIGRATIONS[..2]).unwrap();
+        s.conn().execute("INSERT INTO activity_spans (start, end, app, name) VALUES (1, 5, 'a', 'A')", []).unwrap();
+        assert!(s.phone_opens(0).is_empty() && s.phone_forget_app("x") == 0);
+        s.migrate("activity", MIGRATIONS).unwrap();
+        let open = PhoneOpen { device: "p".into(), id: "1".into(), app: "X".into(), at: 3, reason: None, minutes: Some(5) };
+        assert_eq!(s.phone_add(&open, 9), Ok(true));
+        assert_eq!((s.spans(0, 9).len(), s.phone_opens(3)), (1, vec![open]));
+        assert!(s.phone_opens(4).is_empty());
     }
 
     #[test]

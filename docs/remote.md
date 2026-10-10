@@ -15,8 +15,45 @@ flick --json remote status | jq .ok.last
 ```
 
 - **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
-- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, `task rm`, `script run`, `message card press` or `card focus`, any `dictation` or `llm` verb, `kota ask`, or `sys restart`, `sys tail` or `sys window`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, `kota status` and `refresh`, `sys snapshot`, `services` and `fleet`, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, `task rm`, `script run`, `message card press` or `card focus`, any `dictation` or `llm` verb, `kota ask`, or `sys restart`, `sys tail` or `sys window`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`); a phone adds its app opens with `activity phone add` without it ([Phone events](#phone-events)). Everything else (tasks, herdr, `kota status` and `refresh`, `sys snapshot`, `services` and `fleet`, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
 - **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
+
+## Phone events
+
+flick-ios (`../flick-ios`) sends one event per app open on the iPhone, so KOTA can read phone use through Flick next to the Mac's [activity](activity.md). The receiver is the Mac Pro (`jaymins-mac-pro`): it is always on. This section is the wire contract; flick-ios follows it.
+
+Setup on the receiver: put the iPhone's Tailscale machine name in `[remote] peers` (`tailscale status` lists it, for example `jaymins-iphone`), reload, and run `flick remote on` once. Adding opens needs no activity grant and works with activity recording off. KOTA reads them like Mac activity: `flick --host jaymins-mac-pro activity today --json --remote`, with KOTA's Mac in `peers` and `flick activity remote allow` on the receiver.
+
+**Transport.** TCP to `jaymins-mac-pro:7419` (the receiver's `[remote] port`). A request is one line: a JSON array of strings in UTF-8, then `\n`, at most 64 KiB. The reply is one line, `{"ok":...}` or `{"error":"..."}`. One connection may carry many requests: send one line, read its reply, then send the next. Flick closes a connection after 30 s without a request. A peer not in `peers` is closed before any reply.
+
+**Request.**
+
+```json
+["activity","phone","add","--id","6F1C2B9E-6F0B-4C55-9F0A-2D5C3B7E8A10","--device","jaymins-iphone","--app","com.apple.mobilesafari","--at","1760112000","--json"]
+```
+
+Flags may come in any order, each once. `--json` is optional and must be the last word; without it the reply is a text line (`Stored phone open <id> from <device>` or `Already stored phone open <id> from <device>`).
+
+| Flag | Required | Rule |
+|---|---|---|
+| `--id` | yes | The phone's id for this event, the same on every retry. 1 to 64 characters of `A-Z a-z 0-9 . _ - :`. A UUID string fits. |
+| `--device` | yes | The phone's name: its Tailscale machine name by convention (`jaymins-iphone`). 1 to 64 characters of `A-Z a-z 0-9 . _ -`. Ids are unique per device. Flick does not check it against the peer's Tailscale name. |
+| `--app` | yes | Bundle id or app name, as the phone knows it (`com.apple.mobilesafari`, `Instagram`). 1 to 128 characters, no control characters (tab, newline), no space at either end. |
+| `--at` | yes | When the app opened: unix seconds, digits only (no sign, fraction or milliseconds). At most 30 days before the receiver's clock and 5 min after it. |
+| `--reason` | no | The intention prompt's answer. 1 to 280 characters, the same rules as `--app`. |
+| `--minutes` | no | Minutes the prompt granted, digits only, 1 to 1440. |
+
+**Replies and retries.** The phone keeps each open in its queue until it gets one of these:
+
+| Reply | Meaning | Phone |
+|---|---|---|
+| `{"ok":{"device":"jaymins-iphone","id":"6F1C...","stored":true}}` | Stored. | Drop it from the queue. |
+| `{"ok":{...,"stored":false}}` | The same event (same device and id, same fields) was already stored: an earlier send got through but its reply did not. | Drop it. |
+| `{"error":"activity phone: ..."}` | Refused for good: a bad field (`activity phone: bad --at: ...`), or the id is stored with other fields. A retry gives the same answer. | Drop it and log the error. |
+| any other `{"error":...}` | The receiver cannot take it now: an older Flick (`activity: unknown command "phone"`), activity disabled (`unknown module "activity"`), a database error (`activity: could not store the phone open: ...`). | Keep it; retry later. |
+| no reply (cannot connect, closed, timeout) | Network access off, Tailscale down, receiver asleep, not in `peers`. | Keep it; retry later. |
+
+To test from a Mac peer: `flick --host jaymins-mac-pro activity phone add --id t1 --device test --app flick-test --at $(date +%s)`, then `flick activity forget app flick-test --yes` on the receiver.
 
 ## Peers for the fleet
 
@@ -102,6 +139,13 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
    activity today` is refused with activity's `remote use not permitted` text. On the host,
    run `flick activity remote allow`; the same request from the peer now answers. Revoke the
    grant afterwards.
+7a. **Phone events.** With no activity grant, from the peer: `flick --host <host> activity
+   phone add --id t1 --device test --app flick-test --at $(date +%s)` prints `Stored phone open
+   t1 from test`; the same request with the same `--at` number prints `Already stored ...`,
+   with another `--at` it prints `... is already stored with other fields`; with `--at 1` it prints
+   `flick: activity phone: bad --at: ...` and exits 1. On the host, `flick activity spans`
+   lists `<time>\topen\tflick-test\tflick-test\ttest`. Clean up with `flick activity forget app
+   flick-test --yes`.
 8. **Toggle off closes the listener.** Keep `flick --host <host> events` streaming on the
    peer (with `events = true`). On the host, run `flick remote off` (or **Turn Off Network
    Access**). The stream on the peer ends; `lsof -nP -iTCP | grep -i flick` on the host

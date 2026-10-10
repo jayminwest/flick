@@ -29,6 +29,7 @@ flick activity spans --since 2026-10-01   # <start>\t<duration>\t<app>\t<bundle 
 flick --json activity today | jq .ok.by_app
 flick activity forget today --yes  # also: forget all --yes, forget app <bundle id> --yes
 flick activity remote allow 30     # agents may read reports for 30 min; also: allow always, deny, status
+flick activity phone add --id <id> --device <name> --app <app> --at <unix secs>   # a phone's app open (flick-ios)
 ```
 
 Privacy:
@@ -37,11 +38,23 @@ Privacy:
 - **URLs.** Only with `urls = true`, a span in Brave, Chrome, Edge or Chromium also stores the front tab's URL (at most 2048 characters), and reports list the top domains. Flick asks the browser through AppleScript when it comes to the front or its window or title changes (the window is followed as for titles, so tab switches need Accessibility too). A private (incognito) window gives no URL. Safari and Arc are not supported: Flick cannot tell their private windows, so it never asks them. Safari's AppleScript dictionary has no private-window property; the only workaround reads a localized Window menu label through System Events, which needs extra permissions, works only while Safari is active and can guess wrong. Arc's dictionary accepts `incognito` when a script makes a window, but no documentation shows it as a property a script can read back, and Arc windows have no `mode`. Each browser asks once for Automation permission; if you deny it, `flick activity status` says `urls: no Automation permission for Brave Browser`, the Activity Today footer names the browser, and its spans have no URL (allow it again in System Settings > Privacy & Security > Automation). URLs keep their query strings, which can hold tokens; `exclude` the browser or leave `urls` off if that matters.
 - **Not recorded.** Apps in `exclude` (matched by bundle id or name) leave a gap, not a row. Setting `exclude` replaces the default list, so keep the password managers in it. Idle time (60 s without input; the span ends at the last input), a locked screen and sleep are not recorded either.
 - **Agents.** An agent session (`--remote`, or a peer over [remote access](remote.md)) reads `today`, `week` and `spans` only while you allow it: `flick activity remote allow [<minutes>|always]` (60 min without an argument) or **Allow Agents to Read Activity (1 h)** in the launcher. `flick activity remote deny`, or the same item, revokes it. `flick activity status` shows the grant as `remote: off`, `remote: on · 42 min left` or `remote: on · until revoked`; `flick activity remote status` also gives the last read. Agents never turn recording on or off, forget, or change the grant. Their replies leave out titles unless `remote_titles = true`, and URLs and domains unless `remote_urls = true`. The grant guards against accidents, not against a hostile agent: `--remote` is a word the caller sends.
-- **Where.** Tables `activity_spans` and `activity_state` in `~/Library/Application Support/Flick/flick.db`. The module has no network code. The only way in from outside is the mode-0600 control socket.
-- **Delete.** `flick activity forget today|all|app <bundle id> --yes`. `forget all` empties both tables, turns recording off and runs `VACUUM`, so the rows leave the file. Data stays until you delete it.
+- **Where.** Tables `activity_spans`, `activity_state` and `activity_phone_opens` in `~/Library/Application Support/Flick/flick.db`. The module has no network code. The ways in from outside are the mode-0600 control socket and, with [network access](remote.md) on, the peers in `[remote] peers`.
+- **Delete.** `flick activity forget today|all|app <bundle id> --yes`, phone opens included (`app` matches the phone's app string). `forget all` empties all three tables, turns recording off and runs `VACUUM`, so the rows leave the file. Data stays until you delete it.
 - **Rules** apply when a report runs and are never stored, so a rule edit regroups past spans too.
 
 Limits: idle detection runs every 5 s, so it can lag by that much, and a long video with no input counts as idle. A crash loses the time since the last event. Quit (**Quit Flick**, SIGTERM from launchd or `kill`) closes the open span. [docs/activity.md](activity.md) has a manual test checklist.
+
+## Phone opens
+
+flick-ios on the iPhone sends one event per app open to this Mac over [network access](remote.md#phone-events) (`activity phone add`; the wire contract and retry rules are there). Each open is a device name, the phone's event id, the app (bundle id or name), the open time and, from a later intention prompt, a reason and granted minutes. A retry of the same event stores nothing new. Opens are stored whether or not recording is on; adding needs no grant, since it reads nothing back.
+
+Reports list opens next to this Mac's spans, under the same grant for agents:
+
+- `today` and `week` end with a `Phone opens (<n>)` section, opens per app. In `--json` it is `phone: {"opens": <n>, "by_app": [{"name", "opens"}]}`. Opens add no time to `recorded_secs` or the totals.
+- `spans` lists each open at its time as `<start>\topen\t<app>\t<app>\t<device>`. In `--json` every entry has `source` (`"mac"` or `"phone"`), `device`, `reason` and `minutes` (null for Mac spans); an open has `start` = `end`, `secs` 0, `app` = `name`, and the category and project of the first `[[activity.rules]]` entry whose `app` matches the phone's app string.
+- Agent replies keep `reason` (the user types it for this purpose); `remote_titles` does not apply to it.
+
+The phone's app string is not a Mac bundle id, so a rule for a Mac app does not match its phone app unless its regex covers both (`app = "safari"` matches `com.apple.Safari` and `com.apple.mobilesafari`).
 
 ## Manual tests
 
