@@ -45,7 +45,8 @@ Flick merges the overlay over config.toml:
 - An overlay cannot remove a key. A module that a table in config.toml turns on stays on, unless the module has its own switch (`enabled = false` turns any module off). Some modules turn on as soon as their table has a key (`[kota]`, `[keys]`, `[dictation]`): put those tables only in the overlays of the Macs that use them, never in the shared file.
 - Old flat keys (`[[quicklinks]]`, ...) map in each file before the merge.
 - No overlay file: Flick reads config.toml alone, as before. An error in the overlay names the overlay file, and like a bad config.toml it means defaults at startup and no change on reload.
-- Reload (**Reload Flick Config**, `flick reload`) reads both files again, so a new overlay applies on the next reload. Flick does not watch either file. Edits that Flick makes (quicklinks, Raycast import) go to config.toml.
+- Reload (**Reload Flick Config**, `flick reload`) reads both files again, so a new overlay applies on the next reload. Flick does not watch either file.
+- **Open Flick Config** opens config.toml and, when it exists, this Mac's overlay. Edits that Flick makes (quicklinks, Raycast import) go to the file that sets the list: the overlay when it has `[[quicklink.links]]` (its list replaces the shared one), else config.toml. See [Files managed by Nix](#files-managed-by-nix).
 
 Example for a laptop and a server sharing config.toml:
 
@@ -93,6 +94,13 @@ Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `K
 
 Each module's settings are in its own page: [script commands](scripts.md), [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [KOTA](kota.md), [system and fleet](sys.md), [dictation](dictation.md), [capture](capture.md), [feedback](feedback.md), [messages](message.md), [remote](remote.md), and [rebuild](install.md#rebuild-settings).
 
+## Files managed by Nix
+
+home-manager can link config.toml and the overlay into the read-only Nix store. Flick follows each symlink to the real file:
+
+- An out-of-store link (`config.lib.file.mkOutOfStoreSymlink`) ends at a writable file, such as the copy in your dotfiles. **Open Flick Config** opens that file, and quicklink edits write it.
+- A file built into the store (`source = ./config.toml`) is read-only. A quicklink edit fails and says so: `<path>: not edited, it links to /nix/store/... in the read-only Nix store; edit the file your Nix (home-manager) config builds it from, rebuild, then run Reload Flick Config`. **Open Flick Config** still opens the file, and the launcher footer says that it is read-only.
+
 ## Launcher appearance
 
 `[launcher]` sets how the launcher panel looks. It is not a module, so it has no `enabled` key.
@@ -110,7 +118,7 @@ Status icons in some rows have a color: green for running, done or healthy, oran
 
 ### Create and edit
 
-Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to edit or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml and keeps all other text in the file, comments included. The change applies at once, without a reload. A renamed link loses its usage history.
+Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to edit or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml, or to this Mac's [overlay](#per-host-overlay) when the overlay sets `[[quicklink.links]]`, and keeps all other text in the file, comments included. A file in the read-only Nix store is not changed; see [Files managed by Nix](#files-managed-by-nix). The change applies at once, without a reload. A renamed link loses its usage history.
 
 ### Import from Raycast
 
@@ -120,7 +128,7 @@ In Raycast, run **Export Quicklinks**. Then:
 ~/Applications/Flick.app/Contents/MacOS/Flick import-raycast ~/Downloads/Quicklinks*.json
 ```
 
-Flick appends the links to the config file as `[[quicklink.links]]` entries. It changes `{argument}` placeholders to `{query}` and skips links with the same name or URL as an existing link. It reports placeholders that it cannot fill, such as `{clipboard}`.
+Flick appends the links as `[[quicklink.links]]` entries to the file that holds the links (config.toml, or the overlay when it sets them). It changes `{argument}` placeholders to `{query}` and skips links with the same name or URL as an existing link. It reports placeholders that it cannot fill, such as `{clipboard}`.
 
 ## Launcher keys
 

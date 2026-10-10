@@ -1,6 +1,7 @@
 //! Module `quicklink`: configured links in root search, and the view that takes a link's
 //! argument. Ids are `quicklink:<name>`; the typed query rides in the id's `arg`. The
-//! editor (`editor.rs`) adds, edits and removes links in config.toml.
+//! editor (`editor.rs`) adds, edits and removes links in config.toml, or in the per-host
+//! overlay when the overlay sets the list.
 
 mod editor;
 mod link;
@@ -25,8 +26,9 @@ struct Settings {
 #[derive(Default)]
 pub struct Quicklinks {
     links: Vec<Quicklink>,
-    /// The file the editor writes; `None` is config.toml. Tests point it at a temp file.
-    file: Option<PathBuf>,
+    /// The config file and overlay host the editor writes; `None` is config.toml and this
+    /// Mac's overlay. Tests point it at temp files.
+    file: Option<(PathBuf, Option<String>)>,
 }
 
 impl Quicklinks {
