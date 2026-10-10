@@ -1,12 +1,13 @@
 //! Fakes for the module's tests. `run` answers from fixtures by argv, so no test runs
 //! herdr, curl or Flick; `feed` stands in for ssh; `sleep` stands 1 s for 20 ms, so timers
-//! fire within a test.
+//! fire within a test. `UI` logs the menu bar item's calls instead of making them.
 
 use std::cell::{Cell, RefCell};
 use std::thread;
 use std::time::Duration;
 
 use super::io::Hooks;
+use super::item::Ui;
 use super::run::Exit;
 
 /// `herdr agent list` on mbp-server (2026-10-10): the KOTA pane, working.
@@ -35,7 +36,20 @@ pub fn exit(code: i32, stdout: &str, stderr: &str) -> Result<Exit, String> {
 /// The fake path of this binary.
 pub const EXE: &str = "/fake/Flick";
 
+pub const UI: Ui = Ui {
+    show: |title, tooltip, menu| ui(format!("show {title} | {tooltip} | {} rows", menu.len())),
+    hide: || ui("hide".into()),
+    listen: || ui("listen".into()),
+    take: || QUEUED.with(|q| std::mem::take(&mut *q.borrow_mut())),
+    notify: |title, body| ui(format!("notify {title}: {body}")),
+    open_url: |url| ui(format!("open {url}")),
+};
+
 thread_local! {
+    /// The item's calls on this thread, in order.
+    static UI_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Menu picks and opens waiting for `UI.take`.
+    static QUEUED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// Child calls on this thread, in order: `run <argv>` or `feed <argv> <<stdin`.
     static CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// Self-calls that answer busy before the next one works.
@@ -50,6 +64,20 @@ pub fn take_calls() -> Vec<String> {
 /// The next `n` self-calls on this thread find Flick busy.
 pub fn set_busy(n: u32) {
     BUSY.set(n);
+}
+
+/// The item's calls on this thread since the last take.
+pub fn take_ui() -> Vec<String> {
+    UI_CALLS.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
+
+/// A menu pick (or `item::MENU_OPENED`), as the menu's handler queues it.
+pub fn queue(key: &str) {
+    QUEUED.with(|q| q.borrow_mut().push(key.to_string()));
+}
+
+fn ui(line: String) {
+    UI_CALLS.with(|c| c.borrow_mut().push(line));
 }
 
 fn call(line: String) {

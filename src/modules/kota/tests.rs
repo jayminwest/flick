@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use testkit::HOOKS;
 
 pub(super) fn configured(text: &str) -> Result<Kota, String> {
-    let mut k = Kota::with_hooks(HOOKS);
+    let mut k = Kota::with_hooks(HOOKS, testkit::UI);
     k.configure(&parse(text)?.section(ID)?.ok_or("disabled")?)?;
     Ok(k)
 }

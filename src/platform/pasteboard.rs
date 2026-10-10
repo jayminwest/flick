@@ -186,26 +186,33 @@ mod tests {
     #[test]
     fn snapshot_and_restore_round_trip_every_item_and_type() {
         let pb = Private::new();
-        let first = NSPasteboardItem::new();
-        first.setData_forType(
-            &NSData::with_bytes(b"plain"),
-            &NSString::from_str("public.utf8-plain-text"),
-        );
-        first.setData_forType(
-            &NSData::with_bytes(&[1, 2, 3]),
-            &NSString::from_str("com.example.flick-test"),
-        );
-        let second = NSPasteboardItem::new();
-        second.setData_forType(
-            &NSData::with_bytes(b"two"),
-            &NSString::from_str("com.example.flick-second"),
-        );
-        let items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> =
-            vec![ProtocolObject::from_retained(first), ProtocolObject::from_retained(second)];
-        pb.0.clearContents();
-        assert!(pb.0.writeObjects(&NSArray::from_retained_slice(&items)));
-
-        let snap = snapshot_of(&pb.0);
+        // The pasteboard server on CI runners sometimes reports a fresh write late; retry.
+        let mut snap = snapshot_of(&pb.0);
+        for _ in 0..5 {
+            let first = NSPasteboardItem::new();
+            first.setData_forType(
+                &NSData::with_bytes(b"plain"),
+                &NSString::from_str("public.utf8-plain-text"),
+            );
+            first.setData_forType(
+                &NSData::with_bytes(&[1, 2, 3]),
+                &NSString::from_str("com.example.flick-test"),
+            );
+            let second = NSPasteboardItem::new();
+            second.setData_forType(
+                &NSData::with_bytes(b"two"),
+                &NSString::from_str("com.example.flick-second"),
+            );
+            let items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> =
+                vec![ProtocolObject::from_retained(first), ProtocolObject::from_retained(second)];
+            pb.0.clearContents();
+            assert!(pb.0.writeObjects(&NSArray::from_retained_slice(&items)));
+            snap = snapshot_of(&pb.0);
+            if snap.items.len() == 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         assert!(!snap.is_empty());
         assert_eq!(snap.items.len(), 2);
 

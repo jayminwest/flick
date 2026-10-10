@@ -21,15 +21,12 @@ use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 #[derive(Clone, Copy, Debug)]
 pub enum Entry<'a> {
     /// A disabled line of text.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the kota status item uses it in flick-78b9"))]
     Info(&'a str),
     /// A divider line.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the kota status item uses it in flick-78b9"))]
     Separator,
     /// Calls the owner's pick handler with `key`.
     Pick { title: &'a str, key: &'a str },
     /// Runs module `module`'s hotkey `key` through the opener `set_opener` installed.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the kota status item uses it in flick-78b9"))]
     Open { title: &'a str, module: &'a str, key: &'a str },
 }
 
@@ -113,13 +110,12 @@ thread_local! {
 }
 
 /// Show `owner`'s item with `symbol` as its title ("●"), `tooltip`, and `menu`. Calling it
-/// again while shown updates the same item in place. A `Pick` row calls `on_pick(key)`.
+/// again while shown updates the same item and menu in place, so an open menu shows the
+/// new rows. A `Pick` row calls `on_pick(key)`.
 pub fn show(owner: &'static str, symbol: &str, tooltip: &str, menu: &[Entry], on_pick: fn(&str)) {
     let mtm = super::mtm();
     let target = TARGET.with(|t| t.get_or_init(|| new_target(mtm)).clone());
-    let ns_menu = NSMenu::new(mtm);
-    ns_menu.setDelegate(Some(ProtocolObject::from_ref(&*target)));
-    let item = OWNERS.with_borrow_mut(|owners| {
+    let (item, ns_menu) = OWNERS.with_borrow_mut(|owners| {
         let slot = slot(owners, owner);
         let o = &mut owners[slot];
         o.on_pick = on_pick;
@@ -127,10 +123,16 @@ pub fn show(owner: &'static str, symbol: &str, tooltip: &str, menu: &[Entry], on
         let item = o.item.get_or_insert_with(|| {
             NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength)
         });
+        let ns_menu = item.menu(mtm).unwrap_or_else(|| {
+            let m = NSMenu::new(mtm);
+            m.setDelegate(Some(ProtocolObject::from_ref(&*target)));
+            m
+        });
+        ns_menu.removeAllItems();
         for (row, entry) in menu.iter().enumerate() {
             ns_menu.addItem(&menu_item(mtm, &target, entry, tag(slot, row)));
         }
-        item.clone()
+        (item.clone(), ns_menu)
     });
     if let Some(button) = item.button(mtm) {
         button.setTitle(&NSString::from_str(symbol));
@@ -154,10 +156,6 @@ pub fn hide(owner: &str) {
 
 /// Call `hook` each time `owner`'s menu is about to open (before or after `show`). It runs
 /// while `AppKit` tracks the menu: set a flag and post an event, never borrow app state.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the kota status item polls on open in flick-78b9")
-)]
 pub fn on_menu_open(owner: &'static str, hook: fn()) {
     OWNERS.with_borrow_mut(|owners| {
         let slot = slot(owners, owner);
