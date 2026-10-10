@@ -8,14 +8,21 @@
 //! (launchd only, `settings.rs`) and a destructive confirm showing the exact command; tail
 //! needs `log`. The only commands are `launchctl kickstart -k gui/<uid>/<label>` and
 //! `tail -n TAIL_LINES -- <log>`, with the label and path quoted as one shell word over ssh.
+//! A `domain = "system"` daemon (flick-1356) restarts with
+//! `sudo -n launchctl kickstart -k system/<label>`, and its tail runs again through
+//! `sudo -n` when the plain one is denied. `sudo -n` never prompts: when it would need a
+//! password the result says `SUDO_NEEDS_PASSWORD`.
 
 use super::ID;
 use super::fleet::Fleet;
 use super::io::Entry;
 use super::run::Exit;
-use super::settings::{Machine, Service, Via};
+use super::settings::{Domain, Machine, Service, Via};
 use super::ssh;
 use crate::core::{Action, Confirm, ConfirmRow, Icon};
+
+/// The prefix of a `system` daemon's commands here: never prompts (`-n`).
+const SUDO: [&str; 2] = ["/usr/bin/sudo", "-n"];
 
 /// Lines a tail reads.
 pub const TAIL_LINES: u32 = 100;
@@ -88,22 +95,34 @@ impl Target {
     }
 
     /// The restart: `launchctl kickstart -k gui/<uid>/<label>`, here with `uid` (this
-    /// user's), over ssh with the remote user's.
+    /// user's), over ssh with the remote user's. A `system` daemon's is
+    /// `sudo -n launchctl kickstart -k system/<label>`: it never asks for a password.
     pub fn restart(&self, uid: Option<u32>) -> Result<Run, String> {
         if !self.service.restart {
             return Err(format!("sys: {} may not be restarted (set restart = true on a launchd service)", self.what()));
         }
         let label = self.service.word();
+        let system = self.service.domain == Domain::System;
+        let sudo = if system { "sudo -n " } else { "" };
         match &self.place {
             Place::Local => {
-                let uid = uid.ok_or("sys: no uid for the launchd domain")?;
-                let target = format!("gui/{uid}/{label}");
-                let shown = format!("launchctl kickstart -k {target}");
-                Ok(Run { argv: words(&["/bin/launchctl", "kickstart", "-k", &target]), input: None, shown })
+                let domain = match uid {
+                    _ if system => self.service.launchd_domain(""),
+                    Some(uid) => self.service.launchd_domain(&uid.to_string()),
+                    None => return Err("sys: no uid for the launchd domain".into()),
+                };
+                let target = format!("{domain}/{label}");
+                let shown = format!("{sudo}launchctl kickstart -k {target}");
+                let kick = ["/bin/launchctl", "kickstart", "-k", &target];
+                let argv = if system { words(&[&SUDO[..], &kick].concat()) } else { words(&kick) };
+                Ok(Run { argv, input: None, shown })
             }
             Place::Ssh(dest) => {
-                let script = format!("exec /bin/launchctl kickstart -k \"gui/$(/usr/bin/id -u)/\"{}\n", quote(label));
-                let shown = format!("ssh {dest} launchctl kickstart -k gui/$(id -u)/{label}");
+                let domain = self.service.launchd_domain("$(/usr/bin/id -u)");
+                let prefix = if system { "/usr/bin/sudo -n " } else { "" };
+                let script = format!("exec {prefix}/bin/launchctl kickstart -k \"{domain}/\"{}\n", quote(label));
+                let domain = self.service.launchd_domain("$(id -u)");
+                let shown = format!("ssh {dest} {sudo}launchctl kickstart -k {domain}/{label}");
                 Ok(Run { argv: ssh::argv(dest), input: Some(script), shown })
             }
         }
@@ -112,6 +131,17 @@ impl Target {
     /// The tail: `tail -n TAIL_LINES -- <log>`; a `~/` path is under `home` here, under the
     /// remote `$HOME` over ssh.
     pub fn tail(&self, home: &str) -> Result<Run, String> {
+        self.tail_as(home, false)
+    }
+
+    /// A `system` daemon's tail again through `sudo -n`, for a log only root may read
+    /// (`jobs::tail` runs it after the plain tail is denied). `None` for other services.
+    pub fn sudo_tail(&self, home: &str) -> Option<Run> {
+        (self.service.domain == Domain::System).then(|| self.tail_as(home, true).ok()).flatten()
+    }
+
+    fn tail_as(&self, home: &str, sudo: bool) -> Result<Run, String> {
+        let (shown_sudo, sudo_path) = if sudo { ("sudo -n ", "/usr/bin/sudo -n ") } else { ("", "") };
         let log = self.service.log.as_deref().map(str::trim).unwrap_or_default();
         if log.is_empty() {
             return Err(format!("sys: {} has no log (set log = \"<path>\")", self.what()));
@@ -124,13 +154,16 @@ impl Target {
         match &self.place {
             Place::Local => {
                 let path = rest.map_or_else(|| log.to_string(), |r| format!("{}/{r}", home.trim_end_matches('/')));
-                let shown = format!("tail -n {n} {path}");
-                Ok(Run { argv: words(&["/usr/bin/tail", "-n", &n, "--", &path]), input: None, shown })
+                let shown = format!("{shown_sudo}tail -n {n} {path}");
+                let tail = ["/usr/bin/tail", "-n", &n, "--", &path];
+                let argv = if sudo { words(&[&SUDO[..], &tail].concat()) } else { words(&tail) };
+                Ok(Run { argv, input: None, shown })
             }
             Place::Ssh(dest) => {
                 let path = rest.map_or_else(|| quote(log), |r| format!("\"$HOME\"/{}", quote(r)));
-                let script = format!("exec /usr/bin/tail -n {n} -- {path}\n");
-                Ok(Run { argv: ssh::argv(dest), input: Some(script), shown: format!("ssh {dest} tail -n {n} {log}") })
+                let script = format!("exec {sudo_path}/usr/bin/tail -n {n} -- {path}\n");
+                let shown = format!("ssh {dest} {shown_sudo}tail -n {n} {log}");
+                Ok(Run { argv: ssh::argv(dest), input: Some(script), shown })
             }
         }
     }
@@ -141,7 +174,11 @@ impl Target {
             Place::Local => "runs on this Mac".to_string(),
             Place::Ssh(dest) => format!("runs over ssh as {dest}"),
         };
-        let row = ConfirmRow { subtitle: place, accessory: "launchd".into(), ..ConfirmRow::new(&run.shown) };
+        let accessory = match self.service.domain {
+            Domain::Gui => "launchd",
+            Domain::System => "launchd system · sudo -n",
+        };
+        let row = ConfirmRow { subtitle: place, accessory: accessory.into(), ..ConfirmRow::new(&run.shown) };
         Confirm {
             rows: vec![row],
             label: format!("Restart {}", self.service.name),
@@ -162,9 +199,18 @@ pub fn parse_token(token: &str) -> Option<(&str, &str)> {
     Some((parts.next()?, parts.next()?))
 }
 
+/// What `sudo -n` says when it would have to ask for a password.
+const SUDO_ASKS: [&str; 2] = ["a password is required", "a terminal is required"];
+
+/// Why a `sudo -n` command did not run.
+pub const SUDO_NEEDS_PASSWORD: &str = "sudo needs a password here; Flick never types one. Allow this command without a password (a NOPASSWD rule in sudoers), or run it in Terminal";
+
 /// The last non-empty stderr line (launchctl says "Bad request." before the reason), else
-/// the exit code.
+/// the exit code. `sudo -n` asking for a password says so plainly.
 fn why(exit: &Exit) -> String {
+    if exit.stderr.lines().any(|l| l.starts_with("sudo:") && SUDO_ASKS.iter().any(|a| l.contains(a))) {
+        return SUDO_NEEDS_PASSWORD.into();
+    }
     let line = exit.stderr.lines().map(str::trim).rfind(|l| !l.is_empty());
     line.map_or_else(|| exit.code.map_or("killed by a signal".into(), |c| format!("exit {c}")), str::to_string)
 }

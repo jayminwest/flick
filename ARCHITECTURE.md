@@ -739,7 +739,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `launchctl kickstart -k gui/<uid>/<label>` on this Mac or over this Mac's own ssh, only for
   a service this Mac's config defines with `log` or `restart = true`, and the launcher's
   Restart is a destructive `Confirm` whose row is the exact command. A label, path or command
-  from a peer's snapshot never runs.
+  from a peer's snapshot never runs. A `domain = "system"` daemon (flick-1356) restarts with
+  `sudo -n launchctl kickstart -k system/<label>` and retries a `Permission denied` tail with
+  `sudo -n tail`; `sudo -n` never prompts, and a sudo that wants a password fails with
+  `act::SUDO_NEEDS_PASSWORD`. A restart not asked by the CLI leaves its result in
+  `State::toast`; the main thread shows it on `ModuleChanged` through `io::Hooks::toast`
+  (`hud::show`, card id `sys-restart`, top right).
   Service checks, including `command` argvs, and ssh targets come only from this Mac's config.
   `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
   round, at most one per 10 s) are allowed on purpose too.

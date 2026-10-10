@@ -150,8 +150,8 @@ impl Sys {
     /// Start a tail of `target`; it shows in view `log`. With `cli`, the request's answer
     /// is the lines (`core::later`), asked for only once the tail can run.
     fn tail(&self, target: &Target, cli: bool) -> Result<(), String> {
-        let run = target.tail(&home())?;
-        jobs::tail(&self.shared, target, run, self.hooks, cli.then(later::answer_later))
+        let runs = (target.tail(&home())?, target.sudo_tail(&home()));
+        jobs::tail(&self.shared, target, runs, self.hooks, cli.then(later::answer_later))
     }
 
     /// Enter on the log row: tail the same service again.

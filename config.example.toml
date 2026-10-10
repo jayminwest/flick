@@ -231,14 +231,19 @@
 # A service check; none by default. Repeat the table for each. kind and target:
 #   "http"     a URL fetched with curl (3 s); 2xx and 3xx pass
 #   "tcp"      "host:port" that accepts a connection (3 s)
-#   "launchd"  a launchd label in your GUI domain: running, or last exit 0
+#   "launchd"  a launchd label in your GUI domain (or domain = "system"): running, or
+#              last exit 0
 #   "process"  an exact process name (pgrep -x)
 #   "command"  an argv run without a shell (5 s); it must exit 0, and with warn or fail
 #              the first number it prints is compared
 # warn and fail: thresholds in milliseconds (http, tcp) or the command's number; higher is
 # worse unless fail is below warn. log: a log file (from / or ~/) for Tail Log, its last
 # 100 lines. restart: let the dashboard restart it ("launchctl kickstart -k
-# gui/<uid>/<label>") after a confirm showing that command (launchd only). Example:
+# gui/<uid>/<label>") after a confirm showing that command (launchd only). domain:
+# "gui" (your launch agents, the default) or "system" (launch daemons, launchd only): a
+# system daemon restarts with "sudo -n launchctl kickstart -k system/<label>", and a log
+# only root may read is tailed again with "sudo -n". sudo -n never asks for a password:
+# without a NOPASSWD sudoers rule for that command the result says so. Example:
 #[[sys.service]]
 #name = "mail-backlog"
 #kind = "command"
@@ -247,6 +252,7 @@
 #fail = 50
 #log = "~/Library/Logs/kota-mailwatch.log"
 #restart = false
+#domain = "gui"
 
 # A machine of the fleet; none by default. via:
 #   "local"  this Mac: its own snapshot and [[sys.service]] checks
@@ -278,6 +284,7 @@
 #fail = 1000
 #log = "~/.ollama/logs/server.log"
 #restart = false
+#domain = "gui"
 
 # --- task: a task list and a timer for the one running task, in flick.db. "Start Task"
 # or "flick task start <title>"; a trailing #word sets the project. Idle, sleep and

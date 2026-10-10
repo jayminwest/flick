@@ -177,11 +177,35 @@ pub struct Service {
     /// The dashboard may restart it after a confirm (launchd only; flick-4a4c).
     #[serde(default)]
     pub restart: bool,
+    /// The launchd domain: `gui` (the user's agents, the default) or `system` (daemons;
+    /// restart, and a tail of an unreadable log, go through `sudo -n`, flick-1356).
+    #[serde(default)]
+    pub domain: Domain,
+}
+
+/// A launchd service's domain.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Domain {
+    /// `gui/<uid>`: launch agents of the logged-in user.
+    #[default]
+    Gui,
+    /// `system`: launch daemons, run as root.
+    System,
 }
 
 impl Service {
     pub fn limits(&self) -> Limits {
         Limits { warn: self.warn, fail: self.fail }
+    }
+
+    /// The launchd domain of the label for `launchctl`: `gui/<uid>` or `system`. `uid`
+    /// is this user's here; over ssh, a shell expression for the remote user's.
+    pub fn launchd_domain(&self, uid: &str) -> String {
+        match self.domain {
+            Domain::Gui => format!("gui/{uid}"),
+            Domain::System => "system".into(),
+        }
     }
 
     /// The target's one word (`""` for an argv).
@@ -234,6 +258,9 @@ impl Service {
         }
         if self.restart && self.kind != Kind::Launchd {
             return bad("restart = true needs kind = \"launchd\"");
+        }
+        if self.domain == Domain::System && self.kind != Kind::Launchd {
+            return bad("domain applies to kind = \"launchd\"");
         }
         if [self.warn, self.fail].into_iter().flatten().any(|n| !n.is_finite()) {
             return bad("warn and fail are numbers");
