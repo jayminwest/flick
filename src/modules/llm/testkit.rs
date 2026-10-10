@@ -24,11 +24,13 @@ pub const HOOKS: Hooks = Hooks { spawn, post: || {}, sleep: |d| std::thread::sle
 /// Hooks whose watchdog never fires within a test.
 pub const PATIENT: Hooks = Hooks { sleep: |_| std::thread::sleep(Duration::from_secs(3_600)), ..HOOKS };
 
-/// One spawn: its argv and what was written to its stdin.
+/// One spawn: its argv, what was written to its stdin, and the `-K` key file's path and
+/// text as curl would have read them at start.
 #[derive(Clone, Debug, Default)]
 pub struct Sent {
     pub argv: Vec<String>,
     pub stdin: Vec<u8>,
+    pub config: Option<(String, String)>,
 }
 
 pub static SENT: Mutex<Vec<Sent>> = Mutex::new(vec![]);
@@ -110,7 +112,9 @@ fn spawn(argv: &[String]) -> Result<Spawned, String> {
     let url = argv.last().cloned().unwrap_or_default();
     let index = {
         let mut sent = SENT.lock().unwrap_or_else(PoisonError::into_inner);
-        sent.push(Sent { argv: argv.to_vec(), stdin: vec![] });
+        let path = argv.iter().position(|w| w == "-K").map(|i| argv[i + 1].clone());
+        let config = path.map(|p| (p.clone(), std::fs::read_to_string(&p).unwrap_or_default()));
+        sent.push(Sent { argv: argv.to_vec(), stdin: vec![], config });
         sent.len() - 1
     };
     let host = url.trim_start_matches("http://").split(['/', ':']).next().unwrap_or_default();
@@ -128,7 +132,7 @@ fn spawn(argv: &[String]) -> Result<Spawned, String> {
         "none" if models => (r#"{"object":"list","data":[]}"#, "", Some(0), false),
         "inband" => ("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\ndata: {\"error\":\"overloaded\"}\n", "", Some(0), false),
         "hang" => ("", "", Some(0), true),
-        "half" => ("data: {\"choices\":[{\"delta\":{\"content\":\"part\"}}]}\n", "", Some(0), true),
+        "half" => ("data: {\"choices\":[{\"delta\":{\"content\":\"part\"}}]}\n\n", "", Some(0), true),
         _ => ("", "", Some(0), false),
     };
     let stdout: Box<dyn Read + Send> = if hang {

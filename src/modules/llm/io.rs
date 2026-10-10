@@ -17,7 +17,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::openai::{self, Line, Model, Piece};
+use super::openai::{self, Events, Line, Model, Piece};
 use super::settings::Server;
 use super::transport::{self, Call, ChildRef, Ended, Spawn};
 
@@ -191,12 +191,12 @@ pub fn fetch_models(shared: &Arc<Shared>, server: &Server, hooks: Hooks) -> u64 
         m.fetching = true;
         epoch
     };
-    let url = server.endpoint("models");
+    let (url, key) = (server.endpoint("models"), server.key());
     let sh = Arc::clone(shared);
     let started = Instant::now();
     let spawned = thread::Builder::new().name("llm-models".into()).spawn(move || {
         let mut body = String::new();
-        let call = Call { url, body: None, max_time: LIST_MAX_TIME };
+        let call = Call { url, body: None, max_time: LIST_MAX_TIME, key };
         let budget = LIST_MAX_TIME + WATCHDOG_MARGIN;
         // Killing a curl that already ended does nothing: it is reaped, so no other process
         // can have its pid.
@@ -271,7 +271,7 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
         st.streams.push(Stream { id, pieces: vec![], status: Status::Running, child: None });
         id
     };
-    let call = Call { url: server.endpoint("chat/completions"), body: Some(body), max_time: timeout };
+    let call = Call { url: server.endpoint("chat/completions"), body: Some(body), max_time: timeout, key: server.key() };
     let sh = Arc::clone(shared);
     let spawned = thread::Builder::new().name("llm-stream".into()).spawn(move || {
         let mut seen = Seen::default();
@@ -290,7 +290,8 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
             };
             watchdog(&sh, c, timeout + WATCHDOG_MARGIN, hooks, late);
         };
-        let ended = transport::run(call, hooks.spawn, started, |l| match openai::sse_line(l) {
+        let mut events = Events::default();
+        let mut read = |line: Line, l: &str| match line {
             Line::Skip => {}
             Line::Other => {
                 if seen.raw.len() < RAW_CAP {
@@ -311,7 +312,11 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
                 }
                 openai::wipe_pieces(&mut pieces);
             }
-        });
+        };
+        let ended = transport::run(call, hooks.spawn, started, |l| read(events.line(l), l));
+        // A last event the server ended without a blank line still counts.
+        read(events.finish(), "");
+        drop(events);
         let status = seen.status(ended);
         transport::wipe_string(&mut seen.raw);
         let mut st = sh.lock();

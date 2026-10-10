@@ -1,7 +1,8 @@
 //! One HTTP call through `/usr/bin/curl` (no HTTP crate: no binary cost, TLS for tailscale
 //! serve's https endpoints for free). The argv holds only fixed flags and the URL; a
 //! request body goes over curl's stdin (`--data-binary @-`), so prompt text never shows in
-//! `ps`. `-q` (first) skips `~/.curlrc`, `--noproxy *` keeps a proxy from seeing the
+//! `ps`. A server's API key goes in a 0600 curl config file named by `-K` (`keyfile`), never
+//! in argv either. `-q` (first) skips `~/.curlrc`, `--noproxy *` keeps a proxy from seeing the
 //! text, `--proto =http,https` and no `-L` keep curl on the configured URL.
 //!
 //! `run` drives one call on the calling thread: spawn (through `Spawn`, which tests fake),
@@ -11,7 +12,10 @@
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::path::Path;
 use std::thread;
+
+use super::keyfile::KeyFile;
 
 /// The one curl Flick runs: never a `PATH` lookup.
 pub const CURL: &str = "/usr/bin/curl";
@@ -53,6 +57,8 @@ pub struct Call {
     pub body: Option<Vec<u8>>,
     /// curl's `--max-time`, seconds.
     pub max_time: u64,
+    /// The server's API key, sent as `Authorization: Bearer` through a `KeyFile`.
+    pub key: Option<String>,
 }
 
 /// How a call ended.
@@ -93,10 +99,16 @@ fn hint(code: Option<i32>, why: &str) -> Option<&'static str> {
     }
 }
 
-/// curl's argv for `call`. Nothing from the body is in it.
-pub fn argv(call: &Call) -> Vec<String> {
+/// curl's argv for `call`, with `-K <config>` for its key file. Nothing from the body or the
+/// key is in it.
+pub fn argv(call: &Call, config: Option<&Path>) -> Vec<String> {
     let (connect, max) = (CONNECT_SECS.to_string(), call.max_time.to_string());
-    let mut argv = vec![CURL, "-q", "-sS", "-N", "--fail-with-body", "--noproxy", "*", "--proto", "=http,https"];
+    let config = config.map(|p| p.to_string_lossy().into_owned());
+    let mut argv = vec![CURL, "-q"];
+    if let Some(path) = &config {
+        argv.extend(["-K", path]);
+    }
+    argv.extend(["-sS", "-N", "--fail-with-body", "--noproxy", "*", "--proto", "=http,https"]);
     argv.extend(["--connect-timeout", &connect, "--max-time", &max]);
     if call.body.is_some() {
         argv.extend(["-H", "Content-Type: application/json", "-H", "Accept: text/event-stream", "--data-binary", "@-"]);
@@ -155,10 +167,19 @@ impl Lines {
 }
 
 /// Run `call` to its end on this thread. `started` gets the child as soon as it runs;
-/// `line` gets each stdout line. `Err`: curl did not start.
+/// `line` gets each stdout line. `Err`: curl did not start (or its key file was not
+/// written). The key file lives until curl is reaped, and goes on every return or panic.
 pub fn run(mut call: Call, spawn: Spawn, started: impl FnOnce(&ChildRef), mut line: impl FnMut(&str)) -> Result<Ended, String> {
-    let spawned = spawn(&argv(&call));
-    let Spawned { mut stdin, mut stdout, stderr, child } = match spawned {
+    let keyfile = call.key.take().map(|mut key| {
+        let file = KeyFile::write(&key);
+        wipe_string(&mut key);
+        file
+    });
+    let spawned = match keyfile.transpose() {
+        Ok(keyfile) => spawn(&argv(&call, keyfile.as_ref().map(KeyFile::path))).map(|s| (s, keyfile)),
+        Err(e) => Err(e),
+    };
+    let (Spawned { mut stdin, mut stdout, stderr, child }, _keyfile) = match spawned {
         Ok(s) => s,
         Err(e) => {
             if let Some(body) = call.body.as_mut() {
@@ -203,20 +224,24 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn get(url: &str) -> Call {
-        Call { url: url.into(), body: None, max_time: 3 }
+        Call { url: url.into(), body: None, max_time: 3, key: None }
     }
 
     #[test]
     fn argv_has_fixed_flags_and_the_url_only() {
         let want = "/usr/bin/curl -q -sS -N --fail-with-body --noproxy * --proto =http,https --connect-timeout 5 \
             --max-time 3 --url http://h/v1/models";
-        assert_eq!(argv(&get("http://h/v1/models")).join(" "), want);
-        let post = Call { url: "https://h/v1/chat/completions".into(), body: Some(b"{\"secret prompt\"}".to_vec()), max_time: 300 };
-        let a = argv(&post);
+        assert_eq!(argv(&get("http://h/v1/models"), None).join(" "), want);
+        let body = Some(b"{\"secret prompt\"}".to_vec());
+        let post = Call { url: "https://h/v1/chat/completions".into(), body, max_time: 300, key: Some("sk-secret".into()) };
+        let a = argv(&post, None);
         assert_eq!(a[1], "-q", "-q must come first or curl reads ~/.curlrc");
         assert!(a.join(" ").contains("--max-time 300 -H Content-Type: application/json -H Accept: text/event-stream"));
         assert_eq!(a[a.len() - 4..], ["--data-binary", "@-", "--url", "https://h/v1/chat/completions"]);
         assert!(!a.iter().any(|w| w.contains("secret")));
+        let keyed = argv(&post, Some(Path::new("/t/flick-llm/1-0.curl")));
+        assert_eq!(keyed[..4], [CURL, "-q", "-K", "/t/flick-llm/1-0.curl"], "-q stays first");
+        assert!(!keyed.iter().any(|w| w.contains("secret")));
     }
 
     #[test]
@@ -307,6 +332,63 @@ mod tests {
         assert_eq!(got, ["one", "two", "thr"]);
         assert_eq!(ended, Ended { code: Some(0), stderr: "warn".into() });
         assert!(SPAWNS.load(Ordering::Relaxed) >= 1);
+    }
+
+    /// The key file a keyed spawn saw: its path, text and mode.
+    static KEY_SEEN: Mutex<Vec<(String, String, u32)>> = Mutex::new(vec![]);
+
+    fn key_seen(argv: &[String]) {
+        use std::os::unix::fs::PermissionsExt;
+        assert!(!argv.iter().any(|w| w.contains("sk-test")), "the key is never in argv");
+        let i = argv.iter().position(|w| w == "-K").unwrap();
+        let path = argv[i + 1].clone();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        KEY_SEEN.lock().unwrap_or_else(PoisonError::into_inner).push((path, text, mode));
+    }
+
+    fn keyed() -> Call {
+        Call { body: Some(b"{\"prompt\"}".to_vec()), key: Some("sk-test".into()), ..get("http://keyed") }
+    }
+
+    // Named no-ops, each run at least once: a closure that never runs leaves its line
+    // uncovered.
+    fn no_child(_: &ChildRef) {}
+
+    fn no_line(_: &str) {}
+
+    fn last_key_file() -> (String, String, u32) {
+        KEY_SEEN.lock().unwrap_or_else(PoisonError::into_inner).last().cloned().unwrap()
+    }
+
+    #[test]
+    fn a_key_goes_in_a_private_file_that_is_gone_after_the_call() {
+        let spawn: Spawn = |argv| {
+            key_seen(argv);
+            spawn_ok(argv)
+        };
+        run(keyed(), spawn, no_child, no_line).unwrap();
+        let (path, text, mode) = last_key_file();
+        assert_eq!(text, "header = \"Authorization: Bearer sk-test\"\n");
+        assert!(!text.contains("prompt"));
+        assert_eq!(mode, 0o600);
+        assert!(!Path::new(&path).exists(), "removed once curl is reaped");
+        // A failed spawn and a panicking reader remove it too.
+        let fail: Spawn = |argv| {
+            key_seen(argv);
+            Err("curl not found".into())
+        };
+        assert_eq!(run(keyed(), fail, no_child, no_line).unwrap_err(), "curl not found");
+        assert!(!Path::new(&last_key_file().0).exists());
+        let reader = |_: &str| panic!("reader");
+        let panicked = std::panic::catch_unwind(|| run(keyed(), spawn, no_child, reader));
+        assert!(panicked.is_err());
+        assert!(!Path::new(&last_key_file().0).exists());
+        // A key the file cannot hold: curl never starts.
+        let bad = Call { key: Some("a b".into()), ..keyed() };
+        let seen = KEY_SEEN.lock().unwrap_or_else(PoisonError::into_inner).len();
+        assert!(run(bad, fail, no_child, no_line).unwrap_err().contains("printable ASCII"));
+        assert_eq!(KEY_SEEN.lock().unwrap_or_else(PoisonError::into_inner).len(), seen, "curl never started");
     }
 
     #[test]

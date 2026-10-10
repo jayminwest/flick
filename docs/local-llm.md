@@ -26,7 +26,10 @@ url = "https://mac-pro.example.ts.net:11234" # with or without /v1
 [[llm.servers]]
 name = "ollama"
 url = "http://100.64.0.2:11434"
+api_key = ""                       # sent as "Authorization: Bearer <key>"; "" for none
 ```
+
+`api_key` is for a server behind an OpenAI-style key check. Flick never puts the key in curl's arguments, so `ps` does not show it. For each request it writes a curl config file that holds only the `Authorization` header, with mode 0600, in `flick-llm` (a 0700 directory in your temp dir), and removes it when curl exits, fails to start or is stopped. The key is printable ASCII without spaces, quotes or backslashes. It is stored in plain text in config.toml, so keep that file private.
 
 Check a server from a shell with `flick llm ping mlx`. `flick llm models mlx` lists its models.
 
@@ -57,7 +60,7 @@ A reply still streaming when Flick quits is not kept.
 
 ## Privacy of the normal chat
 
-- Requests go through `/usr/bin/curl`, one process per request. The prompt goes over curl's stdin, never in its arguments, so `ps` does not show it.
+- Requests go through `/usr/bin/curl`, one process per request. The prompt goes over curl's stdin, never in its arguments, so `ps` does not show it. An `api_key` goes in a short-lived 0600 file (see above); the prompt never goes in that file.
 - Flick never logs prompts or replies. Error lines carry at most 200 characters of a server's error message.
 - Normal chats are stored in plain text in flick.db when `history` is on. The server may keep its own logs; mlx-serve logs the start of every prompt by default.
 - Every `flick llm` command is refused over the network: another Mac cannot make this one send requests.
