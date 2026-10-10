@@ -188,10 +188,11 @@ impl Herdr {
         }
     }
 
-    /// Jump to the agents of clicked notifications.
-    fn follow_clicks(&self) {
+    /// Jump to the agents of clicked notifications, hiding the launcher first like any jump.
+    fn follow_clicks(&self, cx: &Cx) {
         for id in (self.hooks.clicks)() {
             if let Some((machine, pane_id)) = alerts::clicked(&id) {
+                cx.hide();
                 let (shared, t, terminal) = (&self.shared, &self.transport, &self.settings.terminal);
                 io::jump(shared, t, machine, pane_id, terminal, self.hooks);
             }
@@ -374,7 +375,7 @@ impl Module for Herdr {
         }
     }
 
-    fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
+    fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         match event {
             Event::Started => {
                 self.started = true;
@@ -390,7 +391,7 @@ impl Module for Herdr {
             }
             Event::ModuleChanged { module: ID } if self.started => {
                 self.alert();
-                self.follow_clicks();
+                self.follow_clicks(cx);
                 self.poll((self.hooks.visible)());
             }
             _ => {}

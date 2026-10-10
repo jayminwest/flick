@@ -6,6 +6,11 @@ use crate::core::test_cx;
 use crate::modules::herdr::model::Status;
 use testkit::{CLI, CLICKS, COPIED, Cli, HOOKS, LISTENS, NOTES, Server, info, status_event, wait};
 
+thread_local! {
+    /// `cx.hide` calls on this thread, where a test counts them.
+    static HIDES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 fn configured(text: &str) -> Result<Herdr, String> {
     let mut h = Herdr::with_hooks(HOOKS);
     let config = parse(text)?;
@@ -257,8 +262,17 @@ fn an_agent_that_starts_to_wait_posts_one_notification_and_a_click_jumps() {
     changed(&mut h);
     assert!(NOTES.take().is_empty());
 
-    CLICKS.with_borrow_mut(|c| c.extend(["herdr:agents".into(), "herdr:agent/local/w1:p1".into()]));
-    changed(&mut h);
+    // A click on an agent's notification hides the launcher, then jumps; other clicks do not.
+    let hides = |h: &mut Herdr, clicks: &[&str]| {
+        CLICKS.with_borrow_mut(|c| c.extend(clicks.iter().map(|id| (*id).to_string())));
+        test_cx("", |cx| {
+            cx.hide = || HIDES.with(|n| n.set(n.get() + 1));
+            h.on_event(Event::ModuleChanged { module: ID }, cx);
+        });
+        HIDES.take()
+    };
+    assert_eq!(hides(&mut h, &["herdr:agents"]), 0);
+    assert_eq!(hides(&mut h, &["herdr:agents", "herdr:agent/local/w1:p1"]), 1);
     wait("click focus", || server.calls().contains(&"agent.focus w1:p1".to_string()));
     test_cx("", |cx| {
         let st = h.command(&args(&["status"]), cx).unwrap();
