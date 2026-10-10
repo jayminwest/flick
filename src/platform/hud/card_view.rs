@@ -24,6 +24,7 @@ use super::controls::{
 };
 use super::view::{CLOSE_ROOM, ContentView, label, ns, rect};
 use crate::core::card::{Action, Block, Card, Input, Opt, Style};
+use crate::core::markup;
 
 /// What drawing one card needs besides the card.
 struct Pen<'a> {
@@ -143,7 +144,7 @@ fn block(
     let ink = NSColor::labelColor();
     match b {
         Block::Text { md } => {
-            y + wrapped(pen, &lay::clean_md(md), &body, &ink, (PAD, y, pen.inner), MAX_TEXT_H)
+            y + wrapped(pen, &markup::plain(md), &body, &ink, (PAD, y, pen.inner), MAX_TEXT_H)
         }
         Block::Kv { items } => {
             let small = NSFont::systemFontOfSize(12.0);
