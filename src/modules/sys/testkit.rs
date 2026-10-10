@@ -1,6 +1,7 @@
 //! Fakes for the module's tests. `run` answers from fixtures by argv, so no test runs the
 //! probe, curl, launchctl, pgrep or a configured command; `connect` never opens a socket;
 //! `run_input` never runs ssh, `ask` never reaches a peer and `open` only records the URL.
+//! `WINDOW` opens no window: it records what the module drew in `SHOWN`.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -11,6 +12,8 @@ use serde_json::json;
 use super::io::Hooks;
 use super::probe::PROBE;
 use super::run::Exit;
+use super::window::{self, Note};
+use crate::platform::surface::{Row, Status};
 use crate::core::control::{Flags, Reply};
 
 /// The real probe output from mbp-server.
@@ -163,3 +166,51 @@ fn connect(target: &str, _budget: Duration) -> Result<Duration, String> {
         None => Err(format!("{target}: Connection refused")),
     }
 }
+
+/// What the fake fleet window holds, on this thread.
+#[derive(Default)]
+pub struct Shown {
+    pub opened: u32,
+    pub visible: bool,
+    pub header: Option<(String, String, Status)>,
+    /// Each bubble as `key|side|header|time|state|md`.
+    pub rows: Vec<String>,
+    pub notice: Option<String>,
+    /// Notes for the next `take`, as the handlers would queue them.
+    pub notes: Vec<Note>,
+    pub snapshots: Vec<String>,
+}
+
+thread_local! {
+    pub static SHOWN: RefCell<Shown> = RefCell::default();
+}
+
+fn shown<R>(f: impl FnOnce(&mut Shown) -> R) -> R {
+    SHOWN.with(|s| f(&mut s.borrow_mut()))
+}
+
+fn row(r: &Row) -> String {
+    match *r {
+        Row::Bubble { key, side, header, time, state, md, .. } => format!("{key}|{side:?}|{header}|{time}|{state:?}|{md}"),
+        _ => "other".into(),
+    }
+}
+
+/// A fake "fleet" surface; `snapshot` fails for a path under `/nope/`.
+pub const WINDOW: window::Hooks = window::Hooks {
+    open: || shown(|s| s.opened += 1),
+    show: || shown(|s| s.visible = true),
+    hide: || shown(|s| s.visible = false),
+    visible: || shown(|s| s.visible),
+    header: |t, sub, st| shown(|s| s.header = Some((t.into(), sub.into(), st))),
+    rows: |rows| shown(|s| s.rows = rows.iter().map(row).collect()),
+    notice: |n| shown(|s| s.notice = n.map(str::to_string)),
+    take: || shown(|s| std::mem::take(&mut s.notes)),
+    snapshot: |path| {
+        if path.starts_with("/nope/") {
+            return Err(format!("can't write {path}"));
+        }
+        shown(|s| s.snapshots.push(path.into()));
+        Ok(())
+    },
+};
