@@ -182,7 +182,8 @@ Sources:
 - A config reload then dispatches `Reloaded` to every module (not published either). A
   module that announces state to other modules by event sends it again there, so a module
   the reload just enabled hears it without either importing the other (`message` re-sends
-  `CardsPending` for `kota`, flick-b220).
+  `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
+  flick-4bb4).
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
@@ -202,8 +203,9 @@ Sources:
   event never carries chat text, `Event` being `Copy`).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
-  `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
-  running task was restored, so it arrives on the next main-queue turn, after the current
+  `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a
+  running task was restored and at `Reloaded` while one runs (for an `activity` the reload
+  enabled, flick-4bb4), so it arrives on the next main-queue turn, after the current
   dispatch. Consumers: `activity` closes the open span and opens the same app with the new
   task id (`activity_spans.task`); `task` marks its views stale. `flick events` publishes it.
   The `task` timer is its own `core::track::Clock` on `Idle`/`Active`, `Sleep`/`Wake` and
