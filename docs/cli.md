@@ -32,4 +32,4 @@ FLICK_HOST=mac-studio:7419 flick --json herdr ls
 flick --host mac-studio events # only with [remote] events = true there
 ```
 
-Each module's commands are in its own page: [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [capture](capture.md), [feedback](feedback.md), [messages](message.md), [remote](remote.md), and [rebuild](install.md#rebuild-from-the-checkout).
+Each module's commands are in its own page: [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [KOTA](kota.md), [system and fleet](sys.md), [dictation](dictation.md), [capture](capture.md), [feedback](feedback.md), [messages](message.md), [remote](remote.md), and [rebuild](install.md#rebuild-from-the-checkout).
