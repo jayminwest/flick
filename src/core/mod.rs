@@ -1,9 +1,17 @@
 //! Core types every feature shares: items and their ids, outcomes, list views, forms,
-//! item actions and confirmations, the `Module` contract and its registry, ranking, and the
-//! key engine.
+//! item actions and confirmations, the `Module` contract and its registry, ranking, the key
+//! engine, and the card model (`card`).
 //! Plain Rust: no `crate::platform`, so everything here unit-tests without `AppKit`.
 
 mod action;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the message module (flick-e3f2) and hud card_view (flick-aa43) are the first callers"
+    )
+)]
+pub mod card;
 mod confirm;
 pub mod control;
 mod event;
