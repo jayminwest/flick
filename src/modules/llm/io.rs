@@ -68,6 +68,13 @@ struct Stream {
     child: Option<ChildRef>,
 }
 
+/// A stream's untaken text is wiped when it is dropped (`stop`, or taken once ended).
+impl Drop for Stream {
+    fn drop(&mut self) {
+        openai::wipe_pieces(&mut self.pieces);
+    }
+}
+
 /// What the threads write and the main thread reads.
 #[derive(Default)]
 pub struct State {
@@ -126,8 +133,8 @@ impl Shared {
     pub fn stop(&self) {
         let mut st = self.lock();
         st.epoch += 1;
-        for s in std::mem::take(&mut st.streams) {
-            if let Some(child) = s.child {
+        for mut s in std::mem::take(&mut st.streams) {
+            if let Some(child) = s.child.take() {
                 transport::lock(&child).kill();
             }
         }
@@ -290,18 +297,19 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
                     seen.raw.push_str(l);
                 }
             }
-            Line::Data(pieces) => {
+            Line::Data(mut pieces) => {
                 seen.data = true;
                 seen.done |= pieces.contains(&Piece::Done);
                 if let Some(Piece::Error(e)) = pieces.iter().find(|p| matches!(p, Piece::Error(_))) {
                     seen.error.get_or_insert_with(|| e.clone());
                 }
-                // After `stop` the stream is gone, so a late line lands nowhere.
+                // After `stop` the stream is gone, so a late line lands nowhere (and is wiped).
                 let mut st = sh.lock();
                 if let Some(s) = st.stream(id).filter(|s| s.status == Status::Running) {
-                    s.pieces.extend(pieces);
+                    s.pieces.append(&mut pieces);
                     sh.changed(st, hooks);
                 }
+                openai::wipe_pieces(&mut pieces);
             }
         });
         let status = seen.status(ended);

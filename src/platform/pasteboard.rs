@@ -1,5 +1,6 @@
 //! The general pasteboard: plain text, PNG images, and a snapshot of everything on it so a
-//! transient write (dictation's paste) can be undone.
+//! transient write (dictation's paste) can be undone. Text copied out of a private surface
+//! goes through `set_text_concealed`, which clip history and clipboard managers skip.
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -21,7 +22,10 @@ pub fn change_count() -> isize {
 
 /// The pasteboard's text, unless password managers mark it as concealed or transient.
 pub fn copied_text() -> Option<String> {
-    let pb = NSPasteboard::generalPasteboard();
+    copied_text_from(&NSPasteboard::generalPasteboard())
+}
+
+fn copied_text_from(pb: &NSPasteboard) -> Option<String> {
     let skip = pb.types().is_some_and(|types| {
         types.iter().any(|t| {
             let t = t.to_string();
@@ -43,6 +47,13 @@ pub fn set_text(text: &str) {
     // SAFETY: NSPasteboardTypeString is an immutable framework constant, set at load time.
     let string_type = unsafe { NSPasteboardTypeString };
     pb.setString_forType(&NSString::from_str(text), string_type);
+}
+
+/// Replace the pasteboard's contents with `text` marked `org.nspasteboard.ConcealedType` and
+/// `TransientType`, so Flick's clip history (`copied_text`) and other clipboard managers do
+/// not record it. For copies out of a private surface.
+pub fn set_text_concealed(text: &str) {
+    set_transient_text_on(&NSPasteboard::generalPasteboard(), text);
 }
 
 /// Replace the pasteboard's contents with a PNG image (`bytes` is the whole file). Also
@@ -181,6 +192,25 @@ mod tests {
         let string_type = unsafe { NSPasteboardTypeString };
         let text = pb.0.stringForType(string_type).map(|s| s.to_string());
         assert_eq!(text.as_deref(), Some("hello there"));
+    }
+
+    #[test]
+    fn concealed_text_is_pasteable_but_clip_history_skips_it() {
+        let pb = Private::new();
+        // SAFETY: NSPasteboardTypeString is an immutable framework constant.
+        let string_type = unsafe { NSPasteboardTypeString };
+        pb.0.clearContents();
+        pb.0.setString_forType(&NSString::from_str("plain"), string_type);
+        assert_eq!(copied_text_from(&pb.0).as_deref(), Some("plain"));
+        // `set_text_concealed` is this writer on the general pasteboard.
+        set_transient_text_on(&pb.0, "copied privately");
+        let t = types(&pb.0);
+        assert!(t.iter().any(|t| t == CONCEALED) && t.iter().any(|t| t == TRANSIENT), "{t:?}");
+        let pasted = pb.0.stringForType(string_type).map(|s| s.to_string());
+        assert_eq!(pasted.as_deref(), Some("copied privately"));
+        assert_eq!(copied_text_from(&pb.0), None);
+        // Not called: it would replace the user's clipboard.
+        let _: fn(&str) = set_text_concealed;
     }
 
     #[test]
