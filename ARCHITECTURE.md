@@ -315,6 +315,34 @@ never in argv). On an ssh failure it posts `message post --reply-to <id>` with t
 the pending card does not stay. The verb's answer is the outcome, through `core::later`.
 Settings, state meanings and the manual checklist: `docs/kota.md`.
 
+KOTA chat (`src/modules/message/chat/`, plan pl-75d3): the `message` module owns it, since
+KOTA's replies and cards land in its store. The window is `platform::surface` "chat"
+(`Input::Multi`, not `hide_on_blur`), built on the first summon, never at `Started` or in
+`configure`. `[message] chat_hotkey` (unset: chat is inert) shows it with the keyboard, or
+hides it when it has the keyboard; the hotkey returns no view. The pid in front at summon is
+kept, and when the window hides (Esc, ⌘W, the hotkey) that app is made frontmost again
+(`ax::make_frontmost`) only if it is still in front. Every surface handler queues a
+`chat::session::Note` in a static and posts `ModuleChanged { module: "message" }`; the
+module drains them on the main thread after the HUD notes, then redraws the window if it
+shows (also after every `message` command, so a `post` into the shown thread appears at
+once). Rows: `chat::model::transcript` of `Messages::thread` mapped by `chat::view` onto
+`surface::Row`, a card's press state (`dispatch.rs`) folded into its version; card presses
+in the window go through the HUD cards' `press`. Keys: ⌘N new thread (`t` + base-36 ms),
+⌘[ / ⌘] older/newer (`model::neighbor`), ⌘R resend a failed question, ⌘W hide.
+Asks (`chat/asks.rs`): the question is stored at once as a `role` me message whose id is
+the request id, then one worker at a time (FIFO) runs `/usr/bin/ssh -o BatchMode=yes -o
+ConnectTimeout=8 <kota_host> <kota_ask> --id <req> --thread <t>` with the question on
+stdin (`message::run::exec`, 20 s). A non-zero exit marks the question `failed` and puts the
+reason on the window's notice line. KOTA answers with `message post --thread <t>
+--reply-to <req> --id <x> [--partial]` (a 'me' row is never pending, so the reply never
+takes the question). HUD policy (`model::alert`): while the window shows a thread, posts to
+it show no card and play no sound; other threaded posts show a card on the first and the
+final post of an id. Verbs: `message chat [--thread t] [--snapshot <png>]`, `message ask
+[--thread t] <text...>` (answers once ssh is done, `core::later`); the launcher view
+`message/threads` (⌘K Chat Threads on the root item) lists threads as
+`message:thread:<t>`, Enter opens the window on one. All macOS and ssh calls go through
+`chat::session::Hooks` (`chat/wire.rs`; fakes in `chat/fake.rs`).
+
 Dictation (`src/modules/dictation/`): two child processes and the main-thread steps around
 them; every program and macOS call goes through `dictation::Hooks` (`wire::REAL`; scripted
 fakes in `fake.rs` for tests). Setup, the model download, privacy, limits and the manual
@@ -535,7 +563,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
   `quicklink add|remove`, `capture` (any verb), `feedback resolve`, `task rm`, `script run`,
-  `message card press|focus`, `dictation` (any verb: a peer never starts the microphone) or
+  `message card press|focus`, `message chat` (a peer never pops a key window on this Mac or
+  writes its snapshot), `message ask` (nor makes this Mac ssh a question to KOTA),
+  `dictation` (any verb: a peer never starts the microphone) or
   `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), `llm` (any verb:
   a peer never makes this Mac send requests to model servers), `sys restart|tail` (a peer
   never restarts this Mac's services or reads its logs), and of `remote` only
@@ -543,7 +573,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
-  `message` (every verb but `card press|focus`, notably `post` with `--thread`/`--partial`, `card post`, `card spec` and the read-only `threads` and `thread <t>`) is allowed on purpose: peers post messages to this
+  `message` (every verb but `card press|focus`, `chat` and `ask`, notably `post` with `--thread`/`--partial`, `card post`, `card spec` and the read-only `threads` and `thread <t>`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
   (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
   `sys snapshot`, `sys services` and `sys fleet` are allowed on purpose too: they are read-only;

@@ -45,6 +45,7 @@ pub const ITEM_MAX: usize = 4 * 1024;
 /// Bytes of the whole `[context]` block, both tags included.
 pub const CONTEXT_MAX: usize = 8 * 1024;
 /// Bytes kota-ask reads from stdin (`head -c 16384`); a composed ask always fits.
+#[cfg_attr(not(test), expect(dead_code, reason = "context chips; wired in flick-65bd"))]
 pub const STDIN_MAX: usize = 16 * 1024;
 /// The default ssh target and kota-ask path, as the kota module's (`[kota] ssh`, `kota_ask`).
 pub const DEFAULT_HOST: &str = "jaymin@mbp-server";
@@ -58,6 +59,7 @@ const CLOSE: &str = "[/context]";
 
 /// One piece of context the user attached; each shows as a removable chip.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "context chips; wired in flick-65bd"))]
 pub enum Item {
     /// The front app at summon.
     App { name: String, bundle: Option<String> },
@@ -73,15 +75,18 @@ pub enum Item {
 
 /// A chip above the input: its label and SF Symbol.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "context chips; wired in flick-65bd"))]
 pub struct Chip {
     pub label: String,
     pub symbol: &'static str,
 }
 
 /// Characters of a chip label.
+#[cfg_attr(not(test), expect(dead_code, reason = "context chips; wired in flick-65bd"))]
 const CHIP_MAX: usize = 32;
 
 impl Item {
+    #[cfg_attr(not(test), expect(dead_code, reason = "context chips; wired in flick-65bd"))]
     pub fn chip(&self) -> Chip {
         let short = |s: &str| text::preview(s, CHIP_MAX);
         let (label, symbol) = match self {

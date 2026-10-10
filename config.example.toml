@@ -432,6 +432,15 @@
 #pending_timeout_secs = 120
 # Seconds an open card with actions stays; 0 keeps it until acted on or closed.
 #card_timeout_secs = 0
+# Shows or hides the KOTA chat window: a floating window that takes the keyboard without
+# activating Flick (the app you are in stays active; Esc gives the keyboard back). Return
+# sends, Shift-Return adds a line, Cmd-N starts a thread, Cmd-[ / Cmd-] switch threads,
+# Cmd-R resends a question that did not go out. Unset by default: chat stays off.
+#chat_hotkey = "cmd+ctrl+alt+shift+KeyJ"
+# Where a chat question goes: the text on stdin to "ssh <kota_host> <kota_ask> --id <req>
+# --thread <t>" (20 s budget). kota_ask is relative to that host's home.
+#kota_host = "jaymin@mbp-server"
+#kota_ask = ".dotfiles/home/.local/bin/kota-ask"
 
 # --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
 # addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not

@@ -64,7 +64,7 @@ fn ui_line(ui: &CardUi) -> String {
     }
 }
 
-fn log(line: String) {
+pub(super) fn log(line: String) {
     LOG.with(|l| l.borrow_mut().push(line));
 }
 
@@ -147,6 +147,7 @@ pub(super) fn inbox(config: &str) -> Inbox {
         presses: 0,
         worker: run::Worker::default(),
         local: run::Worker::default(),
+        chat: chat::session::Chat::new(chat::fake::HOOKS),
     };
     m.configure(&parse(config).unwrap().section("message").unwrap().unwrap()).unwrap();
     m
@@ -316,7 +317,9 @@ fn the_launcher_lists_messages() {
     let root = f.cx("", false, |cx| m.items(cx));
     assert_eq!(root[0].subtitle, "• one • two");
     assert_eq!(kind(f.cx("", false, |cx| m.activate(&root[0].id, cx))), "push message/recent");
-    assert_eq!(f.cx("", false, |cx| m.actions(&root[0].id, cx)), []);
+    // ⌘K on the root item opens the chat threads (flick-eedd; it had no actions before).
+    let actions = f.cx("", false, |cx| m.actions(&root[0].id, cx));
+    assert_eq!(actions.iter().map(|a| a.key).collect::<Vec<_>>(), ["threads"]);
     assert_eq!(view.footer, "KOTA  ·  ↵ copies  ·  ⌘K show or open");
     assert!(f.cx("", false, |cx| m.open("nope", cx)).is_none());
     let rows: Vec<_> = view.items.iter().map(|i| (i.title.as_str(), i.subtitle.as_str(), i.accessory.as_str())).collect();

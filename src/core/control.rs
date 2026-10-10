@@ -136,7 +136,8 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 /// request to that module (or the bare word, for `reload`). A verb may be several words
 /// (`card press`): it matches when the request's words after the module start with them,
 /// so `message card press` is denied while `message card post` is not. These change config,
-/// run code, take the keyboard, start the microphone, make this Mac ssh (`kota ask`) or send
+/// run code, take the keyboard (`message chat`), start the microphone, make this Mac ssh
+/// (`kota ask`, `message ask`) or send
 /// requests to model servers (`llm`, any verb), restart services or read logs (`sys restart`,
 /// `sys tail`), read the screen, write files or delete data
 /// that cannot come back (`task rm` drops the task's tracked time). Review this table when a
@@ -152,7 +153,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("feedback", &["resolve"]),
     ("task", &["rm"]),
     ("script", &["run"]),
-    ("message", &["card press", "card focus"]),
+    ("message", &["card press", "card focus", "chat", "ask"]),
     ("dictation", &[]),
     ("kota", &["ask"]),
     ("llm", &[]),
