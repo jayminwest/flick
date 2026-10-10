@@ -1,9 +1,10 @@
 //! What KOTA's presence looks like, as plain data (100% coverage floor): the menu bar
 //! title and tooltip, the menu entries (flick-78b9 renders them through
-//! `platform::status_item`), and `kota status` as text and JSON.
+//! `platform::status_item`), `kota status` as text and JSON, and the ask view's text.
 
 use serde_json::{Value, json};
 
+use super::ask::{Ask, Status};
 use super::presence::{Presence, State};
 
 /// One menu row. `Pick` calls the module's pick handler with `key`; `Open` routes `key`
@@ -142,7 +143,7 @@ impl Polling {
 /// Facts for `kota status` besides the presence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Extra {
-    /// Cards waiting on the user (flick-316c brings the count; 0 until then).
+    /// Cards waiting on the user (`Event::CardsPending`).
     pub pending: u32,
     pub polling: Polling,
 }
@@ -174,6 +175,25 @@ pub fn status_text(p: &Presence, extra: Extra, now: u64, offset: i32) -> String 
     }
     rows.push(format!("polling: {}", extra.polling.text()));
     rows.join("\n")
+}
+
+/// The ask view's text: the remembered asks, newest first, one line each:
+/// `12:03  sent  what's on today?`. `offset`: the local UTC offset.
+pub fn asks_text(asks: &[Ask], offset: i32) -> String {
+    let line = |a: &Ask| {
+        let status = match &a.status {
+            Status::Sending => "sending…".to_string(),
+            Status::Sent(_) => "sent".to_string(),
+            Status::Failed(why) => format!("failed: {why}"),
+        };
+        let text: String = a.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = match text.char_indices().nth(80) {
+            Some((at, _)) => format!("{}…", &text[..at]),
+            None => text,
+        };
+        format!("{}  {status}  {text}", clock(a.at, offset))
+    };
+    asks.iter().map(line).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(test)]

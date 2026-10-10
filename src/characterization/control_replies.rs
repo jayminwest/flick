@@ -198,6 +198,9 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["dictation", "last"], "dictation last"),
         (&["dictation", "status"], "dictation status"),
         (&["dictation"], "dictation"),
+        // A peer (KOTA included) must not make this Mac ssh text to KOTA.
+        (&["kota", "ask", "hi"], "kota ask"),
+        (&["kota", "ask"], "kota ask"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
