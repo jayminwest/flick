@@ -6,6 +6,8 @@
 mod client;
 mod stdin;
 
+pub use client::PEER;
+
 use std::ffi::OsStr;
 use std::io::{self, IsTerminal};
 

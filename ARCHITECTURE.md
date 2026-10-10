@@ -187,7 +187,8 @@ Sources:
 - `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
   `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
   threads and notification clicks), `capture` (its shutter thread, and the annotation
-  editor's `on_done` when it closes), `sys` (its probe and service-check threads),
+  editor's `on_done` when it closes), `sys` (its probe, service-check and fleet threads,
+  and its fleet timer),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
   modifier-release poll), `kota` (its poll round, its timer and its ask thread).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
@@ -252,6 +253,13 @@ and every hotkey.
   cache and starts a refresh on a thread, at most once per 5 s. Only the first call with an
   empty cache waits for that thread on a `Condvar`, bounded (2.25 s for the 2 s probe); the
   child itself never runs on the main thread. Nothing refreshes unless a verb asks.
+- A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): one round thread,
+  one thread per due machine (a peer's Flick through `core::control::PeerHooks`, or
+  `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5 <target> /bin/sh -s` with the probe on
+  stdin, 10 s budget). The round captures an epoch; a reload or `Sleep` bumps it, so late
+  results are dropped. It polls on `LauncherOpened`, `Wake` and `sys fleet`, then every 15 s
+  only while its view shows (the round sleeps and posts once more), and on its own timer
+  only with `[sys] refresh_secs`; `Sleep` stops the timer. With no machines it starts nothing.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
 follows an external server.
@@ -479,9 +487,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `message` (every verb but `card press|focus`, notably `post`, `card post` and `card spec`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
   (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
-  `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
-  a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
-  Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
+  `sys snapshot`, `sys services` and `sys fleet` are allowed on purpose too: they are read-only;
+  the first two are how a peer's fleet view reads this Mac (their JSON is the peer contract,
+  `src/modules/sys/report.rs`), and `sys fleet` only reads what this Mac's own `[[sys.machine]]`
+  polling found: for a remote caller (`Cx::remote`) it starts no round, so a peer never makes
+  this Mac ssh or ask its peers.
+  Service checks, including `command` argvs, and ssh targets come only from this Mac's config.
   `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
   round, at most one per 10 s) are allowed on purpose too.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
@@ -503,6 +514,15 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `control::net::HOOKS` (`core::control::NetHooks`, plain fn pointers) to `Remote::new`.
   The listener runs iff the switch is on and `peers` is not empty. User guide and manual
   smoke test: `docs/remote.md`.
+- Asking a peer from a module: `core::control::PeerHooks` (one plain fn pointer, `ask(host,
+  words, flags) -> Result<Reply, String>`) is the client seam. `cli::client::PEER` implements
+  it with the `--host` client code (no subprocess): `cli::client::Host::parse`, a 5 s connect
+  per resolved address, then 10 s read and write timeouts for the one reply line; it always
+  sends `--remote` (the peer's transport forces it anyway) and `--json` when asked. `Err`
+  means no reply (bad host, unreachable, timed out, dropped, unparsable); a peer's
+  `{"error":...}` is `Ok(Reply::Error)`. Modules never import `crate::cli`: the `modules!`
+  line passes `crate::cli::PEER`, as it passes `control::net::HOOKS` to `remote`. It blocks,
+  so only background threads call it. The peer applies its own `net_policy`.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) sends `--json` as the last request word and
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With
