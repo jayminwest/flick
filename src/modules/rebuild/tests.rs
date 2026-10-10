@@ -267,6 +267,17 @@ fn rebuild_options() {
     assert!(parse(&["--dirty", "--ref", "x"]).unwrap_err().contains("drop --ref"));
 }
 
+/// flick-be14: `--source <worktree>` builds the worktree, but the stamp keeps this Flick's
+/// checkout, configured or baked.
+#[test]
+fn a_source_build_keeps_tracking_this_checkout() {
+    let mut m = module(None);
+    let req = m.request(Some("HEAD".into()), "/wt".into(), false);
+    assert_eq!((req.source.as_path(), &req.home), (Path::new("/wt"), &m.stamp.source));
+    configure(&mut m, "[flick]\nsource = \"/main\"").unwrap();
+    assert_eq!(m.request(None, "/wt".into(), false).home, Path::new("/main"));
+}
+
 #[test]
 fn gates_are_off_unless_configured() {
     let mut m = module(None);
