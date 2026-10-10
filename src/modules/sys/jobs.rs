@@ -69,9 +69,11 @@ pub fn tail(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answe
     spawned.map(|_| ()).map_err(|e| format!("sys tail: no thread: {e}"))
 }
 
-/// Start a restart of `target`: its result becomes `State::acted`. `answer` gets it too.
+/// Start a restart of `target`: `State::acted` says it runs, then its result. `answer`
+/// gets the result too.
 pub fn restart(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answer: Option<Sender<Answer>>) -> Result<(), String> {
     let (sh, place, what) = (Arc::clone(shared), target.place.clone(), target.what());
+    shared.lock().acted = Some((format!("Restarting {what}…"), (hooks.now)()));
     let spawned = thread::Builder::new().name("sys-restart".into()).spawn(move || {
         let got = act::restarted(exec(&run, &place, hooks), &what);
         let text = got.clone().unwrap_or_else(|e| e);

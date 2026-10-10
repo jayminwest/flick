@@ -89,6 +89,7 @@ fn open() {
         input: Input::Multi,
         hide_on_blur: false,
         private: None,
+        align: surface::Align::Bottom,
     };
     let handlers = Handlers {
         submit: |_, text| queue(Note::Submit(text)),
@@ -152,6 +153,7 @@ fn private_open() {
         input: Input::Multi,
         hide_on_blur: false,
         private: Some(BANNER),
+        align: surface::Align::Bottom,
     };
     let handlers = Handlers {
         submit: |_, text| private_queue(Note::Submit(text)),

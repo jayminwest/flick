@@ -16,6 +16,8 @@ pub struct Settings {
     /// Background fleet refresh in seconds: 0 (the default) polls only when the launcher or
     /// the fleet view opens, on wake and every 15 s while the view shows; else at least 30.
     pub refresh_secs: u64,
+    /// Shows the fleet window, or hides it when it has the keyboard; unset by default.
+    pub hotkey: Option<String>,
 }
 
 /// The least non-zero `refresh_secs`.

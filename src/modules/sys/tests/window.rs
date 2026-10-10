@@ -62,10 +62,12 @@ fn keys_map_to_notes() {
     assert_eq!(win::note(stroke(Key::Return, false, false), input), Some(Note::Filter("pro".into())));
     assert_eq!(win::note(stroke(Key::Char('r'), true, false), || unreachable!()), Some(Note::Refresh));
     assert_eq!(win::note(stroke(Key::Char('w'), true, false), || unreachable!()), Some(Note::Close));
+    assert_eq!(win::note(stroke(Key::Char('k'), true, false), || unreachable!()), Some(Note::Actions));
     for k in [
         stroke(Key::Char('r'), true, true),
         stroke(Key::Char('r'), false, false),
         stroke(Key::Char('n'), true, false),
+        stroke(Key::Char('k'), true, true),
         stroke(Key::Escape, false, false),
         stroke(Key::Up, false, false),
     ] {
@@ -81,7 +83,7 @@ fn sys_window_shows_one_bubble_per_machine_and_polls() {
     // Drawn before the first round lands: every machine pending.
     assert_eq!(keys(), ["machine/laptop", "machine/server", "machine/pro"]);
     assert!(rows()[1].starts_with("machine/server|Theirs|server · pending · via flick||Pending|loading…"), "{:?}", rows());
-    assert_eq!(header(), ("Fleet: 3 machines  ·  ⌘R refresh  ·  Esc hides".into(), Status::Busy));
+    assert_eq!(header(), ("Fleet: 3 machines  ·  ⌘K actions  ·  ⌘R refresh  ·  Esc hides".into(), Status::Busy));
     settle(&m);
     assert_eq!(tried(&m), [None, Some(1_000), Some(1_000)], "showing it polled");
     event(&mut m, Event::ModuleChanged { module: ID });
@@ -150,7 +152,7 @@ fn trouble_turns_the_dot_red_and_marks_the_machine() {
     event(&mut m, Event::ModuleChanged { module: ID });
     let pro = &rows()[2];
     assert!(pro.starts_with("machine/pro|Theirs|pro · down · via ssh||Failed|ssh: "), "{pro}");
-    assert_eq!(header(), ("Fleet: 3 machines · 1 down  ·  ⌘R refresh  ·  Esc hides".into(), Status::Error));
+    assert_eq!(header(), ("Fleet: 3 machines · 1 down  ·  ⌘K actions  ·  ⌘R refresh  ·  Esc hides".into(), Status::Error));
     // A failing service alone turns it red too, and is bold in its bullet.
     fresh();
     let config = FLEET.replace("target = \"ollama\"", "target = \"nope\"");
@@ -169,7 +171,7 @@ fn no_machines_says_how_to_add_them() {
     let mut m = sys("", HOOKS);
     ask(&mut m, &["window"], false).unwrap();
     assert_eq!(rows(), ["empty|System|||Done|No machines (add `[[sys.machine]]` tables to config.toml)"]);
-    assert_eq!(header(), ("Fleet: 0 machines  ·  ⌘R refresh  ·  Esc hides".into(), Status::Idle));
+    assert_eq!(header(), ("Fleet: 0 machines  ·  ⌘K actions  ·  ⌘R refresh  ·  Esc hides".into(), Status::Idle));
     // Not started: showing it polls nothing.
     assert!(!m.shared.lock().fleet.busy());
 }

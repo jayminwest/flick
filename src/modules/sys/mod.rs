@@ -36,12 +36,14 @@
 //!
 //! Table `[sys]`: `service` (array of tables; none by default): `name`, `kind` (http, tcp,
 //! launchd, process, command), `target`, `warn`, `fail`, `log`, `restart`; `machine` (none
-//! by default): `name`, `via`, `host`, `ssh`, `vnc`, `dash`, `service`; `refresh_secs` (0)
+//! by default): `name`, `via`, `host`, `ssh`, `vnc`, `dash`, `service`; `refresh_secs` (0);
+//! `hotkey` (unset: the fleet window's show/hide hotkey, flick-1e00)
 //! (`settings.rs`).
 //!
 //! Window (`window.rs`, flick-a2ed): `flick sys window` and cmd+K Open Fleet Window on
 //! `Fleet` show the fleet on the floating surface "fleet", one bubble per machine; it polls
 //! every `VISIBLE_EVERY` s while it shows; Esc hides it. In `NET_DENIED` (it pops a window).
+//! cmd+K there shows an action card per machine (`menu.rs`, flick-1e00).
 //!
 //! Cadence (`poll.rs`): the fleet polls on launcher open, on wake and on `sys fleet`; every
 //! `VISIBLE_EVERY` s while the fleet view shows (`fleet_view`: `open` sets it, `closed` clears
@@ -54,6 +56,7 @@ mod check;
 mod fleet;
 mod io;
 mod jobs;
+mod menu;
 mod ops;
 mod poll;
 mod probe;
@@ -73,7 +76,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::config::Section;
 use crate::core::control::PeerHooks;
-use crate::core::{Action, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use crate::core::{Action, Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use fleet::{Fleet, Local, VISIBLE_DUE, VISIBLE_EVERY};
 use io::{Hooks, Shared, State};
 use settings::Settings;
@@ -125,6 +128,8 @@ pub struct Sys {
     win: window::Win,
     /// The visible cadence, `VISIBLE_EVERY` s (tests shorten it).
     tick: Duration,
+    /// `[sys] hotkey`: shows or hides the fleet window.
+    hotkey: Option<String>,
 }
 
 impl Sys {
@@ -137,7 +142,18 @@ impl Sys {
         let shared = Arc::default();
         let win = window::Win::new(win);
         let tick = Duration::from_secs(VISIBLE_EVERY);
-        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: None, detail: None, win, tick }
+        Sys {
+            shared,
+            hooks,
+            first_wait: FIRST_WAIT,
+            refresh_secs: 0,
+            started: false,
+            fleet_view: None,
+            detail: None,
+            win,
+            tick,
+            hotkey: None,
+        }
     }
 
     /// Poll the fleet as `kind` asks, if it has machines. Refreshes this Mac's own cache
@@ -274,6 +290,7 @@ impl Module for Sys {
         self.shared.set_services(&settings.service);
         self.shared.lock().fleet.set_machines(&settings.machine);
         self.refresh_secs = settings.refresh_secs;
+        self.hotkey = settings.hotkey.filter(|s| !s.trim().is_empty());
         // Only a started module runs timers: a reload configures a throwaway one too.
         if self.started {
             self.restart_timer();
@@ -365,6 +382,18 @@ impl Module for Sys {
 
     fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
         self.confirm_restart(token)
+    }
+
+    /// `hotkey` shows or hides the fleet window, whenever set.
+    fn hotkeys(&self) -> Vec<Binding> {
+        self.hotkey.iter().map(|spec| Binding { spec: spec.clone(), key: Ok("window".into()) }).collect()
+    }
+
+    fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+        if key == "window" {
+            self.window_toggle();
+        }
+        None
     }
 
     /// `--json` (`cx.json`) answers with the JSON in `report.rs`.

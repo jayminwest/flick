@@ -80,7 +80,14 @@ States: **fresh**; **stale** when the data is older than three times the cadence
 
 Tail and restart act only on services that this Mac's config defines: its own `[[sys.service]]` (run here) or a `[[sys.machine.service]]` of a machine with `ssh` (run over ssh). A service that only a peer's Flick reports offers neither, because a label, a path or a command never comes from a peer's reply. Restart works only on launch agents in your GUI domain: no `sudo`, no system daemons.
 
-**Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**, or `flick sys window`, shows the fleet in a floating window that stays up while you work: one bubble per machine (name, state, how it was read, age, metrics, one line per service). The dot by the title turns red when a machine is down or a service fails, orange while machines are being read. It polls every 15 s while it shows and stops once hidden. Type in its field and press ↵ to filter machines (name, state, `via`) or services (name, kind, status); ↵ on an empty field shows everything. ⌘R reads every machine now: the notice line says **Refreshing…** while it runs, then **Refreshed** for a few seconds. Esc or ⌘W hides it. `flick sys window --snapshot <png>` draws it into a PNG without showing it.
+**Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**, or `flick sys window`, shows the fleet in a floating window that stays up while you work: one bubble per machine (name, state, how it was read, age, metrics, one line per service). The dot by the title turns red when a machine is down or a service fails, orange while machines are being read. It polls every 15 s while it shows and stops once hidden. Type in its field and press ↵ to filter machines (name, state, `via`) or services (name, kind, status); ↵ on an empty field shows everything. ⌘R reads every machine now: the notice line says **Refreshing…** while it runs, then **Refreshed** for a few seconds. Esc or ⌘W hides it. `flick sys window --snapshot <png>` draws it into a PNG without showing it. The bubbles sit at the top of the window, as in a dashboard.
+
+⌘K in the window shows a card under each machine with the same actions as ⌘K in the launcher: **Screen Sharing**, **Open Dash**, **Tail <service>** and **Restart <service>…**. ⌘K again hides the cards. A tail shows under the machine's card. **Restart…** asks first on the card: it shows the exact command with **Cancel** and **Run**. The notice line says `Restarting …`, then the result, or why a press did nothing. With no `vnc`, `dash`, `log` or `restart` set, the notice says so. Hiding the window drops the cards.
+
+```toml
+[sys]
+hotkey = "cmd+ctrl+alt+shift+KeyW"   # optional: shows the fleet window, or hides it when it has the keyboard
+```
 
 ```bash
 flick sys tail [<machine>] <service>             # the last 100 lines
@@ -268,4 +275,6 @@ Unit tests cover the probe parser, the check verdicts, the fleet model, the view
 - [ ] **Network refusal.** From mbp-server: `flick --host jaymins-macbook-pro sys fleet` answers from the cache. `flick --host jaymins-macbook-pro sys restart mac-pro syncthing --yes` and `... sys tail mbp-server kota-dash` print `not allowed over the network` and exit 1.
 - [ ] **Herdr Agents.** The last row of **Fleet** opens the herdr agents view.
 - [ ] **Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**: the launcher hides and a window titled Fleet appears under the pointer with a bubble per machine; the app you were in stays active. Ages stay under about 15 s while it shows. Type `pro` + ↵: only mac-pro remains and a notice line shows the filter; ↵ on an empty field brings all back. ⌘R shows Refreshing… then Refreshed in the notice line, ahead of the filter. Esc hides it; reopen it and it keeps its size and place. `flick --host jaymins-macbook-pro sys window` from mbp-server prints `not allowed over the network`.
+- [ ] **Fleet window actions.** With few machines, the bubbles sit at the top. ⌘K: a card shows under mbp-server and mac-pro. **Screen Sharing** on mac-pro opens Screen Sharing. **Tail kota-mailwatch** shows its last lines under mbp-server's card. **Restart syncthing…** on mac-pro shows the command with Cancel and Run; Cancel restarts nothing. ⌘K again hides the cards.
+- [ ] **Fleet window hotkey.** Set `[sys] hotkey` and reload. The hotkey shows the window; pressed again while the window has the keyboard, it hides it.
 - [ ] **Sleep.** Sleep the laptop with the Fleet view open, then wake it. One round runs after wake, and no stale round from before sleep overwrites it.

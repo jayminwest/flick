@@ -225,6 +225,8 @@
 # Without it the fleet polls when the launcher opens, on wake, and every 15 s while the
 # fleet view shows.
 #refresh_secs = 0
+# Shows the fleet window, or hides it when it has the keyboard; unset by default.
+#hotkey = "cmd+ctrl+alt+shift+KeyW"
 
 # A service check; none by default. Repeat the table for each. kind and target:
 #   "http"     a URL fetched with curl (3 s); 2xx and 3xx pass
