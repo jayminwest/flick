@@ -95,17 +95,13 @@ fn run_input(argv: &[String], script: &str, _budget: Duration) -> Result<Exit, S
 
 /// Canned peers by host: `server` answers a snapshot (`--json` and `--remote` required);
 /// `old` is a Flick without the sys module; `odd` answers text; `busy` has no snapshot yet;
-/// `late` answers after 300 ms; anything else is unreachable.
+/// anything else is unreachable.
 fn ask(host: &str, words: &[String], flags: Flags) -> Result<Reply, String> {
     assert_eq!(words, ["sys", "snapshot"]);
     assert!(flags.json && flags.remote);
     let snapshot = || Reply::Ok(json!({ "host": host, "cpu_load": [0.5, 0.4, 0.3], "services": [] }));
     match host {
         "server" => Ok(snapshot()),
-        "late" => {
-            std::thread::sleep(Duration::from_millis(300));
-            Ok(snapshot())
-        }
         "old" => Ok(Reply::Error("unknown module \"sys\" (modules: app, clip)".into())),
         "odd" => Ok(Reply::Ok("text".into())),
         "busy" => Ok(Reply::Error("sys: no snapshot yet (probe still running)".into())),

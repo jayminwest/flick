@@ -4,7 +4,8 @@
 //! the module has no network code. The whole module is in `NET_DENIED`, so a peer can never
 //! start the microphone.
 //!
-//! Off until `[dictation]` sets at least one key; a config without the table runs nothing.
+//! Off until `[dictation]` sets at least one key (`Section::is_set`); a config without the
+//! table, or with an empty one, runs nothing.
 //! The trigger is a `[[keys.chord]]` with `{ flick = "dictation start" }` / `"dictation
 //! stop"` actions: modules never import each other, so the keys module sends verbs here.
 //!
@@ -201,7 +202,7 @@ impl Module for Dictation {
     }
 
     fn configure(&mut self, table: &Section) -> Result<(), String> {
-        let on = !table.get::<toml::Table>()?.is_empty();
+        let on = table.is_set();
         let settings = table.get::<Settings>()?;
         settings.check()?;
         self.session.set_min_hold(settings.min_hold_ms);

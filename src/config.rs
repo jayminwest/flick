@@ -152,6 +152,7 @@ hotkey = "alt+shift+Space"
 # position = "top-right"
 # width = 380
 # timeout_secs = 20
+# max_cards = 4
 # max_history = 50
 # sound = true
 # hotkey = "cmd+ctrl+alt+shift+KeyM"
@@ -226,6 +227,12 @@ impl Section {
     /// missing table or key takes its default.
     pub fn get<T: DeserializeOwned>(&self) -> Result<T, String> {
         Value::Table(self.table.clone()).try_into().map_err(|e| format!("[{}]: {e}", self.module))
+    }
+
+    /// The table sets a key besides `enabled`. A bare `[<module>]` header counts as no table:
+    /// modules that stay off until configured (kota, dictation) turn on only on a key.
+    pub fn is_set(&self) -> bool {
+        !self.table.is_empty()
     }
 }
 

@@ -117,12 +117,39 @@ fn a_round_reads_every_due_machine_once() {
     assert!(sh.wait(DEADLINE, |s| !s.fleet.busy()));
 }
 
+/// Set by the test once the round is forgotten: `gated_ask` answers only then.
+static GATE: AtomicBool = AtomicBool::new(false);
+
+#[expect(clippy::unnecessary_wraps, reason = "stands in for PeerHooks::ask")]
+fn gated_ask(host: &str, _words: &[String], _flags: Flags) -> Result<Reply, String> {
+    let deadline = Instant::now() + DEADLINE;
+    while !GATE.load(Ordering::SeqCst) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Ok(Reply::Ok(serde_json::json!({ "host": host })))
+}
+
+/// Wait until every round thread let go of `sh`, so its result was applied or dropped.
+fn threads_done(sh: &Arc<Shared>) -> bool {
+    let deadline = Instant::now() + DEADLINE;
+    while Arc::strong_count(sh) > 1 {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    true
+}
+
 #[test]
 fn a_round_dropped_by_sleep_stores_nothing() {
-    let sh = shared("[[sys.machine]]\nname = \"a\"\nvia = \"flick\"\nhost = \"late\"\n");
-    assert!(round(&sh, 0, HOOKS));
+    let hooks = Hooks { ask: gated_ask, ..HOOKS };
+    let sh = shared("[[sys.machine]]\nname = \"a\"\nvia = \"flick\"\nhost = \"gated\"\n");
+    assert!(round(&sh, 0, hooks));
     sh.lock().fleet.forget_round();
-    std::thread::sleep(Duration::from_millis(500));
+    // The answer comes in only after the round was dropped, and the thread has ended.
+    GATE.store(true, Ordering::SeqCst);
+    assert!(threads_done(&sh), "the read thread ended");
     let st = sh.lock();
     assert_eq!((st.fleet.slots[0].tried_at, st.fleet.busy()), (None, false));
 }
