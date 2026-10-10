@@ -1,7 +1,7 @@
 //! `message card` verbs over the shared fixture: post, replace, `reply_to`, the silent `done`
 //! update of a dismissed card, origin, and errors. Nothing reaches `AppKit`.
 
-use super::tests::{Fixture, inbox, set_keyboard, take_log};
+use super::tests::{Fixture, inbox, queue, set_keyboard, take_log};
 use super::*;
 use crate::core::card as core_card;
 
@@ -44,9 +44,9 @@ fn replies_list_warnings_and_a_repost_replaces() {
     );
     assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|20|true|false", "notify c1|Deploy?|Shipped."]);
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\tdone\tDeploy?");
-    // A pending card: no sound, no notification.
     f.run(&mut m, false, &["card", "post", &deploy_in("pending")]).unwrap();
-    assert_eq!(take_log(), ["card c1 Deploy? Pending|false|None|None|TopRight|4|20|false|false"]);
+    // A pending card: no sound, no notification, and no timeout (flick-9bdb, was 20).
+    assert_eq!(take_log(), ["card c1 Deploy? Pending|false|None|None|TopRight|4|0|false|false"]);
     assert_eq!(f.store.messages(10).len(), 1);
 }
 
@@ -197,4 +197,25 @@ fn card_spec_prints_the_doc_and_its_examples_parse() {
     let form = core_card::parse(form, core_card::Origin::Remote).unwrap().card;
     assert_eq!(core_card::action::values_json(&form.inputs()), Ok(r#"{"note":"","slot":"tue-10","with":[]}"#.into()));
     assert_eq!(json_blocks("```json\n{}\n```\ntext\n```sh\nx\n```"), ["{}\n"]);
+}
+
+#[test]
+fn a_kota_pending_card_stays_until_its_done_update_shows() {
+    // flick-9bdb: KOTA posts a long job as `pending`, then `done`.
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    f.run(&mut m, false, &["card", "post", &deploy_in("pending")]).unwrap();
+    assert!(take_log()[0].ends_with("|0|false|false"), "no timeout while KOTA works");
+    f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
+    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|20|true|false"]);
+    // A card that only timed out is not dismissed for its updates: a done one shows.
+    queue(dispatch::Note::Expired("c1".into()));
+    f.cx("", false, |cx| m.drain(cx));
+    f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
+    assert_eq!(take_log().len(), 1);
+    assert!(!m.dismissed.contains("c1") && !m.expired.contains("c1"));
+    // One the user closed stays closed.
+    queue(dispatch::Note::Dismissed("c1".into()));
+    f.cx("", false, |cx| m.drain(cx));
+    f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
+    assert_eq!(take_log(), [""; 0]);
 }

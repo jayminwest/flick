@@ -65,8 +65,8 @@ const CHAT: &str = "chat";
 pub struct Inbox {
     env: Env,
     settings: Settings,
-    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one stays
-    /// in history.
+    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one the
+    /// user dismissed stays in history.
     dismissed: HashSet<String>,
     /// Dismissed cards that only timed out: they still wait on the user (`pending.rs`).
     expired: HashSet<String>,

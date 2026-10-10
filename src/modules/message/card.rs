@@ -20,7 +20,9 @@
 //!   `card press` of the same action is Run. `press <id> :cancel` is Cancel.
 //!
 //! A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
-//! update of it goes to history without showing (plan risk 10).
+//! update of it goes to history without showing (plan risk 10). A card that only timed out
+//! is not dismissed for this: any update of it shows (flick-9bdb). A `pending` card has no
+//! timeout, so KOTA's final update of a long job finds it still up.
 
 use serde::Serialize;
 
@@ -92,11 +94,12 @@ pub fn state_name(state: State) -> &'static str {
 
 impl Inbox {
     /// How a card behaves in the HUD: one that waits on the user (open, an enabled action)
-    /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA after a
-    /// press stays until KOTA or the watchdog changes it; others time out like a message.
+    /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA (after a
+    /// press, or posted `pending`) stays until KOTA or the watchdog changes it, so its final
+    /// update shows (flick-9bdb); others time out like a message.
     pub(super) fn card_options(&self, c: &Card, ui: &Ui) -> Options {
         let sticky = c.waits_on_user();
-        let secs = if ui.busy() {
+        let secs = if ui.busy() || c.state == State::Pending {
             0
         } else if sticky {
             self.settings.card_timeout_secs
@@ -184,7 +187,9 @@ impl Inbox {
         };
         self.save(&m, took, cx)?;
         self.ui.remove(&m.id);
-        let silent = matches!(c.state, State::Done | State::Pending) && self.dismissed.contains(&m.id);
+        // Only the user's dismissal silences an update; a card that timed out shows it.
+        let closed = self.dismissed.contains(&m.id) && !self.expired.contains(&m.id);
+        let silent = matches!(c.state, State::Done | State::Pending) && closed;
         if !silent {
             self.dismissed.remove(&m.id);
             self.expired.remove(&m.id);

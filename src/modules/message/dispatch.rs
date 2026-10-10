@@ -24,7 +24,7 @@
 //!   local part that fails shows its error and sends nothing.
 //! - A dismissal by the user or a timeout marks the card dismissed (plan risk 10) and drops
 //!   its press state; a run or send that ends afterwards is ignored. A timed-out card still
-//!   counts as waiting on the user (`pending.rs`).
+//!   counts as waiting on the user (`pending.rs`), and any update of it shows (`card.rs`).
 //!
 //! Press state is in memory only; local output is never stored.
 

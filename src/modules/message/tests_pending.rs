@@ -68,7 +68,7 @@ fn a_timed_out_card_still_waits_but_a_dismissed_one_does_not() {
     take_pending();
     queue(Note::Expired("c1".into()));
     settle(&mut f, &mut m);
-    // Gone from the corner like a dismissal (a done update stays silent)...
+    // Gone from the corner like a dismissal (though a done update would show again)...
     assert!(m.dismissed.contains("c1") && m.expired.contains("c1"));
     assert_eq!(take_pending(), [0; 0]);
     // ...until the user dismisses it.
