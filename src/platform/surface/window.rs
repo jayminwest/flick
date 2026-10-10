@@ -349,7 +349,7 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
     let rule: Retained<NSBox> =
         unsafe { msg_send![NSBox::alloc(mtm), initWithFrame: NSRect::ZERO] };
     rule.setBoxType(NSBoxType::Separator);
-    let rows = Transcript::new(mtm, !private);
+    let rows = Transcript::new(mtm, !private, spec.align);
     for v in [&*title as &NSView, &subtitle, &dot, &rule, rows.view(), &notice] {
         root.addSubview(v);
     }

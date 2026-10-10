@@ -22,7 +22,7 @@ use super::fleet::Fleet;
 use super::jobs::Tail;
 use super::probe::{self, Snapshot};
 use super::run::Exit;
-use super::settings::{Kind, Service};
+use super::settings::{Domain, Kind, Service};
 use crate::core::control::{Flags, Reply};
 
 /// Budget of the probe's child.
@@ -56,6 +56,8 @@ pub struct Hooks {
     /// Open a URL in its app: `vnc://` in Screen Sharing, a dash in the browser (main
     /// thread).
     pub open: fn(&str),
+    /// Show a restart's result as a HUD toast (main thread).
+    pub toast: fn(&str),
 }
 
 /// One configured service and its last verdict.
@@ -82,6 +84,8 @@ pub struct State {
     pub tail: Option<Tail>,
     /// The last restart's result and when it ended (`jobs.rs`).
     pub acted: Option<(String, u64)>,
+    /// A restart result the main thread has yet to show as a HUD toast (flick-1356).
+    pub toast: Option<String>,
     /// When the last services round started.
     checked_round: Option<u64>,
     epoch: u64,
@@ -249,8 +253,11 @@ pub fn check_one(service: &Service, hooks: Hooks) -> Verdict {
         }
         Kind::Tcp => check::tcp((hooks.connect)(&word, CHECK_BUDGET), service.limits()),
         Kind::Launchd => {
-            let Some(uid) = (hooks.uid)() else { return Verdict::unknown("no uid for the launchd domain") };
-            let domain = format!("gui/{uid}");
+            let domain = match (service.domain, (hooks.uid)()) {
+                (Domain::System, _) => service.launchd_domain(""),
+                (Domain::Gui, Some(uid)) => service.launchd_domain(&uid.to_string()),
+                (Domain::Gui, None) => return Verdict::unknown("no uid for the launchd domain"),
+            };
             let print = argv(&["/bin/launchctl", "print", &format!("{domain}/{word}")]);
             check::launchd((hooks.run)(&print, CHECK_BUDGET), &domain)
         }

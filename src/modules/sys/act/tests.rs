@@ -118,6 +118,44 @@ fn tail_reads_the_configured_log() {
 }
 
 #[test]
+fn a_system_daemon_runs_through_sudo_n_and_quotes_its_label() {
+    let mut t = target(Some("server"), "pundit").unwrap();
+    assert_eq!(t.sudo_tail("/h"), None, "a gui agent's tail never uses sudo");
+    t.service.domain = Domain::System;
+    let r = t.restart(None).unwrap();
+    assert_eq!(r.input.as_deref(), Some("exec /usr/bin/sudo -n /bin/launchctl kickstart -k \"system/\"'dev.pundit'\\''s'\n"));
+    assert_eq!(r.shown, "ssh me@server sudo -n launchctl kickstart -k system/dev.pundit's");
+    assert_eq!(t.confirm(&r).rows[0].accessory, "launchd system · sudo -n");
+    let tail = t.sudo_tail("/h").unwrap();
+    assert_eq!(tail.input.as_deref(), Some("exec /usr/bin/sudo -n /usr/bin/tail -n 100 -- \"$HOME\"/'logs/it'\\''s.log'\n"));
+    assert_eq!(tail.shown, "ssh me@server sudo -n tail -n 100 ~/logs/it's.log");
+    // Here: no uid needed, the argv starts with sudo -n.
+    let mut here = target(None, "agent").unwrap();
+    here.service.domain = Domain::System;
+    let r = here.restart(None).unwrap();
+    assert_eq!(r.argv, ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "-k", "system/dev.agent"]);
+    assert_eq!(r.shown, "sudo -n launchctl kickstart -k system/dev.agent");
+    let tail = here.sudo_tail("/Users/me").unwrap();
+    assert_eq!(tail.argv, ["/usr/bin/sudo", "-n", "/usr/bin/tail", "-n", "100", "--", "/Users/me/Library/Logs/agent.log"]);
+    here.service.log = None;
+    assert_eq!(here.sudo_tail("/h"), None);
+}
+
+#[test]
+fn sudo_asking_for_a_password_says_so_plainly() {
+    let what = "x on y";
+    let asks = ["sudo: a password is required\n", "sudo: a terminal is required to read the password\n"];
+    for stderr in asks {
+        let want = format!("Restart x on y failed: {SUDO_NEEDS_PASSWORD}");
+        assert_eq!(restarted(exit(Some(1), "", stderr), what).unwrap_err(), want);
+    }
+    assert_eq!(tailed(exit(Some(1), "", asks[0])).unwrap_err(), SUDO_NEEDS_PASSWORD);
+    // Another sudo error, or the words outside a sudo line, stay as they are.
+    assert_eq!(tailed(exit(Some(1), "", "sudo: unknown user x\n")).unwrap_err(), "sudo: unknown user x");
+    assert_eq!(tailed(exit(Some(1), "", "tail: a password is required\n")).unwrap_err(), "tail: a password is required");
+}
+
+#[test]
 fn the_confirm_shows_the_exact_command_and_round_trips_its_token() {
     let t = target(Some("server"), "pundit").unwrap();
     let c = t.confirm(&t.restart(None).unwrap());

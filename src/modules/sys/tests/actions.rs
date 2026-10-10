@@ -74,7 +74,8 @@ fn tailed(m: &Sys) -> Option<Result<String, String>> {
 }
 
 fn acted(m: &Sys) -> String {
-    assert!(m.shared.wait(Duration::from_secs(5), |s| s.acted.is_some()));
+    // `Restarting …` while it runs, then the result.
+    assert!(m.shared.wait(Duration::from_secs(5), |s| s.acted.as_ref().is_some_and(|(t, _)| !t.ends_with('…'))));
     m.shared.lock().acted.take().map(|(text, _)| text).unwrap_or_default()
 }
 

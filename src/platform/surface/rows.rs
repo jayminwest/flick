@@ -178,6 +178,16 @@ pub fn diff(old: &[Ident], new: &[Ident]) -> Vec<Plan> {
         .collect()
 }
 
+/// Where rows sit while they do not fill the view (`Spec::align`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    /// At the bottom, as in a chat; the scroll stays pinned to the bottom if it was there.
+    #[default]
+    Bottom,
+    /// At the top, as in a dashboard; the scroll keeps its offset.
+    Top,
+}
+
 /// How close to the end counts as the bottom, in points.
 const PIN_SLACK: f64 = 4.0;
 
@@ -185,6 +195,11 @@ const PIN_SLACK: f64 = 4.0;
 /// of a document `doc` tall is at the bottom, so it should stay there.
 pub fn at_bottom(offset: f64, visible: f64, doc: f64) -> bool {
     offset + visible >= doc - PIN_SLACK
+}
+
+/// Whether a relayout scrolls to the bottom: only bottom-aligned rows that were there.
+pub fn pinned(align: Align, offset: f64, visible: f64, doc: f64) -> bool {
+    align == Align::Bottom && at_bottom(offset, visible, doc)
 }
 
 /// The offset that shows the end of a document `doc` tall through `visible` points.
@@ -320,9 +335,9 @@ fn bubble(width: f64, side: Side, text: Size, meta_w: f64, badge: bool) -> (Fram
 }
 
 /// Stack `shapes` top-down in a transcript `width` wide whose visible part is `visible`
-/// tall. Rows sit at the bottom while they do not fill it, as in a chat. Returns each row's
-/// frames and the document height (at least `visible`).
-pub fn stack(width: f64, visible: f64, shapes: &[Shape]) -> (Vec<Frames>, f64) {
+/// tall. While they do not fill it, rows sit where `align` says: at the bottom as in a chat,
+/// or at the top. Returns each row's frames and the document height (at least `visible`).
+pub fn stack(width: f64, visible: f64, shapes: &[Shape], align: Align) -> (Vec<Frames>, f64) {
     let mut y = PAD_Y;
     let mut out: Vec<Frames> = shapes
         .iter()
@@ -345,7 +360,7 @@ pub fn stack(width: f64, visible: f64, shapes: &[Shape]) -> (Vec<Frames>, f64) {
         })
         .collect();
     let content = if shapes.is_empty() { 0.0 } else { y - ROW_GAP + PAD_Y };
-    let shift = (visible - content).max(0.0);
+    let shift = if align == Align::Top { 0.0 } else { (visible - content).max(0.0) };
     for f in &mut out {
         f.row.y += shift;
     }

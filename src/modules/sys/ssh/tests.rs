@@ -1,10 +1,10 @@
 use super::*;
 use crate::modules::sys::check::Status;
-use crate::modules::sys::settings::Target;
+use crate::modules::sys::settings::{Domain, Target};
 
 fn service(name: &str, kind: Kind, target: &str) -> Service {
     let target = Target::One(target.into());
-    Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false }
+    Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false, domain: Domain::Gui }
 }
 
 #[test]
@@ -59,6 +59,16 @@ fn verdicts_come_from_each_check_section() {
     // Without the uid section the domain is unknown.
     let v = verdicts(&format!("@@ svc 0\n{missing}@@ rc 0 113\n"), &services[2..3]);
     assert_eq!(v[0].as_ref().unwrap().reason, "not loaded in gui/?");
+}
+
+#[test]
+fn a_system_daemon_is_read_in_the_system_domain() {
+    let daemon = Service { domain: Domain::System, ..service("d", Kind::Launchd, "com.d") };
+    let rest = script(std::slice::from_ref(&daemon));
+    assert!(rest.contains(r#"out=$(/bin/launchctl print "system/"'com.d' 2>&1)"#), "{rest}");
+    let missing = include_str!("../fixtures/launchctl_missing.txt");
+    let v = verdicts(&format!("@@ svc 0\n{missing}@@ rc 0 113\n"), &[daemon]);
+    assert_eq!(v[0].as_ref().unwrap().reason, "not loaded in system");
 }
 
 #[test]
