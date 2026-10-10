@@ -86,7 +86,7 @@
     "src/modules/message/run.rs": 98.0,
     "src/modules/message/seen.rs": 100.0,
     "src/modules/message/settings.rs": 100.0,
-    "src/modules/message/store.rs": 99.3,
+    "src/modules/message/store.rs": 100.0,
     "src/modules/message/text.rs": 100.0,
     "src/modules/message/thread.rs": 95.1,
     "src/modules/quicklinks/editor.rs": 99.6,

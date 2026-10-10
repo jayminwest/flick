@@ -9,7 +9,8 @@
 //!   it still is (another app may have taken over meanwhile).
 //! - The thread shown: the one asked for (`message chat --thread t`, the launcher's
 //!   `message/threads`), else the last shown, else the newest stored, else a new one (`t…`,
-//!   stored once the first question is). ⌘N starts a thread, ⌘[ / ⌘] move to the older /
+//!   stored once the first question is). Summoning the window on a thread, or ⌘[ / ⌘] onto
+//!   one, closes that thread's corner cards. ⌘N starts a thread, ⌘[ / ⌘] move to the older /
 //!   newer one (`model::neighbor`), ⌘R resends the newest question that did not go out.
 //! - Context chips (`context.rs`, flick-65bd): the front app, its window and its selection at
 //!   summon; ⌘⇧V the clipboard, ⌘⇧S a screenshot; clicking a chip removes it.
@@ -26,7 +27,7 @@ use super::{model, view};
 use crate::core::Cx;
 use crate::modules::message::Inbox;
 use crate::modules::message::run::{self, Worker};
-use crate::modules::message::store::Messages;
+use crate::modules::message::store::{Messages, Role};
 use crate::platform::context::Front;
 use crate::platform::surface::{self, Key, Keystroke};
 
@@ -217,6 +218,7 @@ impl Inbox {
             self.chat.thread = thread;
         }
         self.current_thread(cx);
+        self.clear_corner(cx);
         if !self.chat.opened {
             (self.chat.hooks.open)();
             self.chat.opened = true;
@@ -280,6 +282,19 @@ impl Inbox {
         if let Some(t) = model::neighbor(&threads, self.chat.thread.as_deref(), step) {
             self.chat.thread = Some(t.to_string());
             self.chat.notice = None;
+            self.clear_corner(cx);
+        }
+    }
+
+    /// The window shows its thread: that thread's corner cards go, since the transcript
+    /// has them (flick-1947). Only the HUD drops them; nothing is stored as dismissed, so
+    /// they stay unread or waiting as they were.
+    fn clear_corner(&self, cx: &Cx) {
+        let Some(thread) = self.chat.thread.as_deref() else { return };
+        for m in cx.store.thread(thread, self.settings.chat_history) {
+            if m.role == Role::Peer {
+                (self.env.dismiss)(&m.id);
+            }
         }
     }
 

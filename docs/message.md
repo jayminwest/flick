@@ -171,8 +171,8 @@ To copy part of a message, drag across it in its bubble and press ⌘C. To copy 
 
 1. Return stores your question at once as your bubble, with "Thinking…" under it. A question is trimmed and must be 1 to 2000 characters. An empty or longer one is refused, and the text and its chips stay in the input.
 2. A worker sends the question to KOTA (below). Questions go one at a time, in the order you typed them.
-3. If the ssh fails or kota-ask exits non-zero, the bubble is marked `Not sent · ⌘R retries`, and the reason shows on the notice line under the transcript. ⌘R sends it again under the same id, with the same chips. Chips are kept for the last 4 failed questions.
-4. "Thinking…" goes when KOTA posts into the thread, or when the question is 10 minutes old without an answer.
+3. If the ssh fails or kota-ask exits non-zero, the bubble is marked `Not sent · ⌘R retries`, and the reason shows on the notice line under the transcript. ⌘R sends it again under the same id, with the same chips. The question then takes the time of the retry: its bubble moves to the end of the transcript and shows "Thinking…" again. Chips are kept for the last 4 failed questions.
+4. "Thinking…" goes when KOTA posts into the thread, or when the question is 10 minutes old (counted from the last ⌘R) without an answer.
 
 `flick message ask [--thread t] <text...>` asks the same way, from a terminal. It uses the window's thread without `--thread`, sends no chips, and answers when the ssh is done (`Asked KOTA (<req>)` or `message ask: <why>`).
 
@@ -198,6 +198,7 @@ Chips above the input show what the next question carries besides its text. Noth
 
 - Your own questions never alert.
 - While the window shows a thread, posts and cards to that thread show no corner card and play no sound. A corner card already up for one only redraws.
+- Showing the window on a thread (summon, `message chat --thread`, **Chat Threads**, ⌘[ / ⌘]) closes that thread's corner cards: the transcript has them. This is not a dismissal: a card that waits on you still counts in the KOTA badge.
 - Other threaded posts show a corner card on the first post of an id and on the final one, and sound only on the final one (`--partial` re-posts are silent).
 - Unthreaded posts behave as before.
 
