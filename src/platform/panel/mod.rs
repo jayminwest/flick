@@ -166,7 +166,7 @@ fn send_key(key: Key) -> bool {
 }
 
 /// Whether ⌘ is the only modifier held (Caps Lock, Fn and the keypad flag don't count).
-fn command_only(flags: NSEventModifierFlags) -> bool {
+pub(in crate::platform) fn command_only(flags: NSEventModifierFlags) -> bool {
     let held = flags
         & (NSEventModifierFlags::Shift
             | NSEventModifierFlags::Control
@@ -190,7 +190,7 @@ fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key>
 }
 
 /// Whether ⌘ and ⇧ are the only modifiers held.
-fn command_shift(flags: NSEventModifierFlags) -> bool {
+pub(in crate::platform) fn command_shift(flags: NSEventModifierFlags) -> bool {
     let held = flags
         & (NSEventModifierFlags::Shift
             | NSEventModifierFlags::Control
@@ -201,7 +201,11 @@ fn command_shift(flags: NSEventModifierFlags) -> bool {
 
 /// The standard edit action for a key equivalent. An app without a main menu has no Edit menu
 /// to send these, so the panel sends them itself.
-fn edit_action(command_only: bool, command_shift: bool, chars: &str) -> Option<Sel> {
+pub(in crate::platform) fn edit_action(
+    command_only: bool,
+    command_shift: bool,
+    chars: &str,
+) -> Option<Sel> {
     let c = chars.to_ascii_lowercase();
     Some(match (command_only, command_shift, c.as_str()) {
         (true, _, "x") => sel!(cut:),

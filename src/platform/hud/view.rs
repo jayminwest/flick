@@ -1,18 +1,23 @@
-//! The `AppKit` side of one card: a borderless, non-activating `NSPanel` whose flipped root
-//! view takes clicks without the panel becoming key, a blurred background, a content view
-//! that a renderer fills (`text` today), and an x close button. Also the `+N more` pill.
+//! The `AppKit` side of one card: a borderless, non-activating `NSPanel` (`CardPanel`) whose
+//! flipped root view takes clicks without the panel becoming key, a blurred background, a
+//! content view that a renderer fills (`text`, `card_view`), and an x close button. Also the
+//! `+N more` pill.
+//!
+//! A card panel becomes key only when a click lands on a view that needs it (a text field:
+//! `becomesKeyOnlyIfNeeded`), never on show or on a button, and being non-activating it never
+//! activates Flick. While key, it routes the edit keys itself (Flick has no Edit menu).
 
 use objc2::rc::Retained;
 use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSButton, NSColor, NSEvent, NSFont, NSImage, NSImageScaling, NSImageView,
-    NSLineBreakMode, NSPanel, NSResponder, NSTextAlignment, NSTextField, NSView,
-    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
-    NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSApplication, NSBackingStoreType, NSButton, NSColor, NSEvent, NSFont, NSImage, NSImageScaling,
+    NSImageView, NSLineBreakMode, NSPanel, NSResponder, NSTextAlignment, NSTextField, NSTextView,
+    NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
 
-use crate::platform::timer;
+use crate::platform::{panel as launcher, timer};
 
 const LEVEL: isize = 25;
 /// The close button's side, and the square in the top right corner that it answers to.
@@ -24,8 +29,53 @@ pub const CLOSE_INSET: f64 = 10.0;
 pub const CLOSE_ROOM: f64 = CLOSE_INSET + CLOSE + 6.0;
 
 define_class!(
+    // Borderless windows refuse key status by default. With `becomesKeyOnlyIfNeeded`, the
+    // panel still becomes key only for a click on a view that needs it (a text field).
+    #[unsafe(super(NSPanel, NSWindow, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "FlickHudPanel"]
+    pub struct CardPanel;
+
+    impl CardPanel {
+        #[unsafe(method(canBecomeKeyWindow))]
+        fn can_become_key_window(&self) -> bool {
+            true
+        }
+
+        // Flick has no main menu, so the edit keys (⌘X, ⌘C, ⌘V, ⌘A, ⌘Z, ⇧⌘Z) go to the first
+        // responder from here, as in the launcher panel (mx-43d850). Tail expression only
+        // (mx-43d3f4).
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
+            let flags = event.modifierFlags();
+            let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
+            let chars = chars.as_deref().unwrap_or("");
+            let only = launcher::command_only(flags);
+            launcher::edit_action(only, launcher::command_shift(flags), chars).is_some_and(
+                |action| {
+                    let app = NSApplication::sharedApplication(self.mtm());
+                    // SAFETY: a standard edit action, a nil target (the responder chain) and
+                    // the panel as sender.
+                    unsafe { app.sendAction_to_from(action, None, Some(self)) }
+                },
+            )
+                // SAFETY: the superclass method, with the argument it was called with.
+                || unsafe { msg_send![super(self), performKeyEquivalent: event] }
+        }
+    }
+);
+
+/// Whether a click on `v` goes to `v` rather than to the card: buttons (push, radio,
+/// checkbox, pop-up), editable text fields and the field editor.
+fn takes_clicks(v: &NSView) -> bool {
+    v.isKindOfClass(NSButton::class())
+        || v.isKindOfClass(NSTextView::class())
+        || v.downcast_ref::<NSTextField>().is_some_and(NSTextField::isEditable)
+}
+
+define_class!(
     // The root view: flipped, so layouts read top-down. It takes the click itself unless it
-    // lands on a button (renderers' controls), so a plain card is one click target.
+    // lands on a control (`takes_clicks`), so a plain card is one click target.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "FlickHudView"]
@@ -50,7 +100,7 @@ define_class!(
             let me = std::ptr::from_ref(self).cast::<NSView>().cast_mut();
             // The hit view lives in this view's tree, which keeps it alive past the return.
             match hit {
-                Some(v) if v.isKindOfClass(NSButton::class()) => Retained::as_ptr(&v).cast_mut(),
+                Some(v) if takes_clicks(&v) => Retained::as_ptr(&v).cast_mut(),
                 _ => me,
             }
         }
@@ -149,12 +199,21 @@ fn place(panel: &NSPanel, frame: Option<NSRect>) {
     }
 }
 
-fn panel(mtm: MainThreadMarker) -> Retained<NSPanel> {
+/// A card's `CardPanel` (`card`), or a plain panel (the pill).
+fn panel(mtm: MainThreadMarker, card: bool) -> Retained<NSPanel> {
     let rect = rect(0.0, 0.0, 380.0, 100.0);
     let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
-    // SAFETY: NSPanel's designated initializer, with argument types matching its signature.
-    let panel: Retained<NSPanel> = unsafe {
-        msg_send![NSPanel::alloc(mtm), initWithContentRect: rect, styleMask: style, backing: NSBackingStoreType::Buffered, defer: false]
+    let panel: Retained<NSPanel> = if card {
+        // SAFETY: NSPanel's designated initializer, with argument types matching its signature.
+        let p: Retained<CardPanel> = unsafe {
+            msg_send![CardPanel::alloc(mtm), initWithContentRect: rect, styleMask: style, backing: NSBackingStoreType::Buffered, defer: false]
+        };
+        p.into_super()
+    } else {
+        // SAFETY: as above.
+        unsafe {
+            msg_send![NSPanel::alloc(mtm), initWithContentRect: rect, styleMask: style, backing: NSBackingStoreType::Buffered, defer: false]
+        }
     };
     panel.setFloatingPanel(true);
     panel.setBecomesKeyOnlyIfNeeded(true);
@@ -189,7 +248,7 @@ fn background(mtm: MainThreadMarker, radius: f64) -> Retained<NSVisualEffectView
 
 /// A new, hidden card.
 pub fn make(mtm: MainThreadMarker) -> Views {
-    let panel = panel(mtm);
+    let panel = panel(mtm, true);
     // SAFETY: `initWithFrame:` is NSView's designated initializer; it returns a +1 object.
     let root: Retained<HudView> =
         unsafe { msg_send![HudView::alloc(mtm), initWithFrame: NSRect::ZERO] };
@@ -220,7 +279,7 @@ pub struct Pill {
 
 impl Pill {
     pub fn new(mtm: MainThreadMarker) -> Pill {
-        let panel = panel(mtm);
+        let panel = panel(mtm, false);
         panel.setIgnoresMouseEvents(true);
         let effect = background(mtm, super::stack::PILL_H / 2.0);
         let text = label(mtm, &NSFont::systemFontOfSize(11.0), &NSColor::secondaryLabelColor());
