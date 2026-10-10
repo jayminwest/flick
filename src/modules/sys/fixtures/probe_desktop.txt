@@ -1,0 +1,23 @@
+@@ host
+mac-pro
+@@ sysctl
+hw.ncpu: 24
+hw.memsize: 206158430208
+kern.memorystatus_level: 41
+vm.loadavg: { 6.10 5.83 5.02 }
+kern.boottime: { sec = 1790000000, usec = 12 } Mon Sep 21 12:53:20 2026
+@@ df
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1s1  3899412480  11206672 1934412116     1%    /
+/dev/disk3s5    3899412480 1946839552 1934412116    51%    /System/Volumes/Data
+@@ batt
+Now drawing from 'AC Power'
+@@ therm
+Thermal warning level set to 1.
+Performance warning level set to 0.
+CPU Power notify
+	CPU_Scheduler_Limit 	= 100
+	CPU_Available_CPUs 	= 24
+	CPU_Speed_Limit 	= 80
+@@ now
+1790090000

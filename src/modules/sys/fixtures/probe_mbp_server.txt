@@ -1,0 +1,21 @@
+@@ host
+mbp-server
+@@ sysctl
+hw.ncpu: 11
+hw.memsize: 19327352832
+kern.memorystatus_level: 73
+vm.loadavg: { 1.42 2.06 2.42 }
+kern.boottime: { sec = 1791307644, usec = 544610 } Tue Oct  6 10:27:24 2026
+@@ df
+Filesystem     1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s3s1   971350180  13334172 856126932     2%    /
+/dev/disk3s1     971350180  77653996 856126932     9%    /System/Volumes/Data
+@@ batt
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=7340131)	100%; charged; 0:00 remaining present: true
+@@ therm
+Note: No thermal warning level has been recorded
+Note: No performance warning level has been recorded
+Note: No CPU power status has been recorded
+@@ now
+1791615036

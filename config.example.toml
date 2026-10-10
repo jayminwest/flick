@@ -128,6 +128,32 @@
 # Statuses that post a notification when an agent enters them: "blocked", "done"; [] for none.
 #notify = ["blocked"]
 
+# --- sys: this Mac's health (CPU load, memory, disks, battery, thermal, uptime) and the
+# services it checks: "flick sys snapshot" and "flick sys services" (add --json for the
+# fields). Both are read-only, so peers may ask them over the network. Nothing runs until
+# one is asked: no timers, no checks in the background.
+#[sys]
+#enabled = true
+
+# A service check; none by default. Repeat the table for each. kind and target:
+#   "http"     a URL fetched with curl (3 s); 2xx and 3xx pass
+#   "tcp"      "host:port" that accepts a connection (3 s)
+#   "launchd"  a launchd label in your GUI domain: running, or last exit 0
+#   "process"  an exact process name (pgrep -x)
+#   "command"  an argv run without a shell (5 s); it must exit 0, and with warn or fail
+#              the first number it prints is compared
+# warn and fail: thresholds in milliseconds (http, tcp) or the command's number; higher is
+# worse unless fail is below warn. log: a log file for the dashboard. restart: let the
+# dashboard restart it after a confirm (launchd only). Example:
+#[[sys.service]]
+#name = "mail-backlog"
+#kind = "command"
+#target = ["/bin/sh", "-c", "wc -l < ~/.local/state/kota-mailwatch/pending.jsonl"]
+#warn = 10
+#fail = 50
+#log = "~/Library/Logs/kota-mailwatch.log"
+#restart = false
+
 # --- task: a task list and a timer for the one running task, in flick.db. "Start Task"
 # or "flick task start <title>"; a trailing #word sets the project. Idle, sleep and
 # screen lock pause the timer.
