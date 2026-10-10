@@ -11,7 +11,7 @@ const SERVERS: &str = "[[llm.servers]]\nname = \"mlx\"\nurl = \"http://mlx\"\n\
     [[llm.servers]]\nname = \"vault\"\nurl = \"http://mlx:11235\"\nprivate = true\n";
 
 fn configured(text: &str) -> Result<Llm, String> {
-    let mut m = Llm::with_hooks(HOOKS);
+    let mut m = Llm::with_hooks(HOOKS, testkit::UI);
     m.configure(&parse(text)?.section(ID)?.ok_or("disabled")?)?;
     Ok(m)
 }

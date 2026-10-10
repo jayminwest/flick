@@ -10,7 +10,6 @@ use super::transport::wipe_string;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-#[cfg_attr(not(test), expect(dead_code, reason = "the chat window sends them (flick-6a0d)"))]
 pub enum Role {
     System,
     User,
@@ -52,7 +51,6 @@ struct StreamOptions {
 
 /// The JSON body of a streamed chat request. The buffer is sized up front so it is not
 /// reallocated (and copied) while it grows; the transport wipes it once curl has it.
-#[cfg_attr(not(test), expect(dead_code, reason = "the chat window sends it (flick-6a0d)"))]
 pub fn chat_body(chat: &Chat) -> Vec<u8> {
     let system = (!chat.system.is_empty()).then_some(Turn { role: Role::System, content: chat.system });
     let messages: Vec<Turn> = system.into_iter().chain(chat.turns.iter().copied()).collect();

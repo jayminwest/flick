@@ -6,6 +6,8 @@ use serde::Deserialize;
 
 /// The longest `timeout_secs` (one hour).
 pub const MAX_TIMEOUT: u64 = 3_600;
+/// The most `max_threads`.
+pub const MAX_THREADS: usize = 10_000;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -18,13 +20,15 @@ pub struct Settings {
     pub default_model: String,
     /// Sent as the first message of every chat (`""`: none).
     pub system_prompt: String,
-    /// Keep normal chats in flick.db (flick-6a0d). Private chats are never kept.
+    /// Keep normal chats in flick.db. Private chats are never kept.
     pub history: bool,
+    /// The most normal chats kept; saving one past it drops the oldest (1 to 10000).
+    pub max_threads: usize,
     /// The reply's token cap sent with each request (0: the server's default).
     pub max_tokens: u32,
     /// Seconds one reply may take, start to end (1 to 3600).
     pub timeout_secs: u64,
-    /// Opens the chat window (flick-6a0d); unbound by default.
+    /// Shows or hides the chat window; unbound by default.
     pub hotkey: Option<String>,
     /// Opens the private chat window (flick-c325); unbound by default.
     pub private_hotkey: Option<String>,
@@ -38,6 +42,7 @@ impl Default for Settings {
             default_model: String::new(),
             system_prompt: String::new(),
             history: true,
+            max_threads: 100,
             max_tokens: 0,
             timeout_secs: 300,
             hotkey: None,
@@ -99,6 +104,9 @@ impl Settings {
         }
         if !(1..=MAX_TIMEOUT).contains(&self.timeout_secs) {
             return Err(format!("[llm]: timeout_secs must be 1 to {MAX_TIMEOUT}"));
+        }
+        if !(1..=MAX_THREADS).contains(&self.max_threads) {
+            return Err(format!("[llm]: max_threads must be 1 to {MAX_THREADS}"));
         }
         Ok(self)
     }
@@ -166,7 +174,7 @@ mod tests {
         let s = settings("").unwrap();
         assert_eq!(s, Settings::default());
         assert!(s.servers.is_empty());
-        assert_eq!((s.history, s.max_tokens, s.timeout_secs), (true, 0, 300));
+        assert_eq!((s.history, s.max_threads, s.max_tokens, s.timeout_secs), (true, 100, 0, 300));
         assert_eq!((&s.hotkey, &s.private_hotkey), (&None, &None));
         assert_eq!(s.normal(None).unwrap_err(), "llm: no servers; add a [[llm.servers]] table to config.toml");
     }
@@ -227,5 +235,7 @@ mod tests {
         assert!(err("[llm]\nnope = 1").starts_with("[llm]: unknown field `nope`"));
         assert!(err("[[llm.servers]]\nname = \"a\"\n").contains("missing field `url`"));
         assert_eq!(settings("[llm]\ntimeout_secs = 3600").unwrap().timeout_secs, 3600);
+        assert_eq!(err("[llm]\nmax_threads = 0"), "[llm]: max_threads must be 1 to 10000");
+        assert_eq!(err("[llm]\nmax_threads = 10001"), "[llm]: max_threads must be 1 to 10000");
     }
 }
