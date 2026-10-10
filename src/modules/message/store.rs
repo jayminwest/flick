@@ -195,6 +195,8 @@ pub trait Messages {
     fn messages(&self, limit: usize) -> Vec<Message>;
     /// At most `limit` cards (messages with a card), newest first.
     fn cards(&self, limit: usize) -> Vec<Message>;
+    /// At most `limit` unread messages (`seen.rs`), newest first.
+    fn unread(&self, limit: usize) -> Vec<Message>;
     fn message(&self, id: &str) -> Option<Message>;
     /// Remove message `id` if it is pending, and return it.
     fn take_pending(&self, id: &str) -> Option<Message>;
@@ -254,6 +256,10 @@ impl Messages for Store {
 
     fn cards(&self, limit: usize) -> Vec<Message> {
         newest(self, "WHERE card IS NOT NULL", limit)
+    }
+
+    fn unread(&self, limit: usize) -> Vec<Message> {
+        newest(self, "WHERE unread", limit)
     }
 
     fn message(&self, id: &str) -> Option<Message> {

@@ -99,3 +99,91 @@ fn opening_the_list_reads_everything_and_closes_those_cards() {
     take_pending();
     take_unread();
 }
+
+/// The card timeout of the last `card` the fakes logged.
+fn card_timeout(log: &[String]) -> &str {
+    log.last().and_then(|l| l.rsplit('|').nth(2)).unwrap_or("")
+}
+
+#[test]
+fn a_card_nobody_asked_for_is_unread_like_a_post() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c1","title":"Stretch","state":"done"}"#]).unwrap();
+    assert_eq!(card_timeout(&take_log()), "0", "it stays until dismissed");
+    assert_eq!(take_unread(), [1]);
+    // A card with actions, a reply_to, a thread or `pending` is not unread.
+    for (id, other) in [
+        ("c2", r#"{"id":"c2","title":"Ship?","actions":[{"id":"go","label":"Ship"}]}"#),
+        ("c3", r#"{"id":"c3","title":"Re","reply_to":"k1"}"#),
+        ("c4", r#"{"id":"c4","title":"Chat","thread":"t1"}"#),
+        ("c5", r#"{"id":"c5","title":"Working","state":"pending"}"#),
+    ] {
+        f.run(&mut m, false, &["card", "post", other]).unwrap();
+        assert!(!f.store.message(id).unwrap().unread, "{other}");
+    }
+    take_log();
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c3","title":"Re","reply_to":"k1","state":"done"}"#]).unwrap();
+    assert_eq!(card_timeout(&take_log()), "20", "a reply times out as before");
+    // Closing it reads it; a silent `done` update of the closed card stays read.
+    queue(Note::Dismissed("c1".into()));
+    drain(&mut f, &mut m);
+    assert_eq!(take_unread().pop(), Some(0));
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c1","title":"Stretch","state":"done"}"#]).unwrap();
+    assert!(take_log().is_empty() && !f.store.message("c1").unwrap().unread);
+    // Re-posted `open`, it shows again and is unread again.
+    f.run(&mut m, false, &["card", "post", r#"{"id":"c1","title":"Stretch now"}"#]).unwrap();
+    assert_eq!(take_unread(), [1]);
+    take_log();
+    take_pending();
+}
+
+#[test]
+fn ls_unread_lists_only_the_unread_posts() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    for (id, body) in [("n1", "one"), ("n2", "two"), ("n3", "three")] {
+        f.run(&mut m, false, &["post", "--id", id, body]).unwrap();
+    }
+    f.run(&mut m, false, &["post", "--id", "r1", "--reply-to", "x", "reply"]).unwrap();
+    take_log();
+    take_unread();
+    let ids = |out: &str| out.lines().map(|l| l.split('\t').next().unwrap_or("").to_string()).collect::<Vec<_>>();
+    assert_eq!(ids(&f.run(&mut m, false, &["ls", "--unread"]).unwrap()), ["n3", "n2", "n1"]);
+    // The newest n unread posts, not the unread among the newest n; flags in any order.
+    assert_eq!(ids(&f.run(&mut m, false, &["ls", "--limit", "2", "--unread"]).unwrap()), ["n3", "n2"]);
+    assert_eq!(ids(&f.run(&mut m, false, &["ls", "--unread", "--limit", "1"]).unwrap()), ["n3"]);
+    let json: serde_json::Value = serde_json::from_str(&f.run(&mut m, true, &["ls", "--unread"]).unwrap()).unwrap();
+    assert_eq!(json.as_array().map(Vec::len), Some(3));
+    for bad in [&["ls", "--limit"][..], &["ls", "--limit", "x"], &["ls", "--seen"]] {
+        assert!(f.run(&mut m, false, bad).is_err(), "{bad:?}");
+    }
+    take_pending();
+}
+
+#[test]
+fn read_marks_posts_read_from_a_terminal_or_a_peer() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    for (id, body) in [("n1", "one"), ("n2", "two"), ("n3", "three")] {
+        f.run(&mut m, false, &["post", "--id", id, body]).unwrap();
+    }
+    f.run(&mut m, false, &["post", "--id", "r1", "--reply-to", "x", "reply"]).unwrap();
+    take_log();
+    take_unread();
+    // `read <id>` reads one and closes its card; a read post or a reply is left alone.
+    assert_eq!(f.run(&mut m, false, &["read", "n2"]), Ok("Read n2".into()));
+    assert_eq!((take_log(), take_unread()), (vec!["dismiss n2".to_string()], vec![2]));
+    assert_eq!(f.run(&mut m, true, &["read", "n2"]), Ok(r#"{"read":[]}"#.into()));
+    assert_eq!(f.run(&mut m, false, &["read", "r1"]), Ok("Read r1".into()));
+    assert!(take_log().is_empty());
+    assert_eq!(f.run(&mut m, false, &["read", "nope"]), Err("No message nope".into()));
+    assert!(f.run(&mut m, false, &["read"]).is_err());
+    // `read --all` reads the rest, as opening the list does.
+    assert_eq!(f.run(&mut m, true, &["read", "--all"]).map(|j| j.contains("n1") && j.contains("n3")), Ok(true));
+    assert_eq!(take_unread(), [0]);
+    assert_eq!(f.run(&mut m, false, &["read", "--all"]), Ok("Read 0 posts".into()));
+    f.run(&mut m, false, &["post", "--id", "n4", "four"]).unwrap();
+    assert_eq!(f.run(&mut m, false, &["read", "--all"]), Ok("Read 1 post".into()));
+    assert_eq!(f.run(&mut m, false, &["ls", "--unread"]), Ok(String::new()));
+    take_log();
+    take_unread();
+    take_pending();
+}
