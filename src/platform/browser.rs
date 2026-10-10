@@ -6,11 +6,20 @@
 //! Each browser asks the user once for Automation permission (Privacy & Security >
 //! Automation), naming Flick, on the first read. `front_tab_url` blocks until the browser
 //! answers, and the first time until the user does: it is the one function here that must
-//! run off the main thread.
+//! run off the main thread. A read that takes longer than `LIMIT` is killed and fails, so a
+//! hung browser cannot hold the worker for the two minutes an Apple Event may wait.
 
-use std::process::Command;
+use std::io::Read;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 const OSASCRIPT: &str = "/usr/bin/osascript";
+
+/// The longest one read may take, the user's Automation prompt included.
+const LIMIT: Duration = Duration::from_secs(30);
+/// How often `output_within` checks whether the child exited.
+const POLL: Duration = Duration::from_millis(20);
 
 /// Bundle ids whose `AppleScript` dictionary has `URL of active tab` and window `mode`.
 const CHROMIUM: [&str; 8] = [
@@ -51,14 +60,48 @@ pub fn front_tab_url(bundle: &str) -> TabUrl {
         return TabUrl::Failed;
     }
     let args: Vec<String> = script(bundle).into_iter().flat_map(|l| ["-e".to_owned(), l]).collect();
-    match Command::new(OSASCRIPT).args(args).output() {
-        Ok(out) => parse(
+    match output_within(Command::new(OSASCRIPT).args(args), LIMIT) {
+        Some(out) => parse(
             out.status.success(),
             &String::from_utf8_lossy(&out.stdout),
             &String::from_utf8_lossy(&out.stderr),
         ),
-        Err(_) => TabUrl::Failed,
+        None => TabUrl::Failed,
     }
+}
+
+/// Run `cmd` like `Command::output`, but kill it once `limit` has passed. `None` if it could
+/// not start or was killed.
+fn output_within(cmd: &mut Command, limit: Duration) -> Option<Output> {
+    let mut child =
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
+    // Drain both pipes on threads, so a long URL cannot fill a pipe and stall the child.
+    let (stdout, stderr) = (drain(child.stdout.take()), drain(child.stderr.take()));
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if Instant::now() < deadline => thread::sleep(POLL),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+        }
+    };
+    let (stdout, stderr) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+    Some(Output { status: status?, stdout, stderr })
+}
+
+/// Read `pipe` to its end on a new thread.
+fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut p) = pipe {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    })
 }
 
 /// The script's lines for Chromium browser `bundle` (one of `CHROMIUM`, never user text).
@@ -103,6 +146,25 @@ mod tests {
         assert!(lines[0].starts_with("if application id \"com.brave.Browser\" is not running"));
         assert!(lines.iter().any(|l| l.contains("mode of front window) is not \"normal\"")));
         assert_eq!(lines.last().map(String::as_str), Some("end tell"));
+    }
+
+    #[test]
+    fn a_read_past_its_limit_is_killed() {
+        let start = Instant::now();
+        assert!(
+            output_within(Command::new("/bin/sleep").arg("30"), Duration::from_millis(100))
+                .is_none()
+        );
+        assert!(start.elapsed() < Duration::from_secs(10), "killed, not waited out");
+        let out = output_within(Command::new("/bin/echo").arg("https://a.dev/"), LIMIT).unwrap();
+        assert!(out.status.success());
+        assert_eq!(out.stdout, b"https://a.dev/\n");
+        // More than a pipe holds still arrives whole.
+        let long =
+            output_within(Command::new("/bin/sh").args(["-c", "head -c 200000 /dev/zero"]), LIMIT)
+                .unwrap();
+        assert_eq!(long.stdout.len(), 200_000);
+        assert!(output_within(&mut Command::new("/nonexistent/osascript"), LIMIT).is_none());
     }
 
     #[test]
