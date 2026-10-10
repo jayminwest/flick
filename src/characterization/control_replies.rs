@@ -283,6 +283,42 @@ fn network_requests_are_remote_even_without_the_flag() {
 }
 
 #[test]
+fn peers_add_phone_opens_without_the_activity_grant() {
+    // flick-ios sends one `activity phone add` line per app open (flick-b418; the contract is
+    // docs/remote.md "Phone events"). The deny table must not list it, and activity needs no
+    // grant for it; reading opens back still does.
+    let at = (crate::core::store::now() - 60).to_string();
+    let add = [
+        "activity",
+        "phone",
+        "add",
+        "--id",
+        "4F2A",
+        "--device",
+        "jaymins-iphone",
+        "--app",
+        "com.apple.mobilesafari",
+        "--at",
+        &at,
+    ];
+    assert_eq!(net_policy(&add.map(String::from)), Ok(()));
+    assert_eq!(net_reply(&add), r#"{"ok":"Stored phone open 4F2A from jaymins-iphone"}"#);
+    assert_eq!(
+        net_reply(&[&add[..], &["--json"]].concat()),
+        r#"{"ok":{"device":"jaymins-iphone","id":"4F2A","stored":true}}"#
+    );
+    // A bad field is refused for good with an `activity phone:` error: the phone drops it.
+    let mut bad = add;
+    bad[10] = "1e9";
+    assert_eq!(
+        net_reply(&bad),
+        r#"{"error":"activity phone: bad --at: digits only (unix seconds or minutes)"}"#
+    );
+    let refused = r#"{"error":"activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick"}"#;
+    assert_eq!(net_reply(&["activity", "spans", "--json"]), refused);
+}
+
+#[test]
 fn peers_list_and_read_unread_posts() {
     // Unread posts (flick-8ce3): a peer may list them and mark them read, e.g. KOTA taking
     // back a nudge it sent; reading takes no keyboard and runs nothing.

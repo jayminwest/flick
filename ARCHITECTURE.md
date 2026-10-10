@@ -618,6 +618,13 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   Migration 2 adds `llm_pick` (flick-5dfe): one row (`id` 1), the `models` view's last
   server and model, written on each pick regardless of `history`; no chat text. The private
   chat has no path here.
+- `activity_phone_opens` (owner `activity`, migration 3, flick-b418) holds a phone's app
+  opens from flick-ios: `device`, `event_id` (primary key together, so a retried event is
+  stored once), `app`, `opened_at`, `received_at`, and nullable `reason` and `minutes` for
+  the intention prompt. Its own table, not columns on `activity_spans`: an open is a point,
+  not a span. Written only by `activity phone add` (`src/modules/activity/phone.rs`); read
+  into `today`/`week` (`Report::phone`) and `spans` (entries with `source` `"phone"`);
+  deleted by `forget`.
 
 ## Config
 
@@ -758,6 +765,13 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
+  `activity phone add` (flick-b418) is a remote write allowed on purpose and without the
+  activity grant: the iPhone, a peer, adds its app opens (contract: `docs/remote.md`
+  "Phone events"). It checks every field strictly (charset and length of id and device,
+  no control characters in app and reason, `--at` at most 30 days back and 5 min ahead,
+  `--minutes` 1 to 1440), and is idempotent on (device, event id). Its errors starting
+  `activity phone:` are permanent (the phone drops the event); any other error or no reply
+  means retry.
   `message` (every verb but `card press|focus`, `chat` and `ask`, notably `post` with `--thread`/`--partial`, `card post`, `card spec` and the read-only `threads` and `thread <t>`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
   (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
