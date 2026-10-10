@@ -380,10 +380,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   5 s). Tests use fakes and never run the CLI.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
-  `quicklink add|remove`, `capture` (any verb), `feedback resolve` or `task rm`, and of
-  `remote` only `remote status`. `["events"]` needs `[remote] events = true`. Everything
+  `quicklink add|remove`, `capture` (any verb), `feedback resolve`, `task rm`, `script run`
+  or `message card press|focus`, and of `remote` only `remote status`. A table verb may be
+  several words; it matches a prefix of the words after the module, so `message card press`
+  is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
-  `message` (all verbs, notably `post`) is allowed on purpose: peers post messages to this
+  `message` (every verb but `card press|focus`, notably `post`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
   reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
