@@ -90,6 +90,7 @@ fn rejects_bad_services() {
         ("kind = \"process\"\ntarget = \"x\"\nfail = 1", limits),
         ("kind = \"tcp\"\ntarget = \"h:1\"\nrestart = true", "restart = true needs kind = \"launchd\""),
         ("kind = \"tcp\"\ntarget = \"h:1\"\nwarn = nan", "warn and fail are numbers"),
+        ("kind = \"process\"\ntarget = \"x\"\ndomain = \"system\"", "domain applies to kind = \"launchd\""),
     ];
     for (fields, why) in cases {
         assert_eq!(one(fields).unwrap_err(), format!("[sys]: service \"x\": {why}"), "{fields}");

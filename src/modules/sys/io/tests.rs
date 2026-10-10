@@ -8,7 +8,7 @@ fn svc(name: &str, kind: Kind, target: &str) -> Service {
         Kind::Command => Target::Argv(target.split(' ').map(str::to_string).collect()),
         _ => Target::One(target.into()),
     };
-    Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false }
+    Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false, domain: Domain::Gui }
 }
 
 fn verdict(service: &Service) -> (Status, String) {

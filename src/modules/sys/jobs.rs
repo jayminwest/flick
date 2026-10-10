@@ -43,8 +43,15 @@ fn exec(run: &Run, place: &Place, hooks: Hooks) -> Result<Exit, String> {
     }
 }
 
-/// Start a tail of `target`'s log: it becomes `State::tail`. `answer` gets the lines.
-pub fn tail(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answer: Option<Sender<Answer>>) -> Result<(), String> {
+/// Whether a tail failed because the log is not readable for this user.
+fn denied(got: &Result<Exit, String>) -> bool {
+    matches!(got, Ok(exit) if exit.code != Some(0) && exit.stderr.contains("Permission denied"))
+}
+
+/// Start a tail of `target`'s log: it becomes `State::tail`. When the log is not readable
+/// and there is a `retry` (a system daemon's `sudo -n` tail), that runs instead. `answer`
+/// gets the lines.
+pub fn tail(shared: &Arc<Shared>, target: &Target, (run, retry): (Run, Option<Run>), hooks: Hooks, answer: Option<Sender<Answer>>) -> Result<(), String> {
     let id = {
         let mut st = shared.lock();
         let id = st.tail.as_ref().map_or(1, |t| t.id + 1);
@@ -54,9 +61,18 @@ pub fn tail(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answe
     };
     let (sh, place) = (Arc::clone(shared), target.place.clone());
     let spawned = thread::Builder::new().name("sys-tail".into()).spawn(move || {
-        let got = act::tailed(exec(&run, &place, hooks));
+        let mut got = exec(&run, &place, hooks);
+        let mut shown = None;
+        if let Some(retry) = retry.filter(|_| denied(&got)) {
+            got = exec(&retry, &place, hooks);
+            shown = Some(retry.shown);
+        }
+        let got = act::tailed(got);
         let mut st = sh.lock();
         if let Some(t) = st.tail.as_mut().filter(|t| t.id == id) {
+            if let Some(shown) = shown {
+                t.shown = shown;
+            }
             t.text = Some(got.clone());
             t.at = Some((hooks.now)());
         }
@@ -69,13 +85,21 @@ pub fn tail(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answe
     spawned.map(|_| ()).map_err(|e| format!("sys tail: no thread: {e}"))
 }
 
-/// Start a restart of `target`: its result becomes `State::acted`. `answer` gets it too.
+/// Start a restart of `target`: `State::acted` says it runs, then its result. `answer`
+/// gets the result too; without one (the launcher or the fleet window asked) the result
+/// also waits in `State::toast` for the HUD (flick-1356).
 pub fn restart(shared: &Arc<Shared>, target: &Target, run: Run, hooks: Hooks, answer: Option<Sender<Answer>>) -> Result<(), String> {
     let (sh, place, what) = (Arc::clone(shared), target.place.clone(), target.what());
+    shared.lock().acted = Some((format!("Restarting {what}…"), (hooks.now)()));
     let spawned = thread::Builder::new().name("sys-restart".into()).spawn(move || {
         let got = act::restarted(exec(&run, &place, hooks), &what);
         let text = got.clone().unwrap_or_else(|e| e);
-        sh.lock().acted = Some((text, (hooks.now)()));
+        let mut st = sh.lock();
+        if answer.is_none() {
+            st.toast = Some(text.clone());
+        }
+        st.acted = Some((text, (hooks.now)()));
+        drop(st);
         sh.changed(hooks);
         if let Some(tx) = answer {
             let _ = tx.send(got);

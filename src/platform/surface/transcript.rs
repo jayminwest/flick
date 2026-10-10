@@ -24,8 +24,8 @@ use objc2_foundation::{
 use super::geometry::{Rect, Size};
 use super::input::{filled, ns_rect};
 use super::rows::{
-    self, BubbleState, Coalesce, DIVIDER_H, Frames, Owned, Plan, Shape, Side, badge, full_width,
-    text_max,
+    self, Align, BubbleState, Coalesce, DIVIDER_H, Frames, Owned, Plan, Shape, Side, badge,
+    full_width, text_max,
 };
 use super::{bubble, render};
 use crate::platform::hud::embed::Embedded;
@@ -299,10 +299,12 @@ pub(super) struct Transcript {
     /// Bubble text can be selected and copied, and its links clicked: not in a private
     /// surface, where copying goes through the module (concealed).
     selectable: bool,
+    /// Where short content sits, and whether the scroll pins to the bottom.
+    align: Align,
 }
 
 impl Transcript {
-    pub(super) fn new(mtm: MainThreadMarker, selectable: bool) -> Transcript {
+    pub(super) fn new(mtm: MainThreadMarker, selectable: bool, align: Align) -> Transcript {
         let scroll = NSScrollView::initWithFrame(NSScrollView::alloc(mtm), NSRect::ZERO);
         scroll.setDrawsBackground(false);
         scroll.setBorderType(NSBorderType::NoBorder);
@@ -318,6 +320,7 @@ impl Transcript {
             pending: RefCell::default(),
             coalesce: Cell::default(),
             selectable,
+            align,
         }
     }
 
@@ -329,9 +332,10 @@ impl Transcript {
         self.scroll.contentSize()
     }
 
-    fn at_bottom(&self) -> bool {
+    /// Whether the next layout keeps the bottom in view (`rows::pinned`).
+    fn pinned(&self) -> bool {
         let offset = self.scroll.contentView().bounds().origin.y;
-        rows::at_bottom(offset, self.visible().height, self.doc.frame().size.height)
+        rows::pinned(self.align, offset, self.visible().height, self.doc.frame().size.height)
     }
 
     fn scroll_to_bottom(&self) {
@@ -346,7 +350,7 @@ impl Transcript {
         let size = self.visible();
         let mut rows = self.rows.borrow_mut();
         let shapes: Vec<Shape> = rows.iter_mut().map(|r| r.shape(size.width)).collect();
-        let (frames, doc_h) = rows::stack(size.width, size.height, &shapes);
+        let (frames, doc_h) = rows::stack(size.width, size.height, &shapes, self.align);
         self.doc.setFrame(NSRect::new(NSPoint::ZERO, NSSize::new(size.width, doc_h)));
         for (r, f) in rows.iter().zip(&frames) {
             r.place(f);
@@ -359,7 +363,7 @@ impl Transcript {
 
     /// Put the rows area at `r` (top-down in the content view).
     pub(super) fn set_frame(&self, r: Rect) {
-        let pinned = self.at_bottom();
+        let pinned = self.pinned();
         self.scroll.setFrame(ns_rect(r));
         self.layout(pinned);
     }
@@ -379,7 +383,7 @@ impl Transcript {
         c.done();
         self.coalesce.set(c);
         let Some(new) = self.pending.take() else { return };
-        let pinned = self.at_bottom();
+        let pinned = self.pinned();
         let mtm = MainThreadMarker::from(&*self.doc);
         let mut old: Vec<Option<Built>> = self.rows.take().into_iter().map(Some).collect();
         let idents: Vec<_> = old.iter().flatten().map(|b| b.row.ident()).collect();
@@ -432,7 +436,7 @@ impl Transcript {
             redraw(&r.view, slot, card, &ui.get(), w);
         }
         drop(rows);
-        self.layout(self.at_bottom());
+        self.layout(self.pinned());
     }
 }
 

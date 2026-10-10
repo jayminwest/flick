@@ -44,6 +44,7 @@ fn open() {
         input: Input::Multi,
         hide_on_blur: false,
         private: None,
+        align: surface::Align::Bottom,
     };
     let handlers = Handlers {
         submit: |_, text| queue(Note::Submit(text)),

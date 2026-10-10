@@ -33,7 +33,7 @@ pub fn script(services: &[Service]) -> String {
     for (i, service) in services.iter().enumerate().filter(|(_, s)| remote(s)) {
         let target = quote(service.word());
         let cmd = match service.kind {
-            Kind::Launchd => format!("/bin/launchctl print \"gui/$(/usr/bin/id -u)/\"{target}"),
+            Kind::Launchd => format!("/bin/launchctl print \"{}/\"{target}", service.launchd_domain("$(/usr/bin/id -u)")),
             _ => format!("/usr/bin/pgrep -x {target}"),
         };
         let _ = writeln!(
@@ -48,7 +48,7 @@ pub fn script(services: &[Service]) -> String {
 /// for checks that run from this Mac.
 pub fn verdicts(out: &str, services: &[Service]) -> Vec<Option<Verdict>> {
     let uid = section(out, "uid").trim().to_string();
-    let domain = if uid.is_empty() { "gui/?".to_string() } else { format!("gui/{uid}") };
+    let uid = if uid.is_empty() { "?" } else { uid.as_str() };
     services
         .iter()
         .enumerate()
@@ -59,7 +59,7 @@ pub fn verdicts(out: &str, services: &[Service]) -> Vec<Option<Verdict>> {
             let rc = out.lines().find_map(|l| l.strip_prefix(&format!("@@ rc {i} "))?.trim().parse().ok());
             let Some(code) = rc else { return Some(Verdict::unknown("no answer over ssh")) };
             let exit = Ok(Exit { code: Some(code), stdout: section(out, &format!("svc {i}")), stderr: String::new() });
-            Some(if service.kind == Kind::Launchd { check::launchd(exit, &domain) } else { check::process(exit) })
+            Some(if service.kind == Kind::Launchd { check::launchd(exit, &service.launchd_domain(uid)) } else { check::process(exit) })
         })
         .collect()
 }

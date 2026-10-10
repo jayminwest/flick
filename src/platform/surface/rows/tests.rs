@@ -111,6 +111,11 @@ fn the_scroll_is_pinned_only_at_the_bottom() {
     assert!(at_bottom(0.0, 400.0, 100.0));
     assert!(close(bottom(400.0, 1000.0), 600.0));
     assert!(close(bottom(400.0, 100.0), 0.0));
+    // A top-aligned transcript (a dashboard) never pins, even at the bottom.
+    assert!(pinned(Align::Bottom, 600.0, 400.0, 1000.0));
+    assert!(!pinned(Align::Bottom, 500.0, 400.0, 1000.0));
+    assert!(!pinned(Align::Top, 600.0, 400.0, 1000.0));
+    assert_eq!(Align::default(), Align::Bottom);
 }
 
 #[test]
@@ -159,7 +164,7 @@ fn rows_stack_top_down_and_sit_at_the_bottom_while_short() {
             badge: false,
         },
     ];
-    let (f, doc) = stack(400.0, 1000.0, &shapes);
+    let (f, doc) = stack(400.0, 1000.0, &shapes, Align::Bottom);
     // Heights: 15 + 3 + 42 = 60, 50, 18 + 28 = 46; content 10 + 60 + 10 + 50 + 10 + 46 + 10.
     let content = 196.0;
     assert!(close(doc, 1000.0));
@@ -179,9 +184,22 @@ fn rows_stack_top_down_and_sit_at_the_bottom_while_short() {
     assert_eq!(f[2].bubble, Rect::new(386.0 - 100.0, 18.0, 100.0, 28.0));
 
     // Taller than the view: no shift, the document is the content.
-    let (f, doc) = stack(400.0, 100.0, &shapes);
+    let (f, doc) = stack(400.0, 100.0, &shapes, Align::Bottom);
     assert!(close(doc, content));
     assert!(close(f[0].row.y, 10.0));
+}
+
+#[test]
+fn top_aligned_rows_sit_at_the_top_while_short() {
+    let shapes = [Shape::Full { h: 50.0 }, Shape::Full { h: 30.0 }];
+    // A dashboard: no shift; the document still fills the view.
+    let (f, doc) = stack(400.0, 1000.0, &shapes, Align::Top);
+    assert!(close(doc, 1000.0));
+    assert_eq!(f[0].row, Rect::new(14.0, 10.0, 372.0, 50.0));
+    assert_eq!(f[1].row, Rect::new(14.0, 70.0, 372.0, 30.0));
+    // Taller than the view: the same as bottom-aligned.
+    let (f, doc) = stack(400.0, 50.0, &shapes, Align::Top);
+    assert!(close(doc, 110.0) && close(f[0].row.y, 10.0));
 }
 
 #[test]
@@ -192,7 +210,7 @@ fn a_bubble_without_a_header_starts_at_its_row_top_and_system_rows_centre() {
         meta_w: 0.0,
         badge: false,
     }];
-    let (f, doc) = stack(200.0, 0.0, &lone);
+    let (f, doc) = stack(200.0, 0.0, &lone, Align::Bottom);
     assert!(close(doc, 10.0 + 22.0 + 10.0));
     assert_eq!(f[0].meta, ZERO);
     assert_eq!(f[0].bubble, Rect::new(65.0, 0.0, 70.0, 22.0));
@@ -203,12 +221,12 @@ fn a_bubble_without_a_header_starts_at_its_row_top_and_system_rows_centre() {
         meta_w: 0.0,
         badge: true,
     }];
-    let (f, _) = stack(200.0, 0.0, &badge_only);
+    let (f, _) = stack(200.0, 0.0, &badge_only, Align::Bottom);
     assert_eq!(f[0].meta, ZERO);
     assert_eq!(f[0].badge, Rect::new(94.0, 1.5, 12.0, 12.0));
     assert!(close(f[0].bubble.y, 18.0));
 
-    let (f, doc) = stack(200.0, 300.0, &[]);
+    let (f, doc) = stack(200.0, 300.0, &[], Align::Top);
     assert!(f.is_empty() && close(doc, 300.0));
 }
 

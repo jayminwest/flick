@@ -11,6 +11,7 @@ use super::{ID, run, unix_now};
 use crate::core::Event;
 use crate::core::control::PeerHooks;
 use crate::platform::surface::{self, Handlers, Input, Keystroke, Size, Spec, SurfaceId};
+use crate::platform::hud::{self, Content, Corner, Options, Placement, TextCard};
 use crate::platform::{events, panel, workspace};
 
 pub fn hooks(peer: PeerHooks) -> Hooks {
@@ -24,7 +25,17 @@ pub fn hooks(peer: PeerHooks) -> Hooks {
         ask: peer.ask,
         visible: panel::is_visible,
         open: workspace::open_url,
+        toast,
     }
+}
+
+/// A restart's result as a HUD card in the top right corner (`[message]`'s default), for
+/// a few seconds; a newer result replaces it.
+fn toast(body: &str) {
+    let text = TextCard { header: "Fleet", time: "", context: "", body, link: None, pending: false };
+    let placement = Placement { corner: Corner::TopRight, width: 380.0, max_cards: 4 };
+    let opts = Options { timeout_secs: 6.0, sound: false, sticky: false };
+    hud::show("sys-restart", &Content::Text(text), &placement, &opts);
 }
 
 const SURFACE: SurfaceId = SurfaceId("fleet");
@@ -51,6 +62,7 @@ fn open() {
         input: Input::Single,
         hide_on_blur: false,
         private: None,
+        align: surface::Align::Top,
     };
     let handlers = Handlers {
         // Return is taken by `key`; nothing else submits.
@@ -59,7 +71,7 @@ fn open() {
         chip_removed: |_, _| {},
         // Hidden: the next tick polls no more (`Sys::poll`).
         closed: |_| {},
-        card_action: |_, _, _, _| {},
+        card_action: |_, card, action, _| queue(Note::Press { card: card.into(), action: action.into() }),
     };
     surface::open(SURFACE, &spec, handlers);
 }
@@ -69,6 +81,7 @@ pub const WINDOW: window::Hooks = window::Hooks {
     show: || surface::show(SURFACE),
     hide: || surface::hide(SURFACE),
     visible: || surface::is_visible(SURFACE),
+    key: || surface::is_key(SURFACE),
     header: |title, subtitle, status| surface::set_header(SURFACE, &surface::Header { title, subtitle, status }),
     rows: |rows| surface::set_rows(SURFACE, rows),
     notice: |notice| surface::set_notice(SURFACE, notice),

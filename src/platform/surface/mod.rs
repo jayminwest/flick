@@ -12,8 +12,10 @@
 //! - Transcript: `set_rows` replaces the rows (`Row::Bubble`, `Row::Card`, `Row::Divider`).
 //!   Redraws coalesce: the rows show 50 ms after the first call of a burst (or at once on
 //!   `show` and `snapshot`). A row whose kind, key and version match one already shown keeps
-//!   its views (and a card what the user typed); the rest are built anew. The view stays
-//!   scrolled to the bottom only if it was there. Bubbles hold selectable markdown-lite
+//!   its views (and a card what the user typed); the rest are built anew. Short content sits
+//!   at the bottom and the view stays scrolled to the bottom only if it was there; with
+//!   `Spec::align` `Top` (a dashboard) it sits at the top and the view keeps its scroll
+//!   offset. Bubbles hold selectable markdown-lite
 //!   (`render`: bold, italic, code, headings, bullets; only `http(s)` links open); cards are
 //!   drawn by the HUD's card renderer, and their presses reach `Handlers::card_action`.
 //! - Copying (`bubble`, flick-0955): a bubble's row is not window background (a drag on it
@@ -72,7 +74,7 @@ use geometry::{Parts, Rect};
 use input::ns_rect;
 use keys::Fallback;
 pub use keys::{Key, Keystroke};
-pub use rows::Row;
+pub use rows::{Align, Row};
 use rows::{COALESCE_SECS, Owned};
 use window::{Views, ns};
 
@@ -106,6 +108,9 @@ pub struct Spec<'a> {
     pub hide_on_blur: bool,
     /// `Some(banner text)`: a private surface (see the module docs); `None`: a normal one.
     pub private: Option<&'a str>,
+    /// Where short content sits: `Bottom` for a conversation (the scroll pins to the bottom),
+    /// `Top` for a dashboard (the scroll keeps its offset).
+    pub align: Align,
 }
 
 /// What the header shows.

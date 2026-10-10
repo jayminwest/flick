@@ -1,11 +1,11 @@
 use super::*;
 use crate::modules::sys::check::Verdict;
 use crate::modules::sys::probe::{Battery, Thermal, parse};
-use crate::modules::sys::settings::{Kind, Service, Target};
+use crate::modules::sys::settings::{Domain, Kind, Service, Target};
 use crate::modules::sys::testkit::SERVER;
 
 fn entry(name: &str, kind: Kind, target: Target, verdict: Option<(Status, &str, Option<f64>)>) -> Entry {
-    let service = Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false };
+    let service = Service { name: name.into(), kind, target, warn: None, fail: None, log: None, restart: false, domain: Domain::Gui };
     let verdict = verdict.map(|(status, reason, value)| Verdict { status, reason: reason.into(), value });
     let checked_at = verdict.as_ref().map(|_| 990);
     Entry { service, verdict, checked_at }
