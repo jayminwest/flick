@@ -20,6 +20,10 @@ fn shown(m: &mut Sys, view: &str, query: &str) -> ListView {
     v
 }
 
+fn close(m: &mut Sys, view: &str) {
+    test_cx("", |cx| m.closed(view, cx));
+}
+
 fn enter(m: &mut Sys, key: &str) -> Outcome {
     test_cx("", |cx| m.activate(&ItemId::new(ID, key), cx))
 }
@@ -55,7 +59,7 @@ fn root_item_opens_the_fleet() {
     assert_eq!(tried(&m), [None, None, None], "listing the root item polls nothing");
     assert_eq!(pushed(&enter(&mut m, "fleet")), Some((ID, "fleet")));
     let v = shown(&mut m, "fleet", "");
-    assert!(m.fleet_view);
+    assert_eq!(m.fleet_view, Some("fleet"));
     assert_eq!(v.placeholder, "Search machines and services…");
     let want = ["sys:machine/laptop", "sys:machine/server", "sys:machine/pro", "sys:service/pro/ollama", "sys:agents"];
     settle(&m);
@@ -82,9 +86,11 @@ fn the_fleet_polls_only_while_its_view_shows() {
     open(&mut m, "fleet").unwrap();
     settle(&m);
     assert!(tick_polls(&mut m), "15 s on, the open view polls again");
-    // Back at root search the view is gone.
+    // Root search, listing items, does not stop it; the launcher closing the view does.
     root(&mut m);
-    assert!(!m.fleet_view);
+    assert!(tick_polls(&mut m));
+    close(&mut m, "fleet");
+    assert_eq!(m.fleet_view, None);
     assert!(!tick_polls(&mut m));
 }
 
@@ -104,20 +110,27 @@ fn a_fleet_of_only_this_mac_keeps_polling_while_its_view_shows() {
     settle(&m);
     assert_eq!(at(&m), Some(1_000), "the tick's poll refreshed this Mac's cache");
     // Back at root search the view is gone: the pending tick is the last.
-    root(&mut m);
+    close(&mut m, "fleet");
     assert!(m.shared.wait(Duration::from_secs(15), |s| !s.fleet.ticking));
     event(&mut m, Event::ModuleChanged { module: ID });
     assert!(!m.shared.lock().fleet.ticking);
 }
 
 #[test]
-fn launcher_open_clears_the_fleet_view() {
+fn only_closing_the_open_fleet_view_stops_its_cadence() {
     let mut m = sys(FLEET, HOOKS);
     open(&mut m, "fleet").unwrap();
-    assert!(m.fleet_view);
     event(&mut m, Event::Started);
     event(&mut m, Event::LauncherOpened);
-    assert!(!m.fleet_view);
+    assert_eq!(m.fleet_view, Some("fleet"), "the launcher closes the view, not the event");
+    // Fleet to machine: `open` of the new view comes before `closed` of the old one.
+    m.detail = Some("pro".into());
+    open(&mut m, "machine").unwrap();
+    close(&mut m, "fleet");
+    close(&mut m, "log");
+    assert_eq!(m.fleet_view, Some("machine"));
+    close(&mut m, "machine");
+    assert_eq!(m.fleet_view, None);
     settle(&m);
 }
 
@@ -168,5 +181,8 @@ fn herdr_agents_is_pushed_by_name() {
     let mut m = sys(FLEET, HOOKS);
     open(&mut m, "fleet").unwrap();
     assert_eq!(pushed(&enter(&mut m, "agents")), Some(("herdr", "agents")));
-    assert!(!m.fleet_view, "herdr's view replaced the fleet view");
+    // With herdr disabled the push opens nothing and the fleet view stays (flick-7638).
+    assert_eq!(m.fleet_view, Some("fleet"));
+    close(&mut m, "fleet");
+    assert_eq!(m.fleet_view, None, "herdr's view replaced the fleet view");
 }

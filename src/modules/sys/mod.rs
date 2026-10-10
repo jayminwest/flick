@@ -44,7 +44,8 @@
 //! every `VISIBLE_EVERY` s while it shows; Esc hides it. In `NET_DENIED` (it pops a window).
 //!
 //! Cadence (`poll.rs`): the fleet polls on launcher open, on wake and on `sys fleet`; every
-//! `VISIBLE_EVERY` s while the fleet view shows (`fleet_view`, set by the view, flick-9eb1);
+//! `VISIBLE_EVERY` s while the fleet view shows (`fleet_view`: `open` sets it, `closed` clears
+//! it, flick-9eb1, flick-7638);
 //! every `refresh_secs` when set. Sleep stops the timer and drops rounds in flight. Idle
 //! cost: with no machines, or `refresh_secs = 0` and the launcher closed, nothing runs.
 
@@ -115,10 +116,9 @@ pub struct Sys {
     refresh_secs: u64,
     /// `Started` was seen: events may start threads.
     started: bool,
-    /// View `fleet` or `machine` is open: with the launcher on screen the fleet polls every
-    /// `VISIBLE_EVERY` s. Set by `open`; cleared when root search lists items, on
-    /// `LauncherOpened` and when Herdr Agents replaces the view.
-    fleet_view: bool,
+    /// View `fleet` or `machine`, whichever is open: with the launcher on screen the fleet
+    /// polls every `VISIBLE_EVERY` s. Set by `open`; cleared by `closed` of that view.
+    fleet_view: Option<&'static str>,
     /// The machine view `machine` shows.
     detail: Option<String>,
     /// The fleet window (`window.rs`).
@@ -137,7 +137,7 @@ impl Sys {
         let shared = Arc::default();
         let win = window::Win::new(win);
         let tick = Duration::from_secs(VISIBLE_EVERY);
-        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None, win, tick }
+        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: None, detail: None, win, tick }
     }
 
     /// Poll the fleet as `kind` asks, if it has machines. Refreshes this Mac's own cache
@@ -147,7 +147,7 @@ impl Sys {
         if self.shared.lock().fleet.slots.is_empty() {
             return;
         }
-        let visible = (self.fleet_view && (self.hooks.visible)()) || self.win.visible();
+        let visible = (self.fleet_view.is_some() && (self.hooks.visible)()) || self.win.visible();
         let min_age = match kind {
             Poll::Now => 0,
             Poll::Open | Poll::Tick if visible => VISIBLE_DUE,
@@ -202,8 +202,8 @@ impl Sys {
     }
 
     /// Open view `name` and poll as the launcher does, now that it shows the fleet.
-    fn show(&mut self, name: &str, placeholder: &str) -> ListView {
-        self.fleet_view = true;
+    fn show(&mut self, name: &'static str, placeholder: &str) -> ListView {
+        self.fleet_view = Some(name);
         if self.started {
             self.poll(Poll::Open);
         }
@@ -281,18 +281,25 @@ impl Module for Sys {
         Ok(())
     }
 
-    /// `Fleet`, only with machines. Root search is on screen, so no fleet view is.
+    /// `Fleet`, only with machines.
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
-        self.fleet_view = false;
         self.with_seen(|seen, _| views::root_item(seen).into_iter().collect())
     }
 
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
         match view {
-            "fleet" => Some(self.show(view, "Search machines and services…")),
-            "machine" if self.detail.is_some() => Some(self.show(view, "Search this machine…")),
-            "log" => Some(self.show_log()),
+            "fleet" => Some(self.show("fleet", "Search machines and services…")),
+            "machine" if self.detail.is_some() => Some(self.show("machine", "Search this machine…")),
+            "log" => Some(Self::show_log()),
             _ => None,
+        }
+    }
+
+    /// The fleet view left the launcher: stop the visible cadence. `closed` of the view
+    /// just replaced by another fleet view (fleet to machine) comes after its `open`.
+    fn closed(&mut self, view: &str, _cx: &mut Cx) {
+        if self.fleet_view == Some(view) {
+            self.fleet_view = None;
         }
     }
 
@@ -339,10 +346,7 @@ impl Module for Sys {
                 self.detail = Some(m);
                 Outcome::Push(ListView::new(ID, "machine"))
             }
-            Go::Agents => {
-                self.fleet_view = false;
-                Outcome::Push(ListView::new("herdr", "agents"))
-            }
+            Go::Agents => Outcome::Push(ListView::new("herdr", "agents")),
             Go::Fleet => Outcome::Push(ListView::new(ID, "fleet")),
             Go::Log => self.tail_again(),
             Go::Stay(status) => Outcome::Stay(status),
@@ -382,10 +386,7 @@ impl Module for Sys {
                 self.started = true;
                 self.restart_timer();
             }
-            Event::LauncherOpened if self.started => {
-                self.fleet_view = false;
-                self.poll(Poll::Open);
-            }
+            Event::LauncherOpened if self.started => self.poll(Poll::Open),
             Event::Wake if self.started => {
                 self.restart_timer();
                 self.poll(Poll::Now);

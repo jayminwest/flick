@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
-use crate::core::track::{Clock, Input, Op, Span};
+use crate::core::track::{Clock, Input, Op, Span, clip};
 use crate::core::{Action, Binding, Cx, Event, Form, Item, ItemId, ListView, Module, Outcome};
 use crate::core::store::Store;
 use cli::{Listing, Range, Report, Verb};
@@ -219,7 +219,7 @@ impl Tasks {
         if let Some(row) = self.open.and_then(|id| store.time_row(id)) {
             spans.push(Span { start: row.end, end: now, subject: row.subject });
         }
-        let spans = cli::clip(spans, range.from, range.to);
+        let spans = clip(spans, range.from, range.to);
         Some((range, spans))
     }
 
@@ -279,7 +279,7 @@ impl Tasks {
             format!("task: bad range \"{range}\" (today, week, YYYY-MM-DD or YYYY-MM-DD..YYYY-MM-DD)")
         })?;
         let range = Range::new(range, days, offset);
-        let spans = cli::clip(store.times(range.from, range.to), range.from, range.to);
+        let spans = clip(store.times(range.from, range.to), range.from, range.to);
         Ok(Report::new(range, &spans, &store.task_list(true), project))
     }
 }
