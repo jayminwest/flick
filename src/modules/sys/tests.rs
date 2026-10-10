@@ -239,3 +239,5 @@ fn ticks_poll_on_the_background_cadence_or_while_the_view_shows() {
     assert_eq!(m.refresh_secs, 40);
     assert_eq!(tried(&m), [None, Some(1_000), Some(1_000)]);
 }
+
+mod launcher;

@@ -129,15 +129,17 @@ pub fn stale_after(refresh_secs: u64) -> u64 {
 }
 
 /// One machine's row, whatever answered.
-struct Row<'a> {
-    snapshot: Option<&'a Value>,
-    at: Option<u64>,
-    error: Option<&'a str>,
-    source: Option<Via>,
+pub struct Row<'a> {
+    /// The last good snapshot, `report::snapshot_json` shape.
+    pub snapshot: Option<&'a Value>,
+    /// When it was read, unix seconds on this Mac's clock.
+    pub at: Option<u64>,
+    pub error: Option<&'a str>,
+    pub source: Option<Via>,
 }
 
 impl<'a> Row<'a> {
-    fn new(slot: &'a Slot, local: &'a Local) -> Row<'a> {
+    pub fn new(slot: &'a Slot, local: &'a Local) -> Row<'a> {
         if slot.machine.via == Via::Local {
             let source = local.snapshot.as_ref().map(|_| Via::Local);
             return Row { snapshot: local.snapshot.as_ref(), at: local.at, error: local.error.as_deref(), source };
@@ -147,7 +149,7 @@ impl<'a> Row<'a> {
 
     /// `fresh`, `stale` (old, or kept after a failure), `down` (failed, nothing kept) or
     /// `pending` (nothing yet).
-    fn state(&self, now: u64, stale_after: u64) -> &'static str {
+    pub fn state(&self, now: u64, stale_after: u64) -> &'static str {
         match (self.snapshot, self.error) {
             (None, None) => "pending",
             (None, Some(_)) => "down",
@@ -157,7 +159,7 @@ impl<'a> Row<'a> {
         }
     }
 
-    fn age(&self, now: u64) -> Option<u64> {
+    pub fn age(&self, now: u64) -> Option<u64> {
         self.at.map(|t| now.saturating_sub(t))
     }
 }
@@ -226,7 +228,7 @@ pub fn fleet_text(fleet: &Fleet, local: &Local, now: u64, stale_after: u64) -> S
 }
 
 /// `load 1.42 · mem 37% free · disk 61% · batt 80% · 3 ok · 1 fail` from a snapshot.
-fn metrics(snap: &Value) -> Vec<String> {
+pub fn metrics(snap: &Value) -> Vec<String> {
     let mut parts = vec![];
     if let Some(load) = snap["cpu_load"][0].as_f64() {
         parts.push(format!("load {load:.2}"));

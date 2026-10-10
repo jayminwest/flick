@@ -262,9 +262,12 @@ and every hotkey.
   one thread per due machine (a peer's Flick through `core::control::PeerHooks`, or
   `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5 <target> /bin/sh -s` with the probe on
   stdin, 10 s budget). The round captures an epoch; a reload or `Sleep` bumps it, so late
-  results are dropped. It polls on `LauncherOpened`, `Wake` and `sys fleet`, then every 15 s
-  only while its view shows (the round sleeps and posts once more), and on its own timer
-  only with `[sys] refresh_secs`; `Sleep` stops the timer. With no machines it starts nothing.
+  results are dropped. It polls on `LauncherOpened`, `Wake`, `sys fleet` and when its view
+  opens, then every 15 s only while its view shows (the round sleeps and posts once more),
+  and on its own timer only with `[sys] refresh_secs`; `Sleep` stops the timer. With no
+  machines it starts nothing and the root item `sys:fleet` is hidden. No event says a view
+  closed, so the module tracks it: `open` of `fleet` or `machine` sets the flag; root
+  search asking `items`, `LauncherOpened`, and pushing another module's view clear it.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
 follows an external server.

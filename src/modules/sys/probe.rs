@@ -8,7 +8,7 @@
 //! newer one reshaped) is `None`. `sysctl` prints `name: value` (not `-n`), so an unknown
 //! key on one macOS version cannot shift the others.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The probe script. Fixed: nothing from config or a request is ever added to it.
 pub const PROBE: &str = "echo '@@ host'
@@ -26,8 +26,10 @@ echo '@@ now'
 ";
 
 /// One machine's health at one moment. Every field the probe could not read is `None`
-/// (an empty list for `disks`).
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+/// (an empty list for `disks`). Deserializing reads one back from the JSON a peer sent
+/// (`report::snapshot_json`); a field it lacks takes its default.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Snapshot {
     /// The machine's local host name (`scutil --get LocalHostName`, else `hostname -s`).
     pub host: Option<String>,
@@ -49,7 +51,8 @@ pub struct Snapshot {
 }
 
 /// One `df` line. Sizes in bytes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Disk {
     pub mount: String,
     pub device: String,
@@ -60,7 +63,8 @@ pub struct Disk {
 }
 
 /// The internal battery (`pmset -g batt`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Battery {
     pub percent: Option<u8>,
     /// As pmset says it: `charged`, `charging`, `discharging`, `finishing charge`, `AC
@@ -73,7 +77,8 @@ pub struct Battery {
 }
 
 /// Thermal state (`pmset -g therm`). A level macOS has not recorded is `None`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Thermal {
     /// No warning level above 0 and no CPU speed limit below 100.
     pub nominal: bool,

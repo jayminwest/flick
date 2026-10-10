@@ -1,7 +1,13 @@
 //! Module `sys`: this Mac's health and the services it checks, for the fleet dashboard
 //! (plan flick-b5d0). Steps so far: the probe and a cached `sys snapshot` (flick-bd74),
 //! `[[sys.service]]` checks and `sys services` (flick-4573), the `[[sys.machine]]` fleet and
-//! `sys fleet` (flick-3608). No items or views yet.
+//! `sys fleet` (flick-3608), the launcher views (flick-9eb1).
+//!
+//! Launcher (`views.rs`): root item `sys:fleet` "Fleet", only while `[[sys.machine]]`
+//! tables exist (with none it is hidden and nothing polls). It opens view `fleet`: a row
+//! per machine (status icon, metrics, age) and per service of each, then Herdr Agents,
+//! which pushes herdr's `agents` view by name. Enter on a machine or a service opens view
+//! `machine`: its state, each probe fact, its services. Read-only; actions are flick-4a4c.
 //!
 //! `flick sys snapshot [--json]`: CPU load, memory, disks, battery, thermal and uptime
 //! from one run of `probe::PROBE` (stock tools, no FFI), plus the services' last verdicts.
@@ -39,17 +45,20 @@ mod settings;
 mod ssh;
 #[cfg(test)]
 mod testkit;
+mod views;
 mod wire;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::config::Section;
 use crate::core::control::PeerHooks;
-use crate::core::{Cx, Event, Module, unknown_verb};
-use fleet::{Local, VISIBLE_EVERY};
-use io::{Hooks, Shared};
+use crate::core::{Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use fleet::{Fleet, Local, VISIBLE_EVERY};
+use io::{Hooks, Shared, State};
 use settings::Settings;
+use views::{Key, Seen};
 
 pub const ID: &str = "sys";
 
@@ -72,6 +81,14 @@ enum Poll {
     Tick,
 }
 
+/// What Enter on a fleet row does.
+enum Go {
+    Machine(String),
+    Agents,
+    Fleet,
+    Stay(Option<String>),
+}
+
 pub struct Sys {
     shared: Arc<Shared>,
     hooks: Hooks,
@@ -79,9 +96,12 @@ pub struct Sys {
     refresh_secs: u64,
     /// `Started` was seen: events may start threads.
     started: bool,
-    /// The fleet view is open (flick-9eb1 sets it); with the launcher on screen it polls
-    /// every `VISIBLE_EVERY` s.
+    /// View `fleet` or `machine` is open: with the launcher on screen the fleet polls every
+    /// `VISIBLE_EVERY` s. Set by `open`; cleared when root search lists items, on
+    /// `LauncherOpened` and when Herdr Agents replaces the view.
     fleet_view: bool,
+    /// The machine view `machine` shows.
+    detail: Option<String>,
 }
 
 impl Sys {
@@ -92,7 +112,7 @@ impl Sys {
 
     fn with_hooks(hooks: Hooks) -> Sys {
         let shared = Arc::default();
-        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false }
+        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None }
     }
 
     /// Poll the fleet as `kind` asks, if it has machines. Refreshes this Mac's own cache
@@ -140,17 +160,31 @@ impl Sys {
         }
         let now = (self.hooks.now)();
         let st = self.shared.lock();
-        let local = Local {
-            snapshot: st.snapshot.as_ref().map(|s| report::snapshot_json(s, st.probe_error.as_deref(), &st.services, now)),
-            at: st.snapshot.as_ref().map(|s| s.at),
-            error: st.probe_error.clone(),
-        };
+        let local = local(&st, now);
         let stale = fleet::stale_after(self.refresh_secs);
         if json {
             fleet::fleet_json(&st.fleet, &local, now, stale).to_string()
         } else {
             fleet::fleet_text(&st.fleet, &local, now, stale)
         }
+    }
+
+    /// Open view `name` and poll as the launcher does, now that it shows the fleet.
+    fn show(&mut self, name: &str, placeholder: &str) -> ListView {
+        self.fleet_view = true;
+        if self.started {
+            self.poll(Poll::Open);
+        }
+        let empty = "No machines (add [[sys.machine]] tables to config.toml)".into();
+        ListView { placeholder: placeholder.into(), empty, ..ListView::new(ID, name) }
+    }
+
+    /// Run `f` over every machine as the launcher shows it, and the fleet.
+    fn with_seen<R>(&self, f: impl FnOnce(&[Seen], &Fleet) -> R) -> R {
+        let now = (self.hooks.now)();
+        let st = self.shared.lock();
+        let local = local(&st, now);
+        f(&views::seen(&st.fleet, &local, now, fleet::stale_after(self.refresh_secs)), &st.fleet)
     }
 
     fn snapshot(&self, json: bool) -> Result<String, String> {
@@ -189,6 +223,15 @@ impl Sys {
     }
 }
 
+/// This Mac's own snapshot, for a `via = "local"` machine.
+fn local(st: &State, now: u64) -> Local {
+    Local {
+        snapshot: st.snapshot.as_ref().map(|s| report::snapshot_json(s, st.probe_error.as_deref(), &st.services, now)),
+        at: st.snapshot.as_ref().map(|s| s.at),
+        error: st.probe_error.clone(),
+    }
+}
+
 impl Module for Sys {
     fn id(&self) -> &'static str {
         ID
@@ -204,6 +247,64 @@ impl Module for Sys {
             self.restart_timer();
         }
         Ok(())
+    }
+
+    /// `Fleet`, only with machines. Root search is on screen, so no fleet view is.
+    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
+        self.fleet_view = false;
+        self.with_seen(|seen, _| views::root_item(seen).into_iter().collect())
+    }
+
+    fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
+        match view {
+            "fleet" => Some(self.show(view, "Search machines and services…")),
+            "machine" if self.detail.is_some() => Some(self.show(view, "Search this machine…")),
+            _ => None,
+        }
+    }
+
+    fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        let now = (self.hooks.now)();
+        let detail = self.detail.as_deref();
+        let (items, footer) = self.with_seen(|seen, _| {
+            if view.name == "machine" {
+                let mine = seen.iter().find(|s| detail == Some(s.slot.machine.name.as_str()));
+                views::machine_items(mine, now)
+            } else {
+                (views::fleet_items(seen), format!("{}  ·  esc to go back", views::summary_line(seen)))
+            }
+        });
+        view.footer = footer;
+        // The bonus keeps the view's order (machine, then its services) for equal scores.
+        let order: HashMap<String, usize> =
+            items.iter().enumerate().map(|(i, item)| (item.id.to_string(), i)).collect();
+        view.items = cx.ranker.rank(cx.query, items, |i| -(order[i.id.as_str()] as f64) * 1e-3);
+    }
+
+    fn activate(&mut self, id: &ItemId, _cx: &mut Cx) -> Outcome {
+        let detail = self.detail.clone();
+        let go = self.with_seen(|seen, fleet| match Key::parse(id.key(), fleet) {
+            Some(Key::Machine(m) | Key::Service { machine: m, .. }) => Go::Machine(m.to_string()),
+            Some(Key::Check(name)) => {
+                let mine = seen.iter().find(|s| detail.as_deref() == Some(s.slot.machine.name.as_str()));
+                Go::Stay(mine.and_then(|s| views::check_status(s, name)))
+            }
+            Some(Key::Agents) => Go::Agents,
+            Some(Key::Fleet | Key::Head | Key::Fact) => Go::Fleet,
+            None => Go::Stay(None),
+        });
+        match go {
+            Go::Machine(m) => {
+                self.detail = Some(m);
+                Outcome::Push(ListView::new(ID, "machine"))
+            }
+            Go::Agents => {
+                self.fleet_view = false;
+                Outcome::Push(ListView::new("herdr", "agents"))
+            }
+            Go::Fleet => Outcome::Push(ListView::new(ID, "fleet")),
+            Go::Stay(status) => Outcome::Stay(status),
+        }
     }
 
     /// `--json` (`cx.json`) answers with the JSON in `report.rs`.
@@ -222,7 +323,10 @@ impl Module for Sys {
                 self.started = true;
                 self.restart_timer();
             }
-            Event::LauncherOpened if self.started => self.poll(Poll::Open),
+            Event::LauncherOpened if self.started => {
+                self.fleet_view = false;
+                self.poll(Poll::Open);
+            }
             Event::Wake if self.started => {
                 self.restart_timer();
                 self.poll(Poll::Now);
