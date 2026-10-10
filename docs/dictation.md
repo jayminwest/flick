@@ -22,7 +22,7 @@ Everything stays on this Mac. The recorder (sox's `rec`) and the speech-to-text 
 
    For a smaller and faster model, download another `ggml-*.bin` from the same repository (for example `ggml-small.bin` or `ggml-base.en.bin`) and set `model` to its path.
 
-3. **Turn the module on and add the chord.** The module is off until `[dictation]` sets at least one key. Flick cannot tell an empty table from a missing one. The trigger is a `[[keys.chord]]` with `flick` actions ([Key triggers](keys.md)), because modules never import each other:
+3. **Turn the module on and add the chord.** The module is off until `[dictation]` sets at least one key. An empty `[dictation]` table (or one with only `enabled = true`) counts as none, so a bare header never turns the microphone path on. The trigger is a `[[keys.chord]]` with `flick` actions ([Key triggers](keys.md)), because modules never import each other:
 
    ```toml
    [dictation]

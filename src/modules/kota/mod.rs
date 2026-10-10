@@ -9,8 +9,8 @@
 //! the round to thinking, blocked, idle, degraded, down, offline or unknown, debounced
 //! (`presence.rs`). `view.rs` renders it as plain data.
 //!
-//! Rounds run on a timer only when the `[kota]` table sets a key (any key; Flick cannot
-//! tell an empty `[kota]` from a missing one): every `poll_secs` (default 60), every 15 s
+//! Rounds run on a timer only when the `[kota]` table sets a key (any key; an empty
+//! `[kota]` counts as none, `Section::is_set`): every `poll_secs` (default 60), every 15 s
 //! while KOTA works, and 15 s after a first failure. Without one, an idle Flick runs no
 //! thread and no child for this module: `[kota]` is in the same config.toml on every Mac,
 //! and only the Mac that wants KOTA's presence should poll. `kota refresh` runs a round on
@@ -193,7 +193,7 @@ impl Module for Kota {
 
     fn configure(&mut self, table: &Section) -> Result<(), String> {
         let settings = table.get::<Settings>()?.check()?;
-        let active = !table.get::<toml::Table>()?.is_empty();
+        let active = table.is_set();
         let old = std::mem::replace(&mut self.settings, settings);
         let was = std::mem::replace(&mut self.active, active);
         if !self.started {
