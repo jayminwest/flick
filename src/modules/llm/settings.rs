@@ -10,6 +10,8 @@ use super::keyfile::good_key;
 pub const MAX_TIMEOUT: u64 = 3_600;
 /// The most `max_threads`.
 pub const MAX_THREADS: usize = 10_000;
+/// The most `context_chars`.
+pub const MAX_CONTEXT: usize = 10_000_000;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -28,6 +30,9 @@ pub struct Settings {
     pub max_threads: usize,
     /// The reply's token cap sent with each request (0: the server's default).
     pub max_tokens: u32,
+    /// The most characters of a normal chat sent with each prompt, `system_prompt` included:
+    /// the newest messages that fit, at least the prompt itself (0: the whole chat).
+    pub context_chars: usize,
     /// Seconds one reply may take, start to end (1 to 3600).
     pub timeout_secs: u64,
     /// Shows or hides the chat window; unbound by default.
@@ -46,6 +51,7 @@ impl Default for Settings {
             history: true,
             max_threads: 100,
             max_tokens: 0,
+            context_chars: 48_000,
             timeout_secs: 300,
             hotkey: None,
             private_hotkey: None,
@@ -136,6 +142,9 @@ impl Settings {
         if !(1..=MAX_THREADS).contains(&self.max_threads) {
             return Err(format!("[llm]: max_threads must be 1 to {MAX_THREADS}"));
         }
+        if self.context_chars > MAX_CONTEXT {
+            return Err(format!("[llm]: context_chars must be 0 to {MAX_CONTEXT}"));
+        }
         Ok(self)
     }
 
@@ -200,7 +209,7 @@ mod tests {
         let s = settings("").unwrap();
         assert_eq!(s, Settings::default());
         assert!(s.servers.is_empty());
-        assert_eq!((s.history, s.max_threads, s.max_tokens, s.timeout_secs), (true, 100, 0, 300));
+        assert_eq!((s.history, s.max_threads, s.max_tokens, s.timeout_secs, s.context_chars), (true, 100, 0, 300, 48_000));
         assert_eq!((&s.hotkey, &s.private_hotkey), (&None, &None));
         assert_eq!(s.normal(None).unwrap_err(), "llm: no servers; add a [[llm.servers]] table to config.toml");
     }
@@ -278,5 +287,13 @@ mod tests {
         assert_eq!(settings("[llm]\ntimeout_secs = 3600").unwrap().timeout_secs, 3600);
         assert_eq!(err("[llm]\nmax_threads = 0"), "[llm]: max_threads must be 1 to 10000");
         assert_eq!(err("[llm]\nmax_threads = 10001"), "[llm]: max_threads must be 1 to 10000");
+    }
+
+    #[test]
+    fn context_chars_is_0_to_ten_million() {
+        let err = settings("[llm]\ncontext_chars = 10000001").unwrap_err();
+        assert_eq!(err, "[llm]: context_chars must be 0 to 10000000");
+        assert_eq!(settings("[llm]\ncontext_chars = 0").unwrap().context_chars, 0);
+        assert_eq!(settings("[llm]\ncontext_chars = 10000000").unwrap().context_chars, MAX_CONTEXT);
     }
 }

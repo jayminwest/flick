@@ -57,6 +57,7 @@
     "src/modules/kota/settings.rs": 100.0,
     "src/modules/kota/view.rs": 100.0,
     "src/modules/llm/chat.rs": 99.0,
+    "src/modules/llm/context.rs": 100.0,
     "src/modules/llm/io.rs": 96.2,
     "src/modules/llm/keyfile.rs": 96.4,
     "src/modules/llm/mod.rs": 100.0,

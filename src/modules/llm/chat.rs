@@ -8,10 +8,13 @@
 //!   it still is in front.
 //! - The thread shown: the one asked for (the `threads` view), else the one shown last, else
 //!   the newest stored (with `history`), else a new one. Its server and model: the last
-//!   picked in the `models` view, else `default_server` and `default_model`, else the first
-//!   normal server and the first model it lists (fetched once; a prompt sent before the list
-//!   lands waits for it).
-//! - Return sends: the prompt and the whole thread (and `system_prompt`) go to `io::chat`.
+//!   picked in the `models` view (kept in `llm_pick` across restarts, flick-5dfe), else
+//!   `default_server` and `default_model`, else the first normal server and the first model
+//!   it lists (fetched once; a prompt sent before the list lands waits for it). A thread
+//!   whose server is gone from the config (or private now) moves to the default server and
+//!   model, with a notice; it never goes to a private server.
+//! - Return sends: the prompt and the newest of the thread that fits `context_chars`
+//!   (`context::fit`, with `system_prompt`) go to `io::chat`.
 //!   Each `ModuleChanged` takes the stream's new pieces; the reply shows as it arrives and is
 //!   kept once it ends (done, stopped or failed). One reply at a time.
 //! - Keys: ⌘N new chat, ⌘. stop the reply (what arrived stays), ⌘W hide. Esc hides too.
@@ -21,6 +24,7 @@
 //! - Every surface handler only queues a `Note` and posts `ModuleChanged` (mx-fcbc43); the
 //!   module drains the notes on the main thread, then redraws the window if it shows.
 
+use super::context;
 use super::io::{self, Status};
 use super::openai::{self, Piece, Role, Turn};
 use super::store::{Chats, End, Msg, Save, Who};
@@ -133,6 +137,8 @@ pub struct Chat {
     pub(super) thread: Option<Thread>,
     /// The server and model picked last in the `models` view.
     pub(super) pick: Option<(String, String)>,
+    /// `pick` was read from the store (once, on first use).
+    recalled: bool,
     reply: Option<Reply>,
     /// A prompt waiting for the server's model list.
     waiting: Option<String>,
@@ -144,7 +150,7 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(ui: Ui) -> Chat {
-        Chat { ui, opened: false, front: None, thread: None, pick: None, reply: None, waiting: None, asked: 0, notice: None }
+        Chat { ui, opened: false, front: None, thread: None, pick: None, recalled: false, reply: None, waiting: None, asked: 0, notice: None }
     }
 
     fn visible(&self) -> bool {
@@ -181,6 +187,7 @@ impl Llm {
 
     /// Show the window on thread `id` (else the one it showed, the newest, or a new one).
     pub(super) fn summon(&mut self, id: Option<&str>, cx: &Cx) {
+        self.recall_pick(cx);
         if !self.chat.visible() {
             self.chat.front = (self.chat.ui.front)();
         }
@@ -194,6 +201,7 @@ impl Llm {
                 None => self.new_thread(),
             }
         }
+        self.rehome();
         if !self.chat.opened {
             (self.chat.ui.open)();
             self.chat.opened = true;
@@ -212,6 +220,7 @@ impl Llm {
             Some((t, msgs)) => {
                 self.chat.thread = Some(Thread { id: t.id, server: t.server, model: t.model, msgs });
                 self.chat.notice = None;
+                self.rehome();
             }
             None => self.chat.notice = Some(format!("Chat {id} is no longer kept")),
         }
@@ -219,8 +228,8 @@ impl Llm {
 
     /// Start an empty thread on the picked (else default) server and model.
     fn new_thread(&mut self) {
-        let (server, model) = if let Some((s, m)) = &self.chat.pick {
-            (s.clone(), m.clone())
+        let (server, model) = if let Some((s, m)) = self.picked() {
+            (s.to_string(), m.to_string())
         } else {
             let server = self.settings.normal(None).map(|s| s.name.clone()).unwrap_or_default();
             (server, self.settings.default_model.clone())
@@ -232,16 +241,57 @@ impl Llm {
     }
 
     /// The `models` view's Enter: the shown thread uses `server` and `model` from its next
-    /// prompt on, and so do new threads.
-    pub(super) fn pick(&mut self, server: &str, model: &str) {
+    /// prompt on, and so do new threads, also after a restart (`llm_pick`).
+    pub(super) fn pick(&mut self, server: &str, model: &str, cx: &Cx) {
         self.chat.pick = Some((server.into(), model.into()));
+        self.chat.recalled = true;
         if let Some(t) = &mut self.chat.thread {
             (t.server, t.model) = (server.into(), model.into());
+        }
+        if let Err(e) = cx.store.llm_set_pick(server, model) {
+            self.chat.notice = Some(e);
+        }
+    }
+
+    /// Read the kept pick once, unless one was made since start.
+    pub(super) fn recall_pick(&mut self, cx: &Cx) {
+        if !std::mem::replace(&mut self.chat.recalled, true) {
+            self.chat.pick = cx.store.llm_pick();
+        }
+    }
+
+    /// The pick, while its server is still a normal one in the config.
+    pub(super) fn picked(&self) -> Option<(&str, &str)> {
+        let (s, m) = self.chat.pick.as_ref()?;
+        self.settings.normal(Some(s)).ok().map(|_| (s.as_str(), m.as_str()))
+    }
+
+    /// A shown thread whose server is gone from the config (or is private now) moves to the
+    /// default server and model, and says so (the notice, also returned). With no normal
+    /// server it stays (and refuses).
+    fn rehome(&mut self) -> Option<String> {
+        let t = self.chat.thread.as_mut()?;
+        let why = self.settings.normal(Some(&t.server)).err()?;
+        let to = self.settings.normal(None).ok()?;
+        (t.server, t.model) = (to.name.clone(), self.settings.default_model.clone());
+        self.chat.notice = Some(format!("{why}; this chat now uses {}", to.name));
+        self.chat.notice.clone()
+    }
+
+    /// The shown thread is being deleted: stop and keep a reply in flight (so nothing of it is
+    /// written after), then show a new chat.
+    pub(super) fn chat_forget(&mut self, cx: &Cx) {
+        self.stop();
+        self.pump(cx);
+        self.new_thread();
+        if self.chat.visible() {
+            self.chat_draw();
         }
     }
 
     /// Handle what the window queued and the reply's new pieces, then redraw if it shows.
     pub(super) fn chat_drain(&mut self, cx: &Cx) {
+        self.recall_pick(cx);
         for note in (self.chat.ui.take)() {
             match note {
                 Note::Submit(text) => self.submit(text, cx),
@@ -301,6 +351,7 @@ impl Llm {
         if self.chat.waiting.is_none() {
             return;
         }
+        let moved = self.rehome();
         let Some(unresolved) = self.chat.thread.as_ref().map(|t| t.model.is_empty()) else { return };
         let server = match self.server() {
             Ok(s) => s,
@@ -327,6 +378,10 @@ impl Llm {
         }
         if let Some(text) = self.chat.waiting.take() {
             self.send(text, &server, cx);
+            // The move (a reload while the window showed) is news; say it over the send's.
+            if moved.is_some() {
+                self.chat.notice = moved;
+            }
         }
     }
 
@@ -350,11 +405,13 @@ impl Llm {
             .map(|m| Turn { role: if m.who == Who::User { Role::User } else { Role::Assistant }, content: &m.body })
             .collect();
         let s = &self.settings;
-        let body = openai::chat_body(&openai::Chat { model: &t.model, system: &s.system_prompt, turns: &turns, max_tokens: s.max_tokens });
+        let fit = context::fit(&turns, &s.system_prompt, s.context_chars);
+        let body = openai::chat_body(&openai::Chat { model: &t.model, system: &s.system_prompt, turns: fit, max_tokens: s.max_tokens });
         let stream = io::chat(&self.shared, server, body, s.timeout_secs, self.hooks);
         let live = Live { model: t.model.clone(), ..Live::default() };
+        self.chat.notice = (fit.len() < turns.len())
+            .then(|| format!("Sent the newest {} of {} messages ([llm] context_chars)", fit.len(), turns.len()));
         self.chat.reply = Some(Reply { stream, live });
-        self.chat.notice = None;
         self.save_last(cx);
     }
 

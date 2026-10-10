@@ -1,6 +1,7 @@
 //! The launcher side of the chats: the root item `llm:chat`, the `models` view (every normal
 //! server's models, `llm:model:<server>/<model>`) and the `threads` view (the kept chats,
-//! `llm:thread:<id>`) of the normal chat (flick-6a0d); with no normal server there is no
+//! `llm:thread:<id>`, ⌘K Delete Chat asks first, flick-5dfe) of the normal chat
+//! (flick-6a0d); with no normal server there is no
 //! `llm:chat`. The root item `llm:private` opens the private chat (flick-c325), shown with
 //! any server; with no private server it says `NO_PRIVATE`, as does the `private` view the
 //! private hotkey shows then.
@@ -9,7 +10,7 @@ use super::Llm;
 use super::io::{self, Models};
 use super::settings::NO_PRIVATE;
 use super::store::Chats;
-use crate::core::{Action, Cx, Icon, Item, ItemId, ListView, Outcome};
+use crate::core::{Action, Confirm, ConfirmRow, Cx, Icon, Item, ItemId, ListView, Outcome};
 
 /// The root item's key.
 pub const CHAT: &str = "chat";
@@ -22,6 +23,8 @@ pub const PRIVATE: &str = "private";
 const MODEL: &str = "model:";
 const THREAD: &str = "thread:";
 const RETRY: &str = "retry:";
+/// A thread item's action, and the prefix of its confirmation's token.
+const DELETE: &str = "delete";
 
 fn id(key: impl std::fmt::Display) -> ItemId {
     ItemId::new(super::ID, key)
@@ -57,10 +60,7 @@ impl Llm {
 
     fn chat_item(&self) -> Option<Item> {
         let server = self.settings.normal(None).ok()?;
-        let (server, model) = match &self.chat.pick {
-            Some((s, m)) => (s.as_str(), m.as_str()),
-            None => (server.name.as_str(), self.settings.default_model.as_str()),
-        };
+        let (server, model) = self.picked().unwrap_or((server.name.as_str(), self.settings.default_model.as_str()));
         let model = if model.is_empty() { "first listed model" } else { model };
         Some(Item {
             subtitle: format!("{server} · {model}"),
@@ -70,14 +70,47 @@ impl Llm {
         })
     }
 
-    pub(super) fn root_actions(item: &ItemId) -> Vec<Action> {
-        if item.key() != CHAT {
-            return vec![];
+    /// ⌘K: the root item's views; a kept thread's Delete Chat.
+    pub(super) fn item_actions(item: &ItemId) -> Vec<Action> {
+        match item.key() {
+            CHAT => vec![
+                Action::new(MODELS, "Choose Model…", Icon::Symbol("cpu")),
+                Action::new(THREADS, "Chat History", Icon::Symbol("clock.arrow.circlepath")),
+            ],
+            k if k.starts_with(THREAD) => vec![Action::new(DELETE, "Delete Chat", Icon::Symbol("trash"))],
+            _ => vec![],
         }
-        vec![
-            Action::new(MODELS, "Choose Model…", Icon::Symbol("cpu")),
-            Action::new(THREADS, "Chat History", Icon::Symbol("clock.arrow.circlepath")),
-        ]
+    }
+
+    /// A ⌘K action: open a view, or ask before deleting a kept thread.
+    pub(super) fn item_act(item: &ItemId, key: &str, cx: &Cx) -> Outcome {
+        if !Llm::item_actions(item).iter().any(|a| a.key == key) {
+            return Outcome::Stay(None);
+        }
+        let Some(id) = item.key().strip_prefix(THREAD) else { return Outcome::Push(ListView::new(super::ID, key)) };
+        let Some((t, _)) = cx.store.llm_thread(id) else { return Outcome::Stay(Some(format!("Chat {id} is no longer kept"))) };
+        let s = if t.messages == 1 { "" } else { "s" };
+        Outcome::Confirm(Confirm {
+            rows: vec![ConfirmRow { subtitle: format!("{} · {}  ·  {} message{s}", t.server, t.model, t.messages), ..ConfirmRow::new(&t.title) }],
+            label: "Delete Chat".into(),
+            destructive: true,
+            ..Confirm::new(super::ID, format!("{DELETE}:{id}"), format!("Delete chat \"{}\"?", t.title))
+        })
+    }
+
+    /// Delete Chat confirmed: drop the thread from flick.db; if the window shows it, a reply in
+    /// flight is stopped first and the window starts a new chat.
+    pub(super) fn delete_confirmed(&mut self, token: &str, cx: &Cx) -> Outcome {
+        let Some(id) = token.strip_prefix(DELETE).and_then(|t| t.strip_prefix(':')) else { return Outcome::Stay(None) };
+        let shown = self.chat.thread.as_ref().is_some_and(|t| t.id == id);
+        if shown {
+            self.chat_forget(cx);
+        }
+        Outcome::Stay(Some(match cx.store.llm_delete(id) {
+            Ok(true) => "Deleted the chat".into(),
+            Ok(false) => format!("Chat {id} is no longer kept"),
+            Err(e) => e,
+        }))
     }
 
     /// A view by name; opening `models` asks every normal server for its list again.
@@ -124,7 +157,7 @@ impl Llm {
                 None => items.push(row(format!("{RETRY}{}", s.name), format!("{}: loading models…", s.name), "Retry")),
                 Some(Err(e)) => items.push(row(format!("{RETRY}{}", s.name), format!("{}: {e}", s.name), "Retry")),
                 Some(Ok(list)) => items.extend(list.into_iter().map(|model| {
-                    let current = self.chat.pick.as_ref().is_some_and(|(ps, pm)| *ps == s.name && *pm == model.id);
+                    let current = self.picked().is_some_and(|(ps, pm)| ps == s.name && pm == model.id);
                     let mut about = vec![s.name.clone()];
                     about.extend(model.state.clone());
                     about.extend(model.context_length.map(|c| format!("ctx {c}")));
@@ -168,10 +201,11 @@ impl Llm {
             return Outcome::Stay(Some(format!("Asking {name} for its models…")));
         }
         if let Some(rest) = key.strip_prefix(MODEL) {
-            let found = self.settings.servers.iter().find_map(|s| Some((s.name.clone(), rest.strip_prefix(&format!("{}/", s.name))?)));
+            let mut normal = self.settings.servers.iter().filter(|s| !s.private);
+            let found = normal.find_map(|s| Some((s.name.clone(), rest.strip_prefix(&format!("{}/", s.name))?)));
             let Some((server, model)) = found else { return Outcome::Stay(None) };
             cx.hide();
-            self.pick(&server, model);
+            self.pick(&server, model, cx);
             self.summon(None, cx);
             return Outcome::Hide;
         }
