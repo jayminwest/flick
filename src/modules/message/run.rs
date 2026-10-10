@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 pub const BUDGET: Duration = Duration::from_secs(20);
 /// How often the worker checks its child.
 const POLL: Duration = Duration::from_millis(10);
+/// The error line when a worker thread cannot start.
+pub const NO_THREAD: &str = "Cannot start the action: no thread";
 /// Longest stderr line kept for an error, in chars.
 const LINE_MAX: usize = 200;
 
@@ -69,39 +71,61 @@ pub struct Done {
     pub exit: Exit,
 }
 
-/// Results not drained yet, shared with the worker threads.
-#[derive(Clone, Default)]
-pub struct Worker(Arc<Mutex<Vec<Done>>>);
+/// Results not drained yet, shared with the worker threads: KOTA sends (`Done`) or local
+/// runs (`local::Done`).
+pub struct Worker<D>(Arc<Mutex<Vec<D>>>);
 
-impl Worker {
-    /// Run `job` with `exec` on a thread, then call `notify`. A thread that cannot start is
-    /// a failed press, delivered at once.
-    pub fn start(&self, job: Job, exec: fn(&Job) -> Exit, notify: fn()) {
+impl<D> Default for Worker<D> {
+    fn default() -> Self {
+        Worker(Arc::default())
+    }
+}
+
+impl<D> Clone for Worker<D> {
+    fn clone(&self) -> Self {
+        Worker(Arc::clone(&self.0))
+    }
+}
+
+impl<D: Send + 'static> Worker<D> {
+    /// Run `work` on a thread named `name`, queue its result, then call `notify`. A thread
+    /// that cannot start queues `failed` at once.
+    pub fn spawn(&self, name: &str, work: impl FnOnce() -> D + Send + 'static, failed: D, notify: fn()) {
         let shared = self.clone();
-        let (card, press) = (job.card.clone(), job.press);
-        let spawned = thread::Builder::new().name("flick-kota-action".into()).spawn(move || {
-            let exit = exec(&job);
-            shared.push(Done { card: job.card, press: job.press, exit });
+        let spawned = thread::Builder::new().name(name.into()).spawn(move || {
+            shared.push(work());
             notify();
         });
-        if let Err(e) = spawned {
-            self.push(Done { card, press, exit: Exit::Failed(format!("cannot start the action: {e}")) });
+        if spawned.is_err() {
+            self.push(failed);
         }
     }
 
-    fn push(&self, done: Done) {
+    fn push(&self, done: D) {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).push(done);
     }
 
-    /// Finished presses not taken yet.
+    /// Finished results not taken yet.
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 
-    /// Every finished press, oldest first.
-    pub fn take(&self) -> Vec<Done> {
+    /// Every finished result, oldest first.
+    pub fn take(&self) -> Vec<D> {
         std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+impl Worker<Done> {
+    /// Send `job` with `exec` on a thread, then call `notify`.
+    pub fn start(&self, job: Job, exec: fn(&Job) -> Exit, notify: fn()) {
+        let failed = Done { card: job.card.clone(), press: job.press, exit: Exit::Failed(NO_THREAD.into()) };
+        let work = move || {
+            let exit = exec(&job);
+            Done { card: job.card, press: job.press, exit }
+        };
+        self.spawn("flick-kota-action", work, failed, notify);
     }
 }
 
@@ -165,7 +189,7 @@ pub fn classify(code: Option<i32>, stderr: &str) -> Exit {
 }
 
 /// The last non-empty line of `text`, trimmed and cut to `LINE_MAX` chars.
-fn last_line(text: &str) -> Option<String> {
+pub fn last_line(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).rfind(|l| !l.is_empty())?;
     let mut out: String = line.chars().take(LINE_MAX).collect();
     if line.chars().count() > LINE_MAX {

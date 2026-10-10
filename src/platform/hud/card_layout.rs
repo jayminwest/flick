@@ -56,6 +56,9 @@ pub struct CardUi<'a> {
     /// The id of a `shell` action waiting for confirmation: the card shows the exact command
     /// with Cancel and Run instead of its actions.
     pub confirm: Option<&'a str>,
+    /// A muted line under the body: what a local action did ("Copied", a command's last
+    /// output line), or, while `pending`, what runs instead of "Sent to KOTA…".
+    pub note: Option<&'a str>,
 }
 
 /// How a status line looks.
@@ -78,11 +81,12 @@ pub struct Status {
     pub enabled: bool,
 }
 
-/// The status of a card in `state` with `ui`: pending wins, then an error from the module,
-/// then the card's own state.
+/// The status of a card in `state` with `ui`: pending wins (its line is the note, else "Sent
+/// to KOTA…"), then an error from the module, then a note, then the card's own state.
 pub fn status(state: State, ui: &CardUi) -> Status {
     let (symbol, line, spinner, enabled) = if ui.pending || state == State::Pending {
-        ("hourglass", Some((Tone::Muted, "Sent to KOTA…".to_string())), true, false)
+        let line = ui.note.filter(|_| ui.pending).unwrap_or("Sent to KOTA…");
+        ("hourglass", Some((Tone::Muted, line.to_string())), true, false)
     } else if let Some(e) = ui.error {
         ("exclamationmark.triangle.fill", Some((Tone::Error, e.to_string())), false, true)
     } else {
@@ -98,6 +102,10 @@ pub fn status(state: State, ui: &CardUi) -> Status {
             }
             State::Open | State::Pending => ("text.bubble.fill", None, false, true),
         }
+    };
+    let line = match ui.note {
+        Some(n) if !spinner && ui.error.is_none() => Some((Tone::Muted, n.to_string())),
+        _ => line,
     };
     Status { symbol, line, spinner, enabled }
 }

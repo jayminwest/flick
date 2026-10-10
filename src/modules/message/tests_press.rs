@@ -5,12 +5,12 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::dispatch::{LOCAL_LATER, NO_COMMAND, NO_UPDATE, Note, Phase};
+use super::dispatch::{NO_COMMAND, NO_UPDATE, Note, Phase};
 use super::tests::{Fixture, TS, inbox, queue, take_log};
 use super::*;
 use crate::platform::hud::CANCEL;
 
-const ASK: &str = r#"{"id":"c1","title":"Deploy?","blocks":[{"type":"field","id":"why","label":"Why"}],"actions":[
+pub(super) const ASK: &str = r#"{"id":"c1","title":"Deploy?","blocks":[{"type":"field","id":"why","label":"Why"}],"actions":[
   {"id":"go","label":"Ship","style":"primary"},
   {"id":"later","label":"Later","do":"dismiss"},
   {"id":"bye","label":"Bye","do":"dismiss","reply":true},
@@ -18,16 +18,16 @@ const ASK: &str = r#"{"id":"c1","title":"Deploy?","blocks":[{"type":"field","id"
   {"id":"web2","label":"Open+","do":{"open_url":"https://example.com"},"reply":true},
   {"id":"sh","label":"Run","do":{"shell":"make deploy"}}]}"#;
 
-fn press(action: &str) {
+pub(super) fn press(action: &str) {
     queue(Note::Press { card: "c1".into(), action: action.into(), values: r#"{"why":"ok"}"#.into() });
 }
 
 /// Handle queued notes and finished sends until no send runs.
-fn settle(f: &mut Fixture, m: &mut Inbox) {
+pub(super) fn settle(f: &mut Fixture, m: &mut Inbox) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         f.cx("", false, |cx| m.on_event(Event::ModuleChanged { module: "message" }, cx));
-        let sending = m.ui.values().any(|u| matches!(u.phase, Phase::Sending { .. }));
+        let sending = m.ui.values().any(|u| matches!(u.phase, Phase::Sending { .. } | Phase::Running { .. }));
         if !sending || Instant::now() > deadline {
             break;
         }
@@ -35,7 +35,7 @@ fn settle(f: &mut Fixture, m: &mut Inbox) {
     }
 }
 
-fn posted(config: &str) -> (Fixture, Inbox) {
+pub(super) fn posted(config: &str) -> (Fixture, Inbox) {
     let (mut f, mut m) = (Fixture::new(), inbox(config));
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
     take_log();
@@ -110,10 +110,12 @@ fn rejections_and_failures_show_on_the_card_with_actions_on() {
     settle(&mut f, &mut m);
     let expect = r#"echo -x --action --card c1 --action-id go <{"why":"ok"}"#;
     assert_eq!(take_log()[1], format!("update c1 Open|false|Some({expect:?})|None|0|true"));
-    // A replying local action sends its press too.
+    // A replying local action runs its local part, then sends its press too.
     press("web2");
     settle(&mut f, &mut m);
-    assert!(take_log()[1].contains("--action-id web2"));
+    let log = take_log();
+    assert_eq!(log[0], "open https://example.com");
+    assert!(log[2].contains("--action-id web2"), "{log:?}");
 }
 
 #[test]
@@ -157,11 +159,8 @@ fn hud_dismissals_mark_the_card_and_drop_its_state() {
 }
 
 #[test]
-fn dismiss_closes_and_local_actions_wait_for_e244() {
+fn dismiss_closes_the_card() {
     let (mut f, mut m) = posted("[message]\naction_command = [\"sent\"]");
-    press("web");
-    settle(&mut f, &mut m);
-    assert_eq!(take_log(), [format!("update c1 Open|false|Some({LOCAL_LATER:?})|None|0|true")]);
     press("later");
     settle(&mut f, &mut m);
     assert_eq!(take_log(), ["dismiss c1"]);
@@ -183,11 +182,22 @@ fn a_shell_action_asks_first() {
     press(CANCEL);
     settle(&mut f, &mut m);
     assert_eq!(take_log(), ["update c1 Open|false|None|None|0|true"]);
+    // The first press asks; the second (Run) runs the exact command through /bin/sh.
     press("sh");
     press("sh");
     settle(&mut f, &mut m);
-    let log = take_log();
-    assert_eq!(log[1], format!("update c1 Open|false|Some({LOCAL_LATER:?})|None|0|true"));
+    assert_eq!(
+        take_log(),
+        [
+            "update c1 Open|false|None|Some(\"sh\")|0|true",
+            "update c1 Open|true|None|None|Running command…|0|true",
+            "update c1 Open|false|None|None|ran /bin/sh -c make deploy|0|true",
+        ]
+    );
+    // It asks again next time.
+    press("sh");
+    settle(&mut f, &mut m);
+    assert_eq!(take_log(), ["update c1 Open|false|None|Some(\"sh\")|0|true"]);
 }
 
 #[test]
