@@ -120,7 +120,7 @@ define_class!(
             let close = p.x >= self.bounds().size.width - CLOSE_HIT && p.y <= CLOSE_HIT;
             let window = self.window().map(|w| Retained::as_ptr(&w).cast::<()>() as usize);
             if let Some(window) = window {
-                timer::after(0.0, move || super::clicked(window, close));
+                timer::after(0.0, move || super::clicks::clicked(window, close));
             }
         }
     }

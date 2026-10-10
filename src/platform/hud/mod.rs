@@ -27,8 +27,10 @@
 
 mod card_layout;
 mod card_view;
+mod clicks;
 mod controls;
 pub mod embed;
+mod escape;
 mod focus;
 mod keys;
 mod stack;
@@ -37,15 +39,13 @@ mod timeout;
 mod view;
 
 use std::cell::{Cell, RefCell};
-use std::ptr::NonNull;
 use std::sync::OnceLock;
 
-use block2::RcBlock;
+use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{ClassType, MainThreadMarker};
-use objc2_app_kit::{NSEvent, NSEventMask, NSScreen, NSSound};
-use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize};
+use objc2_app_kit::{NSEvent, NSScreen, NSSound};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 pub use card_layout::CANCEL;
 pub use card_layout::CardUi;
@@ -53,13 +53,10 @@ pub use focus::{focus_top, unfocus};
 pub use stack::Corner;
 pub use text::TextCard;
 
-use super::{timer, workspace};
 use crate::core::card::Card;
-use crate::core::card::action::values_json;
+use escape::{escape_monitors, unmonitor};
 use timeout::arm;
 use view::{Pill, Views, ns};
-
-const ESCAPE: u16 = 53;
 
 /// What a card shows.
 #[derive(Clone, Copy, Debug)]
@@ -324,14 +321,6 @@ fn empty(s: &mut State) -> Vec<Retained<AnyObject>> {
     std::mem::take(&mut s.monitors)
 }
 
-fn unmonitor(monitors: &[Retained<AnyObject>]) {
-    for monitor in monitors {
-        // SAFETY: each monitor came from addGlobal/addLocalMonitorForEvents and is removed
-        // once: it was taken out of `State`.
-        unsafe { NSEvent::removeMonitor(monitor) };
-    }
-}
-
 /// Dismiss card `id` for the user's side and tell the handler.
 fn close(id: &str, why: Dismissed) {
     if remove(id).is_some()
@@ -380,98 +369,4 @@ fn contains(f: NSRect, p: NSPoint) -> bool {
         && p.x < f.origin.x + f.size.width
         && p.y >= f.origin.y
         && p.y < f.origin.y + f.size.height
-}
-
-/// A click on the card in panel `window`: on its close button, or elsewhere.
-fn clicked(window: usize, on_close: bool) {
-    let hit = STATE.with_borrow(|s| {
-        let e = s.cards.iter().find(|e| e.views.key() == window)?;
-        Some((e.id.clone(), e.link.clone(), e.click_dismisses))
-    });
-    match hit {
-        Some((id, _, _)) if on_close => close(&id, Dismissed::Closed),
-        Some((id, link, true)) => {
-            close(&id, Dismissed::Clicked);
-            if let Some(link) = link {
-                workspace::open_url(&link);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// A press of the button tagged `tag` on the card in panel `window` (else on an `embed` card
-/// drawn into view `host`): hand the action and the values to the `on_press` handler, or
-/// redraw the card with the error if the values are over the cap.
-fn pressed(window: usize, host: usize, tag: isize) {
-    let hit = STATE.with_borrow(|s| {
-        let e = s.cards.iter().find(|e| e.views.key() == window)?;
-        let c = e.controls.as_ref()?;
-        Some((e.id.clone(), c.action(tag)?, values_json(&c.values())))
-    });
-    if hit.is_none() {
-        embed::pressed(host, tag);
-    }
-    match hit {
-        Some((id, action, Ok(values))) => {
-            if let Some(handler) = ON_PRESS.get() {
-                handler(&id, &action, values);
-            }
-            focus::pressed(window);
-        }
-        Some((id, _, Err(why))) => refill_with_error(&id, &why),
-        None => {}
-    }
-}
-
-/// Redraw card `id` as it was drawn, with `error` as its error line.
-fn refill_with_error(id: &str, error: &str) {
-    let mtm = super::mtm();
-    STATE.with_borrow_mut(|s| {
-        let Some(e) = s.cards.iter_mut().find(|e| e.id == id) else { return };
-        let Some(c) = &e.controls else { return };
-        let (card, pending, confirm) = (c.card.clone(), c.pending, c.confirm.clone());
-        let ui = CardUi { pending, error: Some(error), confirm: confirm.as_deref(), note: None };
-        let (width, opts, epoch) = (e.size.0, e.opts, e.epoch);
-        fill(mtm, e, Draw::Card(&card, &ui), width, opts, epoch);
-        relayout(s, mtm);
-    });
-}
-
-/// Escape: dismiss every card that is not sticky.
-fn escape() {
-    let ids: Vec<String> = STATE
-        .with_borrow(|s| s.cards.iter().filter(|e| !e.opts.sticky).map(|e| e.id.clone()).collect());
-    for id in ids {
-        close(&id, Dismissed::Escape);
-    }
-}
-
-/// Escape anywhere: a global monitor for other apps' key events (needs Accessibility;
-/// without it, only clicks and timeouts dismiss) and a local one for Flick's own.
-fn escape_monitors() -> Vec<Retained<AnyObject>> {
-    let global = RcBlock::new(|event: NonNull<NSEvent>| {
-        // SAFETY: AppKit passes a valid event for the duration of the call.
-        if unsafe { event.as_ref() }.keyCode() == ESCAPE {
-            timer::after(0.0, escape);
-        }
-    });
-    let local = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
-        // SAFETY: as above.
-        let e = unsafe { event.as_ref() };
-        // Esc on a card holding the keyboard only gives it back (`focus`).
-        let on_card =
-            e.window(super::mtm()).is_some_and(|w| w.isKindOfClass(view::CardPanel::class()));
-        if e.keyCode() == ESCAPE && !on_card {
-            timer::after(0.0, escape);
-        }
-        event.as_ptr()
-    });
-    let global =
-        NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &global);
-    // SAFETY: the block returns the event it was given, unchanged: a valid pointer.
-    let local = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &local)
-    };
-    global.into_iter().chain(local).collect()
 }

@@ -119,7 +119,7 @@ define_class!(
             let host = unsafe { sender.superview() }.map_or(0, |v| addr(&v));
             if let Some(window) = sender.window() {
                 let window = addr(&window);
-                timer::after(0.0, move || super::pressed(window, host, tag));
+                timer::after(0.0, move || super::clicks::pressed(window, host, tag));
             }
         }
 
