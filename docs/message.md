@@ -60,8 +60,8 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
 ```
 
 - Posting the same `id` again replaces the card in place. `reply_to` (a pending message id) replaces that placeholder, as `post --reply-to` does.
-- A card in state `open` with an enabled action stays for `card_timeout_secs` (default: until closed; Esc leaves it); other cards hide after `timeout_secs`. A `pending` card shows the hourglass, without sound or notification.
-- A card you dismissed (`card dismiss`, its x, Esc or its timeout) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently.
+- A card in state `open` with an enabled action stays for `card_timeout_secs` (default: until closed; Esc leaves it); a `pending` card (the hourglass, without sound or notification) stays until it is updated or closed; other cards hide after `timeout_secs`.
+- A card you dismissed (`card dismiss`, its x or Esc) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently. A card that only timed out shows any update.
 
 ### Presses
 
