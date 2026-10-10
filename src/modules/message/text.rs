@@ -99,7 +99,6 @@ pub fn stamp(ts: i64, now: i64, offset: i32) -> String {
 
 /// The local day of `ts` as a transcript divider says it: "Today", "Yesterday", "Oct 9",
 /// or "Oct 9 2025" outside the year of `now`. `offset` is seconds east of UTC.
-#[cfg_attr(not(test), expect(dead_code, reason = "the chat transcript's dividers; wired in flick-eedd"))]
 pub fn day(ts: i64, now: i64, offset: i32) -> String {
     let day = (ts + i64::from(offset)).div_euclid(86_400);
     let today = (now + i64::from(offset)).div_euclid(86_400);

@@ -79,6 +79,7 @@ pub struct SurfaceId(pub &'static str);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Input {
     /// One line; Return always submits.
+    #[expect(dead_code, reason = "one-line surfaces: the fleet dashboard (flick-b5d0)")]
     Single,
     /// About four lines that scroll; ⇧ or ⌥ Return adds a line.
     Multi,
@@ -122,6 +123,7 @@ pub enum Status {
 /// A removable chip above the input; clicking it reports `chip_removed` with its index (the
 /// module then calls `set_chips` without it).
 #[derive(Clone, Copy, Debug)]
+#[expect(dead_code, reason = "context chips in chat (flick-65bd)")]
 pub struct Chip<'a> {
     pub label: &'a str,
     /// An SF Symbol name; empty for none.
@@ -336,6 +338,7 @@ pub fn set_header(id: SurfaceId, header: &Header) {
 }
 
 /// Replace the chips; each shows its symbol, its label and a remove mark.
+#[expect(dead_code, reason = "context chips in chat (flick-65bd)")]
 pub fn set_chips(id: SurfaceId, chips: &[Chip]) {
     let Some(s) = get(id) else { return };
     let mtm = mtm();
@@ -378,6 +381,10 @@ fn card_pressed(host: usize, tag: isize) {
 }
 
 /// The input's text as typed so far.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "no module reads the draft unsent yet (flick-65bd, flick-6519)")
+)]
 pub fn input(id: SurfaceId) -> String {
     get(id).map(|s| s.v.field.text()).unwrap_or_default()
 }
