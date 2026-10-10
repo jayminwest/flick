@@ -46,7 +46,7 @@ modules! {
         mod activity => "activity", activity::Activity::default;
         mod herdr => "herdr", herdr::Herdr::default;
         mod kota => "kota", kota::Kota::default;
-        mod sys => "sys", sys::Sys::default;
+        mod sys => "sys", || sys::Sys::new(crate::cli::PEER);
         mod tasks => "task", tasks::Tasks::default;
         mod keys => "keys", || keys::Keys::new(crate::control::local);
         mod dictation => "dictation", dictation::Dictation::default;

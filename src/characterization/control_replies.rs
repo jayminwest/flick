@@ -279,15 +279,23 @@ fn peers_reach_the_card_verbs() {
 #[test]
 fn peers_may_read_sys_health() {
     // `sys snapshot` and `sys services` are read-only and are how a peer's fleet view reads
-    // this Mac (plan flick-b5d0), so the deny table must not list them. Not run here: the
-    // real module would run the probe.
-    for verb in ["snapshot", "services"] {
+    // this Mac (plan flick-b5d0); `sys fleet` reads what this Mac's own polling found
+    // (flick-3608). The deny table must not list them. Not run here: the real module would
+    // run the probe, and the fleet would ask peers and ssh.
+    for verb in ["snapshot", "services", "fleet"] {
         let req = ["sys", verb].map(String::from);
         assert_eq!(net_policy(&req), Ok(()), "{verb}");
         let (words, flags) = split_flags([&req[..], &["--json".into()]].concat());
         assert!(flags.json);
         assert_eq!(net_policy(&words), Ok(()), "{verb} --json");
     }
+    // Without machines the fleet answers over the network at once and runs nothing.
+    let none = r#"{"ok":"no machines (add [[sys.machine]] tables to config.toml)"}"#;
+    assert_eq!(net_reply(&["sys", "fleet"]), none);
+    assert_eq!(
+        net_reply(&["sys", "fleet", "--json"]),
+        r#"{"ok":{"machines":[],"schema":1,"stale_after_secs":45}}"#
+    );
 }
 
 #[test]

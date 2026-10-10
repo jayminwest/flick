@@ -239,10 +239,6 @@ pub struct NetHooks {
 /// How a module asks another Mac's Flick one question without importing the client (the
 /// `sys` fleet reads a peer's `sys snapshot`): `modules/mod.rs` passes `cli::client::PEER`;
 /// tests pass fakes. Blocking, so only background threads call it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
-)]
 #[derive(Clone, Copy, Debug)]
 pub struct PeerHooks {
     /// Send `words` with `flags` (`--remote` always) to the Flick at `host` (`name[:port]`)

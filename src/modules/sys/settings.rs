@@ -1,5 +1,6 @@
-//! `[sys]` and its `[[sys.service]]` checks. Only this Mac's config defines a check; nothing
-//! from a request, a peer reply or a card ever becomes one.
+//! `[sys]`, its `[[sys.service]]` checks and its `[[sys.machine]]` fleet. Only this Mac's
+//! config defines a check, a machine or an ssh target; nothing from a request, a peer reply
+//! or a card ever becomes one.
 
 use serde::Deserialize;
 
@@ -10,6 +11,119 @@ use super::check::Limits;
 pub struct Settings {
     /// Service checks, in display order; none by default.
     pub service: Vec<Service>,
+    /// Machines of the fleet view, in display order; none by default (no fleet polling).
+    pub machine: Vec<Machine>,
+    /// Background fleet refresh in seconds: 0 (the default) polls only when the launcher or
+    /// the fleet view opens, on wake and every 15 s while the view shows; else at least 30.
+    pub refresh_secs: u64,
+}
+
+/// The least non-zero `refresh_secs`.
+pub const MIN_REFRESH: u64 = 30;
+
+/// How the fleet reads a machine.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Via {
+    /// This Mac: its own cached snapshot and services.
+    Local,
+    /// The machine's Flick, `sys snapshot --json` over the network transport.
+    Flick,
+    /// The probe over `ssh <target> /bin/sh -s`; no Flick needed there.
+    Ssh,
+}
+
+impl Via {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Via::Local => "local",
+            Via::Flick => "flick",
+            Via::Ssh => "ssh",
+        }
+    }
+}
+
+/// One `[[sys.machine]]`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Machine {
+    pub name: String,
+    pub via: Via,
+    /// `name[:port]` of its Flick (via = flick); default: `name`.
+    #[serde(default)]
+    pub host: Option<String>,
+    /// An ssh destination (`user@host`): via = ssh, and the fallback when its Flick is too
+    /// old or unreachable.
+    #[serde(default)]
+    pub ssh: Option<String>,
+    /// A `vnc://` URL for Screen Sharing (flick-4a4c).
+    #[serde(default)]
+    pub vnc: Option<String>,
+    /// An http(s) dashboard URL (flick-4a4c).
+    #[serde(default)]
+    pub dash: Option<String>,
+    /// Checks of a machine read over ssh: launchd and process run inside the ssh call,
+    /// http and tcp from this Mac. A Flick machine checks its own `[[sys.service]]`.
+    #[serde(default)]
+    pub service: Vec<Service>,
+}
+
+impl Machine {
+    /// Where its Flick listens: `host`, else its name.
+    pub fn flick_host(&self) -> &str {
+        self.host.as_deref().unwrap_or(&self.name)
+    }
+
+    fn check(&self) -> Result<(), String> {
+        let name = &self.name;
+        let bad = |why: &str| Err(format!("[sys]: machine \"{name}\": {why}"));
+        let odd = |w: &str| w.is_empty() || w.starts_with('-') || w.contains(char::is_whitespace);
+        if word(self.host.as_ref()).is_some_and(odd) {
+            return bad("host is one word, name[:port]");
+        }
+        if word(self.ssh.as_ref()).is_some_and(odd) {
+            return bad("ssh is one word, e.g. \"user@host\", not an option");
+        }
+        if self.via == Via::Ssh && self.ssh.is_none() {
+            return bad("via = \"ssh\" needs ssh = \"user@host\"");
+        }
+        if word(self.vnc.as_ref()).is_some_and(|u| !u.starts_with("vnc://")) {
+            return bad("vnc must start with vnc://");
+        }
+        if word(self.dash.as_ref()).is_some_and(|u| !(u.starts_with("http://") || u.starts_with("https://"))) {
+            return bad("dash must start with http:// or https://");
+        }
+        if !self.service.is_empty() && self.via != Via::Ssh {
+            return bad("services belong to via = \"ssh\" machines; others check their own");
+        }
+        for s in &self.service {
+            if s.kind == Kind::Command {
+                return bad("a command check runs on the machine's own Flick, not over ssh");
+            }
+            s.check().map_err(|e| format!("[sys]: machine \"{name}\": {}", e.trim_start_matches("[sys]: ")))?;
+        }
+        unique(self.service.iter().map(|s| s.name.as_str()), &format!("machine \"{name}\": service"))
+    }
+}
+
+/// An optional setting, trimmed.
+fn word(v: Option<&String>) -> Option<&str> {
+    v.map(|w| w.trim())
+}
+
+/// Every name in `names` is not blank and appears once.
+fn unique<'a>(names: impl Iterator<Item = &'a str>, what: &str) -> Result<(), String> {
+    let mut seen: Vec<&str> = vec![];
+    for (i, n) in names.enumerate() {
+        if n.trim().is_empty() {
+            return Err(format!("[sys]: {what} {} has no name", i + 1));
+        }
+        if seen.contains(&n) {
+            return Err(format!("[sys]: {what} \"{n}\" is named twice"));
+        }
+        seen.push(n);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -124,16 +238,18 @@ impl Service {
 }
 
 impl Settings {
-    /// Settings with every service valid and named once.
+    /// Settings with every service and machine valid and named once.
     pub fn check(self) -> Result<Settings, String> {
-        for (i, s) in self.service.iter().enumerate() {
-            if s.name.trim().is_empty() {
-                return Err(format!("[sys]: service {} has no name", i + 1));
-            }
-            if self.service[..i].iter().any(|o| o.name == s.name) {
-                return Err(format!("[sys]: service \"{}\" is named twice", s.name));
-            }
+        unique(self.service.iter().map(|s| s.name.as_str()), "service")?;
+        for s in &self.service {
             s.check()?;
+        }
+        unique(self.machine.iter().map(|m| m.name.as_str()), "machine")?;
+        for m in &self.machine {
+            m.check()?;
+        }
+        if self.refresh_secs != 0 && self.refresh_secs < MIN_REFRESH {
+            return Err(format!("[sys]: refresh_secs is 0 (off) or at least {MIN_REFRESH}"));
         }
         Ok(self)
     }
