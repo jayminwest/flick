@@ -65,7 +65,7 @@ impl Block {
         not(test),
         expect(
             dead_code,
-            reason = "the chat model (flick-1a7e) uses the plain form; HUD text blocks are styled"
+            reason = "plain() keeps link URLs, so only tests read a block's bare text"
         )
     )]
     pub fn text(&self) -> String {
@@ -111,15 +111,8 @@ pub fn parse(md: &str) -> Vec<Block> {
 }
 
 /// `md` as plain text: markers dropped, bullets as `•` (or `n.`) indented two spaces per
-/// level, links as their text, code as written, runs of blank lines as one, and no blank
-/// lines at either end.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the chat model (flick-1a7e) uses the plain form; HUD text blocks are styled"
-    )
-)]
+/// level, links as `text (url)` (a bare URL as itself), code as written, runs of blank lines
+/// as one, and no blank lines at either end.
 pub fn plain(md: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     for b in parse(md) {
@@ -130,9 +123,9 @@ pub fn plain(md: &str) -> String {
         let text = match b.kind {
             Kind::Bullet { depth, number } => {
                 let mark = number.map_or_else(|| "•".to_string(), |n| format!("{n}."));
-                format!("{}{mark} {}", "  ".repeat(depth.into()), b.text())
+                format!("{}{mark} {}", "  ".repeat(depth.into()), with_urls(&b.spans))
             }
-            _ => b.text(),
+            _ => with_urls(&b.spans),
         };
         let text = if code { text.trim_matches('\n') } else { &text };
         for l in text.split('\n') {
@@ -146,6 +139,30 @@ pub fn plain(md: &str) -> String {
         lines.pop();
     }
     lines.join("\n")
+}
+
+/// `spans` as text, each run of spans under one link followed by ` (url)` unless the run's
+/// text is the URL itself.
+fn with_urls(spans: &[Span]) -> String {
+    let mut out = String::new();
+    let mut i = 0;
+    while let Some(span) = spans.get(i) {
+        let Some(url) = &span.link else {
+            out.push_str(&span.text);
+            i += 1;
+            continue;
+        };
+        let run = spans[i..].iter().take_while(|s| s.link.as_ref() == Some(url)).count();
+        let text: String = spans[i..i + run].iter().map(|s| s.text.as_str()).collect();
+        out.push_str(&text);
+        if text != *url {
+            out.push_str(" (");
+            out.push_str(url);
+            out.push(')');
+        }
+        i += run;
+    }
+    out
 }
 
 /// A closing code fence: only backticks, at least three.
