@@ -19,6 +19,13 @@ thread_local! {
     static NOTES: RefCell<Vec<dispatch::Note>> = const { RefCell::new(Vec::new()) };
     /// The fake HUD's keyboard: 0 no card shows, 1 a card shows, 2 a card holds the keyboard.
     static KEYBOARD: Cell<u8> = const { Cell::new(1) };
+    /// Every `Event::CardsPending` count the module sent.
+    static PENDING: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The counts sent as `Event::CardsPending` since the last call.
+pub(super) fn take_pending() -> Vec<u32> {
+    PENDING.with(|p| std::mem::take(&mut *p.borrow_mut()))
 }
 
 /// Set the fake HUD's keyboard state (see `KEYBOARD`).
@@ -130,9 +137,12 @@ pub(super) fn inbox(config: &str) -> Inbox {
             exec,
             changed: || {},
             wake_after: |secs| log(format!("wake {secs}")),
+            pending: |n| PENDING.with(|p| p.borrow_mut().push(n)),
         },
         settings: Settings::default(),
         dismissed: HashSet::new(),
+        expired: HashSet::new(),
+        announced: None,
         ui: dispatch::Uis::new(),
         presses: 0,
         worker: run::Worker::default(),

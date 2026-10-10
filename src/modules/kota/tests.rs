@@ -8,17 +8,17 @@ use std::thread;
 use std::time::{Duration, Instant};
 use testkit::HOOKS;
 
-fn configured(text: &str) -> Result<Kota, String> {
+pub(super) fn configured(text: &str) -> Result<Kota, String> {
     let mut k = Kota::with_hooks(HOOKS);
     k.configure(&parse(text)?.section(ID)?.ok_or("disabled")?)?;
     Ok(k)
 }
 
-fn event(k: &mut Kota, e: Event) {
+pub(super) fn event(k: &mut Kota, e: Event) {
     test_cx("", |cx| assert!(!k.on_event(e, cx)));
 }
 
-fn command(k: &mut Kota, words: &[&str], json: bool) -> Result<String, String> {
+pub(super) fn command(k: &mut Kota, words: &[&str], json: bool) -> Result<String, String> {
     let args: Vec<String> = words.iter().map(|w| (*w).to_string()).collect();
     test_cx("", |cx| {
         cx.json = json;
@@ -26,7 +26,7 @@ fn command(k: &mut Kota, words: &[&str], json: bool) -> Result<String, String> {
     })
 }
 
-fn wait(what: &str, mut cond: impl FnMut() -> bool) {
+pub(super) fn wait(what: &str, mut cond: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while !cond() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
@@ -157,10 +157,21 @@ fn reload_resets_on_a_new_target_and_stops_when_emptied() {
 fn verbs_and_unknown_commands() {
     let mut k = configured("").unwrap();
     assert_eq!(k.id(), "kota");
-    assert_eq!(k.verbs(), "kota status | kota refresh");
+    assert_eq!(k.verbs(), "kota status | kota refresh | kota ask <text>");
     assert_eq!(command(&mut k, &["nope"], false), Err("kota: unknown command \"nope\"".into()));
     assert_eq!(command(&mut k, &["status", "x"], false), Err("kota: unknown command \"status\"".into()));
     assert_eq!(command(&mut k, &[], false), Err("kota: missing command".into()));
     assert_eq!(Kota::default().settings, Settings::default());
     assert!(unix_now() > 1_700_000_000);
+}
+
+#[test]
+fn cards_pending_feeds_status() {
+    let mut k = configured("").unwrap();
+    event(&mut k, Event::CardsPending { count: 2 });
+    let json: serde_json::Value = serde_json::from_str(&command(&mut k, &["status"], true).unwrap()).unwrap();
+    assert_eq!(json["pending"], 2);
+    assert!(command(&mut k, &["status"], false).unwrap().contains("\n2 waiting\n"));
+    event(&mut k, Event::CardsPending { count: 0 });
+    assert!(!command(&mut k, &["status"], false).unwrap().contains("waiting"));
 }

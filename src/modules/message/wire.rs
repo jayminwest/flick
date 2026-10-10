@@ -59,6 +59,8 @@ pub struct Env {
     pub changed: fn(),
     /// Post `ModuleChanged` after this many seconds (the pending watchdog).
     pub wake_after: fn(u64),
+    /// Tell every module how many cards wait on the user (`Event::CardsPending`).
+    pub pending: fn(u32),
 }
 
 impl Default for Env {
@@ -89,6 +91,7 @@ impl Default for Env {
             exec: run::exec,
             changed,
             wake_after: |secs| timer::after(secs as f64, changed),
+            pending: |count| events::post(Event::CardsPending { count }),
         }
     }
 }
@@ -121,7 +124,12 @@ fn subscribe() {
     hud::on_press(|card, action, values| {
         queue(Note::Press { card: card.into(), action: action.into(), values });
     });
-    hud::on_dismiss(|card, _why| queue(Note::Dismissed(card.into())));
+    hud::on_dismiss(|card, why| {
+        queue(match why {
+            hud::Dismissed::Timeout => Note::Expired(card.into()),
+            _ => Note::Dismissed(card.into()),
+        });
+    });
 }
 
 /// `m` and the time in milliseconds, base 36, plus a counter so two posts in one

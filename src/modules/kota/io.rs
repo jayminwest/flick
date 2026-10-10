@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
+use super::ask::Ask;
 use super::presence::{self, Presence, Round, Transition};
 use super::run::{self, Exit};
 use super::settings::Settings;
@@ -41,6 +42,10 @@ pub struct Hooks {
     pub now: fn() -> u64,
     /// Run an argv with a time budget (`run::run`).
     pub run: fn(&[String], Duration) -> Result<Exit, String>,
+    /// Run an argv with a text on its stdin and a time budget (`run::feed`).
+    pub feed: fn(&[String], &str, Duration) -> Result<Exit, String>,
+    /// This binary's path (`run::exe`).
+    pub exe: fn() -> Result<String, String>,
     /// This Mac's short host name (`run::host`).
     pub host: fn() -> Option<String>,
     /// Sleep on a timer thread.
@@ -74,6 +79,8 @@ pub struct Poll {
     pub fast_until: Option<u64>,
     /// State changes not yet seen by the main thread (notify on down, flick-78b9).
     pub transitions: Vec<Transition>,
+    /// The last asks, newest first (`ask.rs`).
+    pub asks: Vec<Ask>,
 }
 
 #[derive(Default)]
@@ -91,8 +98,8 @@ impl Shared {
     /// (it was about another pane or server).
     pub fn reset(&self) {
         let mut p = self.lock();
-        let (epoch, timer) = (p.epoch + 1, p.timer + 1);
-        *p = Poll { epoch, timer, ..Poll::default() };
+        let (epoch, timer, asks) = (p.epoch + 1, p.timer + 1, std::mem::take(&mut p.asks));
+        *p = Poll { epoch, timer, asks, ..Poll::default() };
     }
 
     /// Retire the timer and every thread at its next check (module dropped or disabled).

@@ -16,6 +16,7 @@
 mod card;
 mod dispatch;
 mod local;
+mod pending;
 mod run;
 pub mod store;
 #[cfg(test)]
@@ -24,6 +25,8 @@ mod tests;
 mod tests_card;
 #[cfg(test)]
 mod tests_local;
+#[cfg(test)]
+mod tests_pending;
 #[cfg(test)]
 mod tests_press;
 mod text;
@@ -140,6 +143,10 @@ pub struct Inbox {
     /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one stays
     /// in history.
     dismissed: HashSet<String>,
+    /// Dismissed cards that only timed out: they still wait on the user (`pending.rs`).
+    expired: HashSet<String>,
+    /// The last count of cards waiting on the user sent as `Event::CardsPending`.
+    announced: Option<u32>,
     /// Press state by card id (`dispatch.rs`).
     ui: dispatch::Uis,
     /// Presses sent so far; numbers each send.
@@ -346,11 +353,15 @@ impl Module for Inbox {
         store::MIGRATIONS
     }
 
-    /// `ModuleChanged` for this module: card presses, dismissals and finished sends.
+    /// `ModuleChanged` for this module: card presses, dismissals and finished sends. Then,
+    /// and at `Started`, the count of cards waiting on the user (`pending.rs`).
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
-        if event == (Event::ModuleChanged { module: "message" }) {
-            self.drain(cx);
+        match event {
+            Event::ModuleChanged { module: "message" } => self.drain(cx),
+            Event::Started => {}
+            _ => return false,
         }
+        self.announce(cx);
         false
     }
 
@@ -468,7 +479,9 @@ impl Module for Inbox {
     }
 
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
-        self.run_verb(args, cx)
+        let result = self.run_verb(args, cx);
+        self.announce(cx);
+        result
     }
 
     fn verbs(&self) -> &'static str {

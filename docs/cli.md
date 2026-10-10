@@ -17,7 +17,7 @@ flick message post --title KOTA "Done"  # show a message card (docs/message.md)
 flick reload                   # reload config.toml
 flick config example           # every config option, commented (no running Flick needed)
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
-flick events | jq .            # app_activated, pasteboard_changed, wake, idle, ... as JSON lines
+flick events | jq .            # app_activated, wake, idle, cards_pending, ... as JSON lines
 ```
 
 The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. Exit status: 0 for an ok reply, 1 for an error reply (Flick answered and refused: fix the request), 3 when no reply came (Flick not running, host unreachable, connection dropped: try another way), 2 for a usage mistake.

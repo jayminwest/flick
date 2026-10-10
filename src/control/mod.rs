@@ -13,6 +13,7 @@ use std::sync::mpsc;
 use crate::config;
 use crate::core::Event;
 use crate::core::control::{Flags, Reply, split_flags};
+use crate::core::later;
 use crate::platform::events;
 use server::Hub;
 
@@ -49,15 +50,17 @@ fn on_main(words: Vec<String>) -> Reply {
     run(words, flags)
 }
 
-/// Run request `words` with `flags` on the main thread and wait for its reply.
+/// Run request `words` with `flags` on the main thread and wait for its reply, or for its
+/// later answer (`core::later`) here, off the main thread.
 fn run(words: Vec<String>, flags: Flags) -> Reply {
     let (tx, rx) = mpsc::channel();
     events::on_main(move || {
-        let _ = tx.send(crate::app::control(&words, flags));
+        let result = crate::app::control(&words, flags);
+        let _ = tx.send((result, later::take()));
     });
     rx.recv().map_or_else(
         |_| Reply::Error("the request failed inside Flick".into()),
-        |result| Reply::answer(result, flags.json),
+        |(result, wait)| Reply::answer(later::settle(result, wait, later::MAX_WAIT), flags.json),
     )
 }
 
@@ -67,7 +70,10 @@ fn run(words: Vec<String>, flags: Flags) -> Reply {
 /// directly, and nothing waits for the reply.
 pub fn local(words: Vec<String>) {
     events::on_main(move || {
-        if let Err(e) = crate::app::control(&words, Flags::default()) {
+        let result = crate::app::control(&words, Flags::default());
+        // Nothing waits here: a later answer goes nowhere.
+        drop(later::take());
+        if let Err(e) = result {
             eprintln!("flick: {}: {e}", words.join(" "));
         }
     });

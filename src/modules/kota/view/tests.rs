@@ -108,3 +108,19 @@ fn status_as_json_and_text() {
     let on_demand = Extra { pending: 0, polling: Polling::OnDemand };
     assert_eq!(status_text(&Presence::default(), on_demand, 0, 0), "KOTA: unknown\nNot checked yet\npolling: on demand");
 }
+
+#[test]
+fn asks_show_newest_first_with_their_status() {
+    use crate::modules::kota::ask::{Ask, Status};
+    let ask = |at: u64, text: &str, status: Status| Ask { id: "k1".into(), text: text.into(), at, status };
+    let asks = [
+        ask(3_600 * 12 + 180, "what's\non   today?", Status::Sending),
+        ask(60, &"x".repeat(81), Status::Sent("queued".into())),
+        ask(0, "hi", Status::Failed("ssh: refused".into())),
+    ];
+    assert_eq!(
+        asks_text(&asks, 0),
+        format!("12:03  sending…  what's on today?\n00:01  sent  {}…\n00:00  failed: ssh: refused  hi", "x".repeat(80))
+    );
+    assert_eq!(asks_text(&[], 0), "");
+}
