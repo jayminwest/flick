@@ -3,7 +3,7 @@
 //! focus (`platform::hud`), as a notification, or both, and kept in a history list. A post
 //! may be `--pending` (a placeholder, e.g. "sent to KOTA") that a later post with
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
-//! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
+//! `message:<message id>` (rows of `recent` and `cards`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
 //! `unprompted_timeout_secs` (a post nobody asked for: unread until seen, `seen.rs`),
 //! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
@@ -21,6 +21,7 @@
 //! (`chat::model::alert`).
 
 mod card;
+mod cards;
 mod chat;
 mod dispatch;
 mod local;
@@ -382,6 +383,7 @@ impl Module for Inbox {
                 Some(recent_view(&self.settings.name))
             }
             chat::threads::VIEW => Some(chat::threads::view()),
+            cards::VIEW => Some(self.open_cards(cx)),
             _ => None,
         }
     }
@@ -391,7 +393,8 @@ impl Module for Inbox {
             return self.refresh_threads(view, cx);
         }
         let now = (self.env.now)();
-        let list = cx.store.messages(self.settings.max_history);
+        let all = view.name != cards::VIEW;
+        let list = if all { cx.store.messages(self.settings.max_history) } else { self.card_rows(cx) };
         let n = list.len();
         let items: Vec<Item> = list.into_iter().map(|m| self.row(&m, now)).collect();
         let order: Vec<String> = items.iter().map(|i| i.id.to_string()).collect();

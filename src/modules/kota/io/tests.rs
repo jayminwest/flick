@@ -1,6 +1,7 @@
 use super::*;
 use crate::modules::kota::presence::State;
 use crate::modules::kota::testkit::{HOOKS, exit};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 fn settings(machine: &str, dash: &str) -> Settings {
@@ -174,4 +175,50 @@ fn reset_and_stop_retire_everything() {
     sh.stop();
     let p = sh.lock();
     assert_eq!((p.epoch, p.timer_due, p.running), (epoch + 2, None, false));
+}
+
+/// `ModuleChanged` posts of `the_clock_ticks_until_retired`'s clocks.
+static TICKS: AtomicU32 = AtomicU32::new(0);
+
+#[test]
+fn the_clock_ticks_until_retired() {
+    let hooks = Hooks {
+        post: || {
+            TICKS.fetch_add(1, Ordering::SeqCst);
+        },
+        sleep: |_| thread::sleep(Duration::from_millis(5)),
+        ..HOOKS
+    };
+    let ticks = || TICKS.load(Ordering::SeqCst);
+    // Retired: no post for a while (a live clock posts every 5 ms).
+    let quiet = || {
+        thread::sleep(Duration::from_millis(50));
+        let n = ticks();
+        thread::sleep(Duration::from_millis(50));
+        ticks() == n
+    };
+    let sh = Arc::new(Shared::default());
+    clock(&sh, hooks);
+    clock(&sh, hooks);
+    let p = sh.lock();
+    assert_eq!((p.clock, p.clocks), (Some(1), 1), "one clock at a time");
+    drop(p);
+    wait("two ticks", || ticks() >= 2);
+    // Asleep: it runs but does not post.
+    sh.lock().asleep = true;
+    assert!(quiet());
+    sh.lock().asleep = false;
+    let n = ticks();
+    wait("a tick after the wake", || ticks() > n);
+    // A settings reset keeps it; `stop_clock` and `stop` retire it.
+    sh.reset();
+    assert_eq!(sh.lock().clock, Some(1));
+    stop_clock(&sh);
+    assert_eq!(sh.lock().clock, None);
+    assert!(quiet());
+    clock(&sh, hooks);
+    assert_eq!(sh.lock().clock, Some(2));
+    sh.stop();
+    assert_eq!(sh.lock().clock, None);
+    assert!(quiet());
 }

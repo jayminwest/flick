@@ -29,9 +29,9 @@
 //! Menu bar item (`item.rs`): the presence glyph plus the count of cards waiting on the
 //! user and unread posts (`Event::CardsPending`), shown while rounds run on a timer and `status_item` is
 //! true. Its menu has the state rows, Ask KOTA… (hotkey `ask`), Open Chat (the `message`
-//! module's hotkey `chat:open`), Inbox (hotkey `inbox`: the `message` module's `recent`
-//! view), Open Dashboard and Refresh Now; opening it
-//! starts a round. A change to down notifies when `notify_down` is true.
+//! module's hotkey `chat:open`), Inbox (hotkey `inbox`: the `message` module's `cards`
+//! view), Open Dashboard and Refresh Now; opening it starts a round. Its age text
+//! refreshes on a minute tick. A change to down notifies when `notify_down` is true.
 //!
 //! `flick kota status [--json]` (no I/O) and `flick kota refresh` are allowed over the
 //! network: both only read, and refresh is rate-limited. `kota ask` is not: a peer (KOTA
