@@ -1,4 +1,4 @@
 {
   "$comment": "check:binary-size (scripts/checks/binary-size.sh). Ceiling for target/release/flick in bytes. Lower it as the binary shrinks; never raise it without a human-reviewed reason.",
-  "max_bytes": 5242880
+  "max_bytes": 4718592
 }
