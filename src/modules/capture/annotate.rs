@@ -257,9 +257,7 @@ mod tests {
 
     #[test]
     fn annotated_copies_sit_beside_the_source() {
-        let dir = std::env::temp_dir().join(format!("flk-{}-annotated", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::core::scratch::Scratch::new("annotated");
         let src = dir.join("Shot.png");
         assert_eq!(annotated(&src), dir.join("Shot annotated.png"));
         std::fs::write(dir.join("Shot annotated.png"), b"x").unwrap();
