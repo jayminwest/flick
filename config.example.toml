@@ -158,6 +158,47 @@
 #on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
 #on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
 
+# --- dictation: hold a chord, speak, release: the transcript goes into the focused field.
+# Local only: the recorder and the engine are programs on this Mac, nothing goes over the
+# network, and peers may not use any dictation verb. Off until this table sets at least one
+# key. The trigger is a [[keys.chord]] with { flick = "dictation start" } on_down and
+# { flick = "dictation stop" } on_up (see [keys]). Needs Microphone permission.
+#[dictation]
+# whisper (whisper-cli), parakeet (parakeet-cli) or command.
+#engine = "whisper"
+# The engine programs (Homebrew's whisper-cpp has both).
+#whisper_bin = "/opt/homebrew/bin/whisper-cli"
+#parakeet_bin = "/opt/homebrew/bin/parakeet-cli"
+# engine = "command": program and arguments; {wav} (required), {model}, {language} and
+# {prompt} are replaced, and the transcript is its stdout. Unset by default. Example:
+#command = ["/usr/local/bin/my-stt", "--model", "{model}", "{wav}"]
+# The model file; Flick never downloads it (see docs/dictation.md).
+#model = "~/Library/Application Support/Flick/models/ggml-large-v3-turbo-q5_0.bin"
+# A language code such as "en", or "auto".
+#language = "en"
+# Words to prime whisper with (names, jargon); "" for none.
+#prompt = ""
+# A Silero VAD model for whisper-cli --vad; "" for none.
+#vad_model = ""
+# The recorder: sox's rec (brew install sox).
+#recorder = "/opt/homebrew/bin/rec"
+# Recording stops by itself after this many seconds (at most 600).
+#max_seconds = 120
+# A hold shorter than this (milliseconds) is an accidental press and records nothing.
+#min_hold_ms = 300
+# Seconds the engine gets per clip.
+#timeout_secs = 30
+# A clip whose loudest 50 ms stays under this RMS (0 to 1 of full scale) is silence and is
+# not transcribed.
+#silence_rms = 0.01
+# paste (clipboard and cmd+V; the clipboard is restored) or type (key events; for apps
+# where paste misbehaves).
+#insert = "paste"
+# With insert = "paste": milliseconds before the clipboard is restored.
+#restore_ms = 250
+# Add a space after the text, so the next dictation does not run into it.
+#trailing_space = true
+
 # --- flick: rebuild Flick from its local checkout (no git fetch or pull; cargo --offline).
 #[flick]
 # The checkout; unset by default: the one this app was built from.
@@ -238,7 +279,7 @@
 
 # --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
 # addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not
-# reload, rebuild, capture, fire keys or edit config. See docs/remote.md.
+# reload, rebuild, capture, dictate, fire keys or edit config. See docs/remote.md.
 #[remote]
 # Tailscale machine names allowed to connect; none by default. Example:
 #peers = ["mbp-server"]
