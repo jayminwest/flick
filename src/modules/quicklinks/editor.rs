@@ -4,19 +4,11 @@
 
 use super::validate::{check, draft};
 use super::{Quicklink, Quicklinks};
-use crate::config::edit::{self, Edit, Entry};
+use crate::config::edit::{self, Edit};
 use crate::core::{Action, Confirm, ConfirmRow, Field, Form, Icon, ItemId, Outcome, unknown_verb};
 
 const EDIT: &str = "edit/";
 const DELETE: &str = "delete/";
-
-/// `link` as config fields, in the order a hand-written entry uses.
-fn entry(link: &Quicklink) -> Entry {
-    let mut entry = vec![("name", link.name.clone()), ("url", link.url.clone())];
-    entry.extend(link.keyword.clone().map(|k| ("keyword", k)));
-    entry.extend(link.app.clone().map(|a| ("app", a)));
-    entry
-}
 
 impl Quicklinks {
     /// Write `edit` to config.toml (or the test file).
@@ -33,12 +25,12 @@ impl Quicklinks {
         match editing.and_then(|name| self.links.iter().position(|q| q.name == name)) {
             Some(i) => {
                 let name = self.links[i].name.clone();
-                self.write(&Edit::Replace { name, entry: entry(&link) })?;
+                self.write(&Edit::Replace { name, entry: link.entry() })?;
                 self.links[i] = link;
             }
             None if editing.is_some() => return Err("That quicklink no longer exists".into()),
             None => {
-                self.write(&Edit::Append(entry(&link)))?;
+                self.write(&Edit::Append(link.entry()))?;
                 self.links.push(link);
             }
         }
