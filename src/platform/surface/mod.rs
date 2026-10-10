@@ -79,7 +79,6 @@ pub struct SurfaceId(pub &'static str);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Input {
     /// One line; Return always submits.
-    #[expect(dead_code, reason = "one-line surfaces: the fleet dashboard (flick-b5d0)")]
     Single,
     /// About four lines that scroll; ⇧ or ⌥ Return adds a line.
     Multi,
@@ -381,10 +380,6 @@ fn card_pressed(host: usize, tag: isize) {
 }
 
 /// The input's text as typed so far.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no module reads the draft unsent yet (flick-65bd, flick-6519)")
-)]
 pub fn input(id: SurfaceId) -> String {
     get(id).map(|s| s.v.field.text()).unwrap_or_default()
 }
