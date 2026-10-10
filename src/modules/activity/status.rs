@@ -5,7 +5,7 @@
 use crate::core::store::Store;
 
 use super::Activity;
-use super::report::local_time;
+use crate::core::track::local_time;
 use super::store::Spans;
 
 impl Activity {

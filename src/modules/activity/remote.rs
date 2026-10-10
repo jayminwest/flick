@@ -12,7 +12,8 @@ use crate::core::store::Store;
 use crate::core::{Cx, Icon, Item, ItemId};
 
 use super::Activity;
-use super::report::{Report, SpanOut, local_time};
+use super::report::{Report, SpanOut};
+use crate::core::track::local_time;
 use super::store::Spans;
 
 pub const REFUSED: &str = "activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick";

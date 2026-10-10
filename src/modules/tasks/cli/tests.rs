@@ -1,5 +1,7 @@
 use super::*;
 
+const DAY: i64 = 86_400;
+
 fn args(words: &str) -> Vec<String> {
     words.split(' ').map(String::from).collect()
 }
@@ -88,12 +90,6 @@ fn targets_resolve_by_id_exact_title_then_unique_prefix() {
 
 #[test]
 fn dates_and_ranges_are_local_days() {
-    assert_eq!(days_from_civil(1970, 1, 1), 0);
-    assert_eq!(days_from_civil(2000, 3, 1), 11_017);
-    for day in [-1, 0, 59, 60, 11_017, 20_000, 2_000_000] {
-        assert_eq!(parse_date(&date(day)), Some(day), "{day}");
-    }
-    assert_eq!(date(-1), "1969-12-31");
     // 1970-01-08 is a Thursday; its week starts Monday 1970-01-05.
     let now = 7 * DAY + 3600;
     assert_eq!(parse_range("today", now, 0), Some((7, 7)));
@@ -108,16 +104,6 @@ fn dates_and_ranges_are_local_days() {
     }
     let range = Range::new("week", (4, 7), 3600);
     assert_eq!((range.from, range.to, range.first.as_str()), (4 * DAY - 3600, 8 * DAY - 3600, "1970-01-05"));
-}
-
-#[test]
-fn durations_read_short_and_clip_cuts() {
-    assert_eq!(duration(-5), "0s");
-    assert_eq!(duration(45), "45s");
-    assert_eq!(duration(12 * 60 + 5), "12m");
-    assert_eq!(duration(2 * 3600 + 5 * 60), "2h 05m");
-    let cut = clip(vec![span(0, 100, 1), span(150, 300, 2), span(400, 500, 3)], 50, 200);
-    assert_eq!(cut, [span(50, 100, 1), span(150, 200, 2)]);
 }
 
 #[test]
