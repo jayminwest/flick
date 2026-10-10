@@ -341,10 +341,13 @@ impl Net {
             let _ = stream.shutdown(Shutdown::Both);
             return;
         }
-        let limits = Limits { line: MAX_LINE, idle: Some(IDLE), events: settings.events };
-        if stream.set_write_timeout(Some(WRITE)).is_ok() {
-            let _ = server::connection(stream, self.handler, self.hub, limits);
-        }
+        let limits = Limits {
+            line: MAX_LINE,
+            idle: Some(IDLE),
+            write: Some(WRITE),
+            events: settings.events,
+        };
+        let _ = server::connection(stream, self.handler, self.hub, limits);
     }
 
     /// Whether the peer at `peer` is one of `peers`, by its Tailscale address and whois
