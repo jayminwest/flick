@@ -192,6 +192,10 @@
 #max_threads = 100
 # Token cap for each reply; 0 for the server's default.
 #max_tokens = 0
+# The most characters of a chat sent with each prompt, system_prompt included: the newest
+# messages that fit, and always the prompt itself. 0 sends the whole chat. The chat itself
+# keeps every message (0 to 10000000).
+#context_chars = 48000
 # Seconds one reply may take (1 to 3600).
 #timeout_secs = 300
 # Open the chat window and the private chat window; unset by default. The private chat

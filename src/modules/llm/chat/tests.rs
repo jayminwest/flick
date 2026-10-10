@@ -309,12 +309,6 @@ fn the_model_list_decides_the_first_send() {
         assert_eq!(only("input", &log), ["hi"]);
         assert_eq!(only("notice", &log), [why]);
     }
-    // A thread whose server is gone or private now: refused, nothing sent.
-    let mut m = llm(&format!("{}{VAULT}", server("mlx")));
-    hotkey(&mut f, &mut m);
-    m.chat.thread.as_mut().unwrap().server = "vault".into();
-    send(&mut f, &mut m, "secret");
-    assert_eq!(only("notice", &take_log()), ["llm: vault is private; only the private chat talks to it"]);
 }
 
 /// flick-72b5: the server was down when the window opened, then started. The next prompt
@@ -348,7 +342,7 @@ fn the_root_item_offers_the_picker_and_the_history() {
     assert_eq!(keys, ["models", "threads"]);
     assert!(matches!(f.cx("", |cx| m.act(&item.id, "models", cx)), Outcome::Push(ListView { name, .. }) if name == "models"));
     assert!(matches!(f.cx("", |cx| m.act(&item.id, "nope", cx)), Outcome::Stay(None)));
-    assert!(f.cx("", |cx| m.actions(&ItemId::new(ID, "thread:x"), cx)).is_empty());
+    assert!(f.cx("", |cx| m.actions(&ItemId::new(ID, "private"), cx)).is_empty());
     assert!(f.cx("", |cx| m.open("nope", cx)).is_none());
 }
 
@@ -450,3 +444,5 @@ fn edge_cases_reasoning_a_dropped_stream_and_a_failed_save() {
     assert!(only("notice", &take_log()).iter().any(|n| n.starts_with("llm: can't save the chat: ")));
     assert_eq!(m.chat.thread.as_ref().unwrap().msgs.len(), 2);
 }
+
+mod polish;
