@@ -159,10 +159,12 @@ mod tests {
         let alive = || Command::new("/bin/kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
         // Generous: the kill is sent before `run` returns; only reaping by launchd lags.
         let deadline = Instant::now() + Duration::from_secs(15);
-        while alive() && Instant::now() < deadline {
+        let mut running = true;
+        while running && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(20));
+            running = alive();
         }
-        assert!(!alive(), "grandchild {pid} still runs");
+        assert!(!running, "grandchild {pid} still runs");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

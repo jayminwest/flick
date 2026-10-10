@@ -2,7 +2,8 @@ use super::*;
 use crate::config::parse;
 use crate::modules::sys::settings::Settings;
 use crate::modules::sys::testkit::HOOKS;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Instant;
 
 fn machines(text: &str) -> Vec<Machine> {
     parse(text).unwrap().section("sys").unwrap().unwrap().get::<Settings>().unwrap().check().unwrap().machine
@@ -95,60 +96,108 @@ fn shared(text: &str) -> Arc<Shared> {
 
 const TWO: &str = "[[sys.machine]]\nname = \"a\"\nvia = \"flick\"\nhost = \"server\"\n[[sys.machine]]\nname = \"b\"\nvia = \"ssh\"\nssh = \"refused\"\n";
 
+/// Generous: a slow CI runner still finishes well inside it.
+const DEADLINE: Duration = Duration::from_secs(15);
+
 #[test]
 fn a_round_reads_every_due_machine_once() {
     let sh = shared(TWO);
-    assert!(round(&sh, 15, None, HOOKS));
-    // One round at a time.
-    assert!(!round(&sh, 15, None, HOOKS) || !sh.lock().fleet.busy);
-    assert!(sh.wait(Duration::from_secs(5), |s| !s.fleet.busy));
+    assert!(round(&sh, 15, HOOKS));
+    // A machine being read is not read twice at once.
+    assert!(!round(&sh, 15, HOOKS) || !sh.lock().fleet.busy());
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.busy()));
     {
         let st = sh.lock();
         assert_eq!(st.fleet.slots[0].fetched_at, Some(1_000));
         assert_eq!(st.fleet.slots[1].error.as_deref(), Some("ssh: ssh: connect to host pro port 22: Connection refused"));
     }
     // Nothing is due again within min_age.
-    assert!(!round(&sh, 15, None, HOOKS));
-    assert!(round(&sh, 0, None, HOOKS));
-    assert!(sh.wait(Duration::from_secs(5), |s| !s.fleet.busy));
+    assert!(!round(&sh, 15, HOOKS));
+    assert!(round(&sh, 0, HOOKS));
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.busy()));
 }
 
 #[test]
 fn a_round_dropped_by_sleep_stores_nothing() {
     let sh = shared("[[sys.machine]]\nname = \"a\"\nvia = \"flick\"\nhost = \"late\"\n");
-    assert!(round(&sh, 0, None, HOOKS));
+    assert!(round(&sh, 0, HOOKS));
     sh.lock().fleet.forget_round();
     std::thread::sleep(Duration::from_millis(500));
     let st = sh.lock();
-    assert_eq!((st.fleet.slots[0].tried_at, st.fleet.busy), (None, false));
+    assert_eq!((st.fleet.slots[0].tried_at, st.fleet.busy()), (None, false));
+}
+
+/// Held until the test lets it go: the peer `hang` answers only then.
+static HELD: AtomicBool = AtomicBool::new(true);
+/// How often the fast peer was asked.
+static FAST: AtomicUsize = AtomicUsize::new(0);
+
+#[expect(clippy::unnecessary_wraps, reason = "stands in for PeerHooks::ask")]
+fn held_ask(host: &str, _words: &[String], _flags: Flags) -> Result<Reply, String> {
+    if host == "fast" {
+        FAST.fetch_add(1, Ordering::SeqCst);
+    }
+    let deadline = Instant::now() + DEADLINE;
+    while host == "hang" && HELD.load(Ordering::SeqCst) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Ok(Reply::Ok(serde_json::json!({ "host": host })))
+}
+
+#[test]
+fn a_slow_machine_holds_only_itself() {
+    let hooks = Hooks { ask: held_ask, ..HOOKS };
+    let sh = shared("[[sys.machine]]\nname = \"a\"\nvia = \"flick\"\nhost = \"fast\"\n[[sys.machine]]\nname = \"b\"\nvia = \"flick\"\nhost = \"hang\"\n");
+    assert!(round(&sh, 0, hooks));
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.slots[0].busy && s.fleet.slots[0].fetched_at.is_some()));
+    assert!(sh.lock().fleet.slots[1].busy);
+    // The next round reads `a` again without waiting for `b`, and leaves `b` alone.
+    assert_eq!(FAST.load(Ordering::SeqCst), 1);
+    assert!(round(&sh, 0, hooks));
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.slots[0].busy));
+    assert_eq!(FAST.load(Ordering::SeqCst), 2);
+    // A waiter on the whole fleet is woken when `b` ends.
+    HELD.store(false, Ordering::SeqCst);
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.busy()));
+    assert!(sh.lock().fleet.slots[1].fetched_at.is_some());
+}
+
+/// Every post (`ModuleChanged`) the tick test's hooks sent.
+static TICKS: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn a_tick_posts_once_and_only_one_is_pending() {
+    let hooks = Hooks { post: || {
+            TICKS.fetch_add(1, Ordering::SeqCst);
+        }, ..HOOKS };
+    let sh = shared(TWO);
+    tick_after(&sh, Duration::from_millis(50), hooks);
+    assert!(sh.lock().fleet.ticking);
+    // A second ask while one is pending starts none.
+    tick_after(&sh, Duration::ZERO, hooks);
+    assert!(sh.wait(DEADLINE, |s| !s.fleet.ticking));
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(TICKS.load(Ordering::SeqCst), 1);
 }
 
 static POSTS: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn a_visible_round_posts_once_more_and_the_timer_posts_until_stopped() {
+fn the_timer_posts_until_stopped() {
     let hooks = Hooks { post: || {
             POSTS.fetch_add(1, Ordering::SeqCst);
         }, ..HOOKS };
     let sh = shared(TWO);
-    assert!(round(&sh, 0, Some(Duration::from_millis(10)), hooks));
-    // Two results, then the post after the wait; nothing more.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while POSTS.load(Ordering::SeqCst) < 3 && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    std::thread::sleep(Duration::from_millis(50));
-    assert_eq!(POSTS.load(Ordering::SeqCst), 3);
     start_timer(&sh, Duration::from_millis(20), hooks);
     // Slow CI runners: wait for two timer posts rather than a fixed sleep.
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while POSTS.load(Ordering::SeqCst) < 5 && std::time::Instant::now() < deadline {
+    let deadline = Instant::now() + DEADLINE;
+    while POSTS.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
     stop_timer(&sh);
     std::thread::sleep(Duration::from_millis(50));
     let after = POSTS.load(Ordering::SeqCst);
-    assert!(after >= 5, "{after}");
+    assert!(after >= 2, "{after}");
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(POSTS.load(Ordering::SeqCst), after);
 }

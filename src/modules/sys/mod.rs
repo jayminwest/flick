@@ -73,7 +73,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::config::Section;
 use crate::core::control::PeerHooks;
 use crate::core::{Action, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use fleet::{Fleet, Local, VISIBLE_EVERY};
+use fleet::{Fleet, Local, VISIBLE_DUE, VISIBLE_EVERY};
 use io::{Hooks, Shared, State};
 use settings::Settings;
 use views::{Key, Seen};
@@ -123,6 +123,8 @@ pub struct Sys {
     detail: Option<String>,
     /// The fleet window (`window.rs`).
     win: window::Win,
+    /// The visible cadence, `VISIBLE_EVERY` s (tests shorten it).
+    tick: Duration,
 }
 
 impl Sys {
@@ -134,20 +136,24 @@ impl Sys {
     fn with_hooks(hooks: Hooks, win: window::Hooks) -> Sys {
         let shared = Arc::default();
         let win = window::Win::new(win);
-        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None, win }
+        let tick = Duration::from_secs(VISIBLE_EVERY);
+        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None, win, tick }
     }
 
     /// Poll the fleet as `kind` asks, if it has machines. Refreshes this Mac's own cache
     /// too when a machine is `via = "local"`. The fleet view on screen, or the fleet window,
-    /// keeps it polling.
+    /// keeps it polling: each poll then leaves a tick pending (`poll::tick_after`).
     fn poll(&self, kind: Poll) {
+        if self.shared.lock().fleet.slots.is_empty() {
+            return;
+        }
         let visible = (self.fleet_view && (self.hooks.visible)()) || self.win.visible();
-        let (min_age, again) = match kind {
-            Poll::Now => (0, None),
-            Poll::Open | Poll::Tick if visible => (VISIBLE_EVERY - 1, Some(Duration::from_secs(VISIBLE_EVERY))),
-            Poll::Open => (VISIBLE_EVERY - 1, None),
+        let min_age = match kind {
+            Poll::Now => 0,
+            Poll::Open | Poll::Tick if visible => VISIBLE_DUE,
+            Poll::Open => VISIBLE_EVERY - 1,
             // A tick may land a little before a full interval since the last read ended.
-            Poll::Tick if self.refresh_secs > 0 => (self.refresh_secs * 3 / 4, None),
+            Poll::Tick if self.refresh_secs > 0 => self.refresh_secs * 3 / 4,
             Poll::Tick => return,
         };
         let now = (self.hooks.now)();
@@ -159,7 +165,10 @@ impl Sys {
             io::refresh_probe(&self.shared, self.hooks);
             io::refresh_services(&self.shared, self.hooks);
         }
-        poll::round(&self.shared, min_age, again, self.hooks);
+        poll::round(&self.shared, min_age, self.hooks);
+        if visible {
+            poll::tick_after(&self.shared, self.tick, self.hooks);
+        }
     }
 
     /// Run the background timer iff started with `refresh_secs` and machines.
@@ -179,7 +188,7 @@ impl Sys {
             self.poll(Poll::Open);
         }
         if first && !remote {
-            self.shared.wait(self.first_wait, |s| !s.fleet.busy && !s.probing);
+            self.shared.wait(self.first_wait, |s| !s.fleet.busy() && !s.probing);
         }
         let now = (self.hooks.now)();
         let st = self.shared.lock();
