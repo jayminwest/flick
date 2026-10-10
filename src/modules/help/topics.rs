@@ -30,7 +30,7 @@ const fn topic(
 }
 
 /// Every topic, in the order the help view lists them.
-pub const TOPICS: [Topic; 19] = [
+pub const TOPICS: [Topic; 22] = [
     topic("launcher", "Launcher", "Type to search apps and commands. ↵ runs, ⌘K shows actions, esc goes back.", "magnifyingglass", "configuration.md#launcher-keys"),
     topic("windows", "Window Commands", "Type a command such as Left Half, or bind one to a hotkey in [window.keys].", "rectangle.split.2x1", "configuration.md"),
     topic("switcher", "Window Switcher", "Switch Windows lists open windows. The first is the previous one, so ↵ jumps back.", "macwindow.on.rectangle", "configuration.md"),
@@ -50,7 +50,10 @@ pub const TOPICS: [Topic; 19] = [
     topic("activity", "Activity", "Start Activity Recording tracks the app in front. Activity Today shows where the day went.", "clock", "activity.md"),
     topic("tasks", "Tasks", "Start Task runs a timer on one task at a time. Tasks Today lists the time per task.", "play.circle", "tasks.md"),
     topic("herdr", "Herdr Agents", "Coding agents in herdr, waiting ones first. ↵ jumps to the agent's pane.", "terminal", "herdr.md"),
+    topic("kota", "KOTA", "The K in the menu bar is KOTA's state; the number is cards waiting on you. Ask KOTA… sends a question.", "k.circle", "kota.md"),
+    topic("fleet", "Fleet", "Your Macs and their services from [[sys.machine]]. ⌘K: Screen Sharing, Open Dash, Tail Log, Restart….", "server.rack", "sys.md"),
     topic("keys", "Key Triggers", "Caps Lock as Hyper, and key chords that run an action. Set them up in [keys].", "keyboard", "keys.md"),
+    topic("dictation", "Dictation", "Hold the dictation chord, speak, release: the text goes into the focused field. Runs on this Mac only.", "mic", "dictation.md"),
     topic("feedback", "Feedback", "Type fb <text> to save a note about Flick. Recent Feedback lists your notes.", "text.bubble", "feedback.md"),
     topic("message", "Messages and Cards", "Agents such as KOTA post messages and cards to a corner. card_hotkey moves the keyboard into the newest card.", "bubble.left.and.bubble.right", "message.md"),
     topic("remote", "Remote Access", "Lets Macs in your tailnet run flick commands here. Off until you turn it on.", "network", "remote.md"),
@@ -94,6 +97,18 @@ mod tests {
         assert!(find("nope").is_none());
         // `topic` runs at compile time for TOPICS; once here so coverage sees it.
         assert_eq!(topic("s", "t", "h", "y", "a").keys, None);
+    }
+
+    #[test]
+    fn every_topic_page_exists() {
+        let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs");
+        for t in &TOPICS {
+            let page = t.doc.split('#').next().unwrap_or_default();
+            assert!(docs.join(page).is_file(), "{}: docs/{page} is missing", t.slug);
+        }
+        for slug in ["kota", "fleet", "dictation"] {
+            assert!(find(slug).is_some(), "{slug}");
+        }
     }
 
     #[test]

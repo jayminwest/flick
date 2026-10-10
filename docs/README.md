@@ -23,7 +23,10 @@ Each page has the module's settings and commands, then a manual test checklist.
 - [`feedback.md`](feedback.md): notes about Flick, kept in `feedback.jsonl`.
 - [`message.md`](message.md): messages from agents (KOTA) in a corner card, with history.
 - [`cards.md`](cards.md): the card spec for KOTA: JSON schema v1, actions and their security model, presses back to KOTA, examples. Also `flick message card spec`.
-- [`remote.md`](remote.md): network access over Tailscale; setup between two Macs.
+- [`kota.md`](kota.md): KOTA's presence in the menu bar, pending cards, quick ask; moving off the `k` script command.
+- [`dictation.md`](dictation.md): hold a chord, speak, release; local whisper.cpp, model download, privacy.
+- [`sys.md`](sys.md): this Mac's health, service checks, and the fleet of Macs with Screen Sharing, logs and restarts.
+- [`remote.md`](remote.md): network access over Tailscale; setup between two Macs; peers for the fleet.
 
 ## Ideas
 
