@@ -169,7 +169,8 @@ fn rejects_bad_machines() {
         (svc("command", "[\"/bin/echo\"]"), "a command check runs on the machine's own Flick, not over ssh"),
         (svc("tcp", "\"nohost\""), "service \"s\": tcp target is host:port"),
         (format!("{}\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"y\"", svc("process", "\"x\"")), "service \"s\" is named twice"),
-        ("via = \"local\"\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"x\"".into(), "services belong to via = \"ssh\" machines; others check their own"),
+        ("via = \"local\"\nssh = \"h\"\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"x\"".into(), "services belong to machines with an ssh target; this Mac's are [[sys.service]]"),
+        ("via = \"flick\"\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"x\"".into(), "services belong to machines with an ssh target; this Mac's are [[sys.service]]"),
     ];
     for (fields, why) in cases {
         assert_eq!(machine(&fields).unwrap_err(), format!("[sys]: machine \"m\": {why}"), "{fields}");

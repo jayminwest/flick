@@ -1,7 +1,8 @@
 //! Fakes for the module's tests. `run` answers from fixtures by argv, so no test runs the
 //! probe, curl, launchctl, pgrep or a configured command; `connect` never opens a socket;
-//! `run_input` never runs ssh and `ask` never reaches a peer.
+//! `run_input` never runs ssh, `ask` never reaches a peer and `open` only records the URL.
 
+use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::time::Duration;
 
@@ -26,7 +27,17 @@ pub const HOOKS: Hooks = Hooks {
     run_input,
     ask,
     visible: || false,
+    open,
 };
+
+thread_local! {
+    /// The URLs `open` was asked for on this thread.
+    pub static OPENED: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
+}
+
+fn open(url: &str) {
+    OPENED.with(|o| o.borrow_mut().push(url.to_string()));
+}
 
 /// Canned ssh runs by target (the argv's sixth word), the script on stdin answered as the
 /// Mac would:
@@ -34,8 +45,17 @@ pub const HOOKS: Hooks = Hooks {
 ///   running, anything else not loaded; pgrep `ollama` runs, anything else does not;
 /// - `refused`: ssh's own failure, exit 255; `mute`: exit 0, no output; `slow`: 300 ms,
 ///   then like `pro`; anything else times out.
+/// - an action's script (`exec ...`) on `pro`: a kickstart of `'up'` exits 0, any other 113;
+///   a tail prints `tail via <target>: <script>`.
 fn run_input(argv: &[String], script: &str, _budget: Duration) -> Result<Exit, String> {
     let target = argv.get(5).map_or("", String::as_str);
+    if target == "pro" && script.starts_with("exec /bin/launchctl kickstart") {
+        let up = script.ends_with("/\"'up'\n");
+        return if up { exit(0, "", "") } else { exit(113, "", "Could not find service in domain for user gui: 502\n") };
+    }
+    if target == "pro" && script.starts_with("exec /usr/bin/tail") {
+        return exit(0, &format!("tail via {target}: {script}"), "");
+    }
     let answer = |target| match target {
         "pro" | "slow" => {
             let mut out = format!("{DESKTOP}@@ uid\n502\n");
@@ -102,7 +122,9 @@ fn exit(code: i32, stdout: &str, stderr: &str) -> Result<Exit, String> {
 /// - launchctl print: `gui/501/up` running, `gui/501/killed` running after a kill, else not
 ///   loaded;
 /// - pgrep -x: `syncthing` runs;
-/// - `/fake/print <text>` prints its text; `/fake/sleep <ms>` sleeps, then prints 1.
+/// - `/fake/print <text>` prints its text; `/fake/sleep <ms>` sleeps, then prints 1;
+/// - launchctl kickstart -k: `gui/501/up` exits 0, else 113 (the print rule below);
+/// - tail -n 100 -- <path>: `last of <path>`, or no such file for a path ending `missing.log`.
 fn run(argv: &[String], _budget: Duration) -> Result<Exit, String> {
     let words: Vec<&str> = argv.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -114,6 +136,11 @@ fn run(argv: &[String], _budget: Duration) -> Result<Exit, String> {
         ["/bin/launchctl", "print", "gui/501/up"] => {
             exit(0, include_str!("fixtures/launchctl_running.txt"), "")
         }
+        ["/bin/launchctl", "kickstart", "-k", "gui/501/up"] => exit(0, "", ""),
+        ["/usr/bin/tail", "-n", "100", "--", path] if path.ends_with("missing.log") => {
+            exit(1, "", &format!("tail: {path}: No such file or directory\n"))
+        }
+        ["/usr/bin/tail", "-n", "100", "--", path] => exit(0, &format!("last of {path}\n"), ""),
         ["/bin/launchctl", "print", "gui/501/killed"] => {
             exit(0, include_str!("fixtures/launchctl_signal.txt"), "")
         }

@@ -5,12 +5,13 @@
 //! Item keys: `fleet` (the root item; permanent, it keys the usage table), and in views
 //! (`record_use = false`, never stored) `machine/<machine>` and `service/<machine>/<service>`
 //! in `fleet`; `head`, `fact/<n>` and `check/<service>` in `machine`; `agents` in both
-//! (pushes herdr's `agents` view by name).
+//! (pushes herdr's `agents` view by name); `log` in view `log` (the last tail, flick-4a4c).
 
 use serde_json::Value;
 
 use super::ID;
 use super::fleet::{Fleet, Local, Row, Slot, metrics};
+use super::jobs::Tail;
 use super::probe::Snapshot;
 use super::report::{self, ago};
 use crate::core::{Icon, Item, ItemId};
@@ -25,6 +26,7 @@ pub enum Key<'a> {
     Fact,
     Check(&'a str),
     Agents,
+    Log,
 }
 
 impl Key<'_> {
@@ -35,6 +37,7 @@ impl Key<'_> {
             "fleet" => return Some(Key::Fleet),
             "head" => return Some(Key::Head),
             "agents" => return Some(Key::Agents),
+            "log" => return Some(Key::Log),
             _ => {}
         }
         if let Some(machine) = key.strip_prefix("machine/") {
@@ -287,6 +290,30 @@ pub fn machine_items(seen: Option<&Seen>, now: u64) -> (Vec<Item>, String) {
 pub fn check_status(seen: &Seen, name: &str) -> Option<String> {
     let svc = seen.services.iter().find(|s| s.name == name)?;
     Some(format!("{}: {} · {}", svc.name, svc.status, svc.reason))
+}
+
+/// View `log`: one row for the last tail (Enter tails again), its footer, and its lines as
+/// the view's text.
+pub fn log_view(tail: Option<&Tail>, now: u64) -> (Vec<Item>, String, String) {
+    let Some(t) = tail else { return (vec![], "No log tailed  ·  esc to go back".into(), String::new()) };
+    let (state, text) = match &t.text {
+        None => ("loading…".to_string(), String::new()),
+        Some(Ok(lines)) if lines.trim().is_empty() => ("empty".into(), String::new()),
+        Some(Ok(lines)) => (count(lines.lines().count(), "line", "lines"), lines.clone()),
+        Some(Err(e)) => (e.clone(), String::new()),
+    };
+    let item = Item {
+        subtitle: format!("{state} · {}", t.shown),
+        accessory: t.at.map_or(String::new(), |at| format!("{} ago", ago(now.saturating_sub(at)))),
+        keywords: vec!["log tail".into()],
+        ..Item::new(
+            ItemId::new(ID, "log"),
+            format!("{} · {}", t.service, t.machine),
+            "Tail Again",
+            Icon::Symbol("doc.text.magnifyingglass"),
+        )
+    };
+    (vec![item], format!("{} log · {}  ·  esc to go back", t.service, t.machine), text)
 }
 
 #[cfg(test)]

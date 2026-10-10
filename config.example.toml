@@ -194,7 +194,9 @@
 # --- sys: this Mac's health (CPU load, memory, disks, battery, thermal, uptime) and the
 # services it checks: "flick sys snapshot" and "flick sys services" (add --json for the
 # fields), and the fleet of [[sys.machine]] below: "flick sys fleet". All are read-only, so
-# peers may ask them over the network. Nothing runs until one is asked or the launcher
+# peers may ask them over the network. "flick sys tail [<machine>] <service>" and
+# "flick sys restart [<machine>] <service> [--yes]" (and the Fleet view's cmd+K) tail a
+# service's log and restart it; peers may not. Nothing runs until one is asked or the launcher
 # opens: no timers, no checks in the background unless refresh_secs is set. With at least
 # one [[sys.machine]], the launcher lists "Fleet": each machine and its services.
 #[sys]
@@ -212,8 +214,9 @@
 #   "command"  an argv run without a shell (5 s); it must exit 0, and with warn or fail
 #              the first number it prints is compared
 # warn and fail: thresholds in milliseconds (http, tcp) or the command's number; higher is
-# worse unless fail is below warn. log: a log file for the dashboard. restart: let the
-# dashboard restart it after a confirm (launchd only). Example:
+# worse unless fail is below warn. log: a log file (from / or ~/) for Tail Log, its last
+# 100 lines. restart: let the dashboard restart it ("launchctl kickstart -k
+# gui/<uid>/<label>") after a confirm showing that command (launchd only). Example:
 #[[sys.service]]
 #name = "mail-backlog"
 #kind = "command"
@@ -231,7 +234,8 @@
 #   "ssh"    the same probe over "ssh -o BatchMode=yes <ssh> /bin/sh -s": no Flick needed
 #            there, only key-based ssh. Its checks are the [[sys.machine.service]] below
 # host: the Flick's name[:port] (default: name). vnc: a vnc:// URL for Screen Sharing.
-# dash: an http(s) dashboard URL. Example:
+# dash: an http(s) dashboard URL (Open Dash). Both are in the machine's cmd+K menu.
+# Example:
 #[[sys.machine]]
 #name = "mac-pro"
 #via = "ssh"
@@ -239,8 +243,11 @@
 #ssh = "jaymin@mac-pro"
 #vnc = "vnc://mac-pro"
 #dash = "http://mac-pro:8080/"
-# A check of an ssh machine, keys as in [[sys.service]] but no "command": launchd and
-# process run inside the ssh call, http and tcp from this Mac.
+# A check of a machine with ssh, keys as in [[sys.service]] but no "command": launchd and
+# process run inside the ssh call, http and tcp from this Mac. A via = "flick" machine
+# with ssh may list its services here too: they are checked when it falls back to ssh, and
+# their log and restart are what this Mac may tail and restart there, over ssh. A service
+# only the peer reports offers neither.
 #[[sys.machine.service]]
 #name = "ollama"
 #kind = "tcp"
