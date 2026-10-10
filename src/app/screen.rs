@@ -36,10 +36,30 @@ impl Screen {
         }
     }
 
+    /// The module view this screen holds: the list on it, or the one an action menu or a
+    /// confirmation returns to (Escape restores it without asking its module again).
+    pub fn view(&self) -> Option<&ListView> {
+        match self {
+            Screen::List(view) => Some(view),
+            Screen::Actions { back, .. } | Screen::Confirm { back, .. } => back.screen.view(),
+            Screen::Root | Screen::Form(_) => None,
+        }
+    }
+
     /// Root search or a module list: the screens whose items have actions.
     pub fn is_list(&self) -> bool {
         matches!(self, Screen::Root | Screen::List(_))
     }
+}
+
+/// A module view by module and name.
+pub type Held = (&'static str, String);
+
+/// Record that `next` goes on the panel: `held` becomes the view it holds. Returns the view
+/// `held` named before when `next` no longer holds it, for its module's `closed`.
+pub fn hold(held: &mut Option<Held>, next: &Screen) -> Option<Held> {
+    let now = next.view().map(|v| (v.module, v.name.clone()));
+    std::mem::replace(held, now).filter(|before| held.as_ref() != Some(before))
 }
 
 /// The action menu's rows: in the module's order for an empty `query`, else ranked.
@@ -227,6 +247,35 @@ mod tests {
         // G and gg: the bottom and the top, whatever the length.
         assert_eq!(scrolled(5, isize::MAX, 20, 8), 12);
         assert_eq!(scrolled(5, isize::MIN, 20, 8), 0);
+    }
+
+    fn over(screen: Screen) -> Back {
+        Back { screen: Box::new(screen), query: String::new(), selected: 0, scroll: 0 }
+    }
+
+    #[test]
+    fn a_view_closes_when_the_screen_stops_holding_it() {
+        let list = |name: &str| Screen::List(ListView::new("sys", name));
+        let mut held = None;
+        assert_eq!(hold(&mut held, &Screen::Root), None);
+        assert_eq!(hold(&mut held, &list("fleet")), None);
+        // Opened again (a hotkey on a hidden launcher): still the same view.
+        assert_eq!(hold(&mut held, &list("fleet")), None);
+        // An action menu and a confirmation over it still hold it.
+        let target = Item::new(ItemId::new("sys", "x"), "X", "", Icon::Symbol("app"));
+        let actions = Screen::Actions { target, actions: vec![], back: over(list("fleet")) };
+        assert_eq!(actions.view().map(|v| v.name.as_str()), Some("fleet"));
+        assert_eq!(hold(&mut held, &actions), None);
+        let confirm = Confirm::new("sys", "restart/x", "Restart?");
+        assert_eq!(hold(&mut held, &Screen::Confirm { confirm, back: over(list("fleet")) }), None);
+        // Another view of the same module closes it.
+        assert_eq!(hold(&mut held, &list("machine")), Some(("sys", "fleet".into())));
+        // So do root search and a form.
+        assert_eq!(hold(&mut held, &Screen::Root), Some(("sys", "machine".into())));
+        assert_eq!(hold(&mut held, &list("fleet")), None);
+        let form = Screen::Form(Form::new("quicklink", "new", "New"));
+        assert_eq!(hold(&mut held, &form), Some(("sys", "fleet".into())));
+        assert_eq!((held, form.view().is_none()), (None, true));
     }
 
     #[test]

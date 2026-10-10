@@ -84,10 +84,7 @@ impl Sys {
             "tail" => {
                 let Some(target) = self.target_of(id.key()) else { return gone() };
                 match self.tail(&target, false) {
-                    Ok(()) => {
-                        self.fleet_view = false;
-                        Outcome::Push(ListView::new(ID, "log"))
-                    }
+                    Ok(()) => Outcome::Push(ListView::new(ID, "log")),
                     Err(e) => Outcome::Stay(Some(e)),
                 }
             }
@@ -129,8 +126,7 @@ impl Sys {
     }
 
     /// View `log`: the last tail.
-    pub(super) fn show_log(&mut self) -> ListView {
-        self.fleet_view = false;
+    pub(super) fn show_log() -> ListView {
         ListView { placeholder: "Log".into(), ..ListView::new(ID, "log") }
     }
 

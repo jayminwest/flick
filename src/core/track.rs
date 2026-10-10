@@ -2,7 +2,12 @@
 //! time spans, plus pure report helpers (local-day split, totals). It keeps no storage and
 //! reads no clock: callers pass `now` (unix seconds) and persist the `Op`s they get back.
 //! Generic over the subject type `S` (anything `Clone + PartialEq`), so window activity
-//! (`Subject`) and task timers share the same rules.
+//! (`Subject`) and task timers share the same rules. `civil`: dates, durations and range
+//! clipping for the reports of both.
+
+mod civil;
+
+pub use civil::{clip, date, day_start, duration, local_time, parse_date};
 
 /// Shortest span (seconds) that survives a focus change; shorter ones are flicker.
 pub const MERGE_SECS: i64 = 2;

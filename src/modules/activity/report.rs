@@ -7,49 +7,14 @@ use serde::Serialize;
 use super::rules::Config;
 use std::fmt::Write;
 
-use crate::core::track::{Span, Subject, local_day, split_days, sum_by};
+use crate::core::track::{
+    Span, Subject, day_start, duration, local_day, local_time, parse_date, split_days, sum_by,
+};
 
-const DAY: i64 = 86_400;
 /// Titles, and domains, listed in a report.
 const TOP_TITLES: usize = 10;
 /// Category of spans no rule names.
 pub const UNCATEGORIZED: &str = "Uncategorized";
-
-/// Unix time of local midnight starting local day `day`.
-pub fn day_start(day: i64, utc_offset_secs: i32) -> i64 {
-    day * DAY - i64::from(utc_offset_secs)
-}
-
-/// Days since 1970-01-01 of civil date `y-m-d` (proleptic Gregorian).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
-/// The civil date (y, m, d) of day number `z`.
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    (yoe + era * 400 + i64::from(m <= 2), m, d)
-}
-
-/// "YYYY-MM-DD HH:MM" in local time.
-pub fn local_time(ts: i64, utc_offset_secs: i32) -> String {
-    let local = ts + i64::from(utc_offset_secs);
-    let (y, m, d) = civil_from_days(local.div_euclid(DAY));
-    let secs = local.rem_euclid(DAY);
-    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", secs / 3600, secs % 3600 / 60)
-}
 
 /// The start of `since`: "today", "week" (the last 7 local days) or a local date
 /// "YYYY-MM-DD".
@@ -59,27 +24,10 @@ pub fn parse_since(since: &str, now: i64, utc_offset_secs: i32) -> Option<i64> {
         "today" => today,
         "week" => today - 6,
         date => {
-            let mut parts = date.splitn(3, '-').map(str::parse::<i64>);
-            let (Some(Ok(y)), Some(Ok(m)), Some(Ok(d))) = (parts.next(), parts.next(), parts.next())
-            else {
-                return None;
-            };
-            if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-                return None;
-            }
-            days_from_civil(y, m, d)
+            parse_date(date)?
         }
     };
     Some(day_start(day, utc_offset_secs))
-}
-
-/// "2h 05m", "12m", "45s".
-pub fn duration(secs: i64) -> String {
-    match secs {
-        ..60 => format!("{}s", secs.max(0)),
-        60..3600 => format!("{}m", secs / 60),
-        _ => format!("{}h {:02}m", secs / 3600, secs % 3600 / 60),
-    }
 }
 
 /// Time spent on one name, and its share of the recorded time (0 to 1).
@@ -128,15 +76,6 @@ pub fn domain(url: &str) -> Option<String> {
     .to_lowercase();
     let host = host.strip_prefix("www.").map(str::to_owned).unwrap_or(host);
     (!host.is_empty()).then_some(host)
-}
-
-/// `spans` cut to `from..to`, empty parts dropped.
-pub fn clip(spans: Vec<Span<Subject>>, from: i64, to: i64) -> Vec<Span<Subject>> {
-    spans
-        .into_iter()
-        .map(|s| Span { start: s.start.max(from), end: s.end.min(to), subject: s.subject })
-        .filter(|s| s.end > s.start)
-        .collect()
 }
 
 impl Report {
@@ -330,23 +269,10 @@ mod tests {
     use super::*;
     use crate::config::parse;
 
+    const DAY: i64 = 86_400;
+
     fn span(start: i64, end: i64, app: &str, title: Option<&str>) -> Span<Subject> {
         Span { start, end, subject: Subject::new(app, app, title, None) }
-    }
-
-    #[test]
-    fn dates_round_trip() {
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-        assert_eq!(days_from_civil(2000, 3, 1), 11_017);
-        assert_eq!(civil_from_days(11_017), (2000, 3, 1));
-        assert_eq!(civil_from_days(-1), (1969, 12, 31));
-        for day in [-800_000, -1, 0, 59, 60, 20_000, 2_000_000] {
-            let (y, m, d) = civil_from_days(day);
-            assert_eq!(days_from_civil(y, m, d), day);
-        }
-        assert_eq!(local_time(0, 0), "1970-01-01 00:00");
-        assert_eq!(local_time(0, -3600), "1969-12-31 23:00");
-        assert_eq!(local_time(3 * 3600 + 25 * 60, 7200), "1970-01-01 05:25");
     }
 
     #[test]
@@ -360,21 +286,6 @@ mod tests {
         for bad in ["", "yesterday", "2026-13-01", "2026-01-00", "2026-01", "a-b-c"] {
             assert_eq!(parse_since(bad, now, 0), None, "{bad}");
         }
-    }
-
-    #[test]
-    fn durations_read_short() {
-        assert_eq!(duration(-5), "0s");
-        assert_eq!(duration(45), "45s");
-        assert_eq!(duration(12 * 60 + 5), "12m");
-        assert_eq!(duration(2 * 3600 + 5 * 60), "2h 05m");
-    }
-
-    #[test]
-    fn clip_cuts_to_the_range() {
-        let spans = vec![span(0, 100, "a", None), span(150, 300, "b", None), span(400, 500, "c", None)];
-        let cut = clip(spans, 50, 200);
-        assert_eq!(cut.iter().map(|s| (s.start, s.end)).collect::<Vec<_>>(), [(50, 100), (150, 200)]);
     }
 
     #[test]

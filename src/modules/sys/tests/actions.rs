@@ -117,10 +117,13 @@ fn screen_sharing_and_dash_open_their_urls() {
 #[test]
 fn tail_log_shows_the_lines_in_view_log() {
     let mut m = sys(ACTIONS, HOOKS);
-    m.fleet_view = true;
+    m.fleet_view = Some("fleet");
     let Outcome::Push(v) = act(&mut m, "service/pro/up", "tail") else { panic!("no push") };
     assert_eq!((v.module, v.name.as_str()), (ID, "log"));
-    assert!(!m.fleet_view, "the log view does not poll the fleet");
+    assert!(test_cx("", |cx| m.open("log", cx)).is_some());
+    assert_eq!(m.fleet_view, Some("fleet"), "the launcher, not the push, closes the fleet view");
+    test_cx("", |cx| m.closed("fleet", cx));
+    assert_eq!(m.fleet_view, None, "the log view does not poll the fleet");
     let want = "tail via pro: exec /usr/bin/tail -n 100 -- \"$HOME\"/'logs/up.log'\n";
     assert_eq!(tailed(&m), Some(Ok(want.into())));
     let mut view = test_cx("", |cx| m.open("log", cx)).unwrap();

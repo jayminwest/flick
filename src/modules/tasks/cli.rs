@@ -7,10 +7,9 @@ use std::fmt::Write;
 use serde::Serialize;
 
 use super::store::{Status, Task};
-use crate::core::track::{Span, local_day, sum_by};
+use crate::core::track::{Span, date, day_start, duration, local_day, parse_date, sum_by};
 use crate::core::unknown_verb;
 
-const DAY: i64 = 86_400;
 
 /// A parsed `flick task` command.
 #[derive(Debug, PartialEq, Eq)]
@@ -122,50 +121,6 @@ pub fn label(task: &Task) -> String {
     }
 }
 
-/// "2h 05m", "12m", "45s".
-pub fn duration(secs: i64) -> String {
-    match secs {
-        ..60 => format!("{}s", secs.max(0)),
-        60..3600 => format!("{}m", secs / 60),
-        _ => format!("{}h {:02}m", secs / 3600, secs % 3600 / 60),
-    }
-}
-
-/// Unix time of local midnight starting local day `day`.
-pub fn day_start(day: i64, utc_offset_secs: i32) -> i64 {
-    day * DAY - i64::from(utc_offset_secs)
-}
-
-/// Days since 1970-01-01 of civil date `y-m-d` (proleptic Gregorian).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
-    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
-}
-
-/// "YYYY-MM-DD" of day number `z`.
-pub fn date(z: i64) -> String {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
-}
-
-fn parse_date(s: &str) -> Option<i64> {
-    let mut parts = s.splitn(3, '-').map(str::parse::<i64>);
-    let (Some(Ok(y)), Some(Ok(m)), Some(Ok(d))) = (parts.next(), parts.next(), parts.next()) else {
-        return None;
-    };
-    ((1..=12).contains(&m) && (1..=31).contains(&d)).then(|| days_from_civil(y, m, d))
-}
-
 /// The local days (first, last, inclusive) of `range`: "today", "week" (Monday to today),
 /// "YYYY-MM-DD" or "YYYY-MM-DD..YYYY-MM-DD".
 pub fn parse_range(range: &str, now: i64, utc_offset_secs: i32) -> Option<(i64, i64)> {
@@ -178,15 +133,6 @@ pub fn parse_range(range: &str, now: i64, utc_offset_secs: i32) -> Option<(i64, 
             None => parse_date(range).map(|d| (d, d)),
         },
     }
-}
-
-/// `spans` cut to `from..to`, empty parts dropped.
-pub fn clip(spans: Vec<Span<i64>>, from: i64, to: i64) -> Vec<Span<i64>> {
-    spans
-        .into_iter()
-        .map(|s| Span { start: s.start.max(from), end: s.end.min(to), subject: s.subject })
-        .filter(|s| s.end > s.start)
-        .collect()
 }
 
 /// One task in `ls`.

@@ -232,7 +232,7 @@ fn ticks_poll_on_the_background_cadence_or_while_the_view_shows() {
     // The fleet view on screen: every 15 s.
     let mut m = sys(FLEET, Hooks { visible: || true, ..HOOKS });
     event(&mut m, Event::Started);
-    m.fleet_view = true;
+    m.fleet_view = Some("fleet");
     m.shared.lock().fleet.slots[1].tried_at = Some(986);
     event(&mut m, Event::ModuleChanged { module: ID });
     settle(&m);

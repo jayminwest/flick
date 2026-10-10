@@ -49,6 +49,8 @@ pub struct State {
     selected: usize,
     scroll: usize,
     status: Option<String>,
+    /// The module view on the panel, or under its action menu or confirmation.
+    held: Option<screen::Held>,
     /// The module tables startup skipped, shown as root search's footer until a reload works.
     config_error: Option<String>,
 }
@@ -89,6 +91,7 @@ pub fn init(config: Config, store: Store) -> String {
         selected: 0,
         scroll: 0,
         status: None,
+        held: None,
         config_error,
     };
     if let Err(e) = state.registry.migrate(&state.env.store) {
@@ -304,6 +307,9 @@ impl State {
 
     /// Put `screen` on the panel with `query` in the search field.
     fn show(&mut self, screen: Screen, query: &str) {
+        if let Some((module, name)) = screen::hold(&mut self.held, &screen) {
+            self.registry.closed(module, &name, &mut self.env.cx(""));
+        }
         self.screen = screen;
         let placeholder = match &self.screen {
             Screen::Root => ROOT_PLACEHOLDER,

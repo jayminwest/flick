@@ -50,6 +50,14 @@ impl Registry {
         self.get(view.module)?.open(&view.name, cx)
     }
 
+    /// Tell module `module` its view `name` left the launcher. An unknown module (a reload
+    /// disabled it) hears nothing.
+    pub fn closed(&mut self, module: &str, name: &str, cx: &mut Cx) {
+        if let Some(m) = self.get(module) {
+            m.closed(name, cx);
+        }
+    }
+
     pub fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         if let Some(m) = self.get(view.module) {
             m.refresh(view, cx);
@@ -277,6 +285,31 @@ mod tests {
             r.refresh(&mut bare, cx);
             assert!(orphan.footer.is_empty() && bare.footer.is_empty());
         });
+    }
+
+    /// Logs the views it hears closed.
+    struct Closer(std::rc::Rc<std::cell::RefCell<Vec<String>>>);
+
+    impl Module for Closer {
+        fn id(&self) -> &'static str {
+            "closer"
+        }
+
+        fn closed(&mut self, view: &str, _cx: &mut Cx) {
+            self.0.borrow_mut().push(view.into());
+        }
+    }
+
+    #[test]
+    fn closed_views_route_to_their_module_only() {
+        let log = std::rc::Rc::default();
+        let mut r = Registry::new(vec![Box::new(Bare), Box::new(Closer(std::rc::Rc::clone(&log)))]);
+        with_cx("", |cx| {
+            r.closed("closer", "fleet", cx);
+            r.closed("bare", "list", cx);
+            r.closed("nobody", "list", cx);
+        });
+        assert_eq!(*log.borrow(), ["fleet"]);
     }
 
     #[test]

@@ -24,10 +24,10 @@ mod tests;
 mod urls;
 mod wire;
 
-use crate::core::track::{Clock, Input, Op, Span, Subject};
+use crate::core::track::{Clock, Input, Op, Span, Subject, clip, duration};
 use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::core::store::Store;
-use report::{TaskReport, Report, clip, parse_since, span_list, span_text};
+use report::{TaskReport, Report, parse_since, span_list, span_text};
 use rules::Config;
 use store::{MIGRATIONS, Spans};
 use wire::Env;
@@ -338,7 +338,7 @@ impl Activity {
                     subtitle: format!("{}{}", kind[..1].to_uppercase(), &kind[1..]),
                     accessory: format!(
                         "{}  ·  {:.0}%",
-                        report::duration(t.secs),
+                        duration(t.secs),
                         t.share * 100.0
                     ),
                     ..Item::new(
