@@ -7,55 +7,10 @@ pub const MAX_BODY: usize = 16 * 1024;
 const CARD_LINES: usize = 18;
 const CARD_CHARS: usize = 1500;
 
-/// A body as plain text: `**`, `__` and backticks dropped, `# ` headings and `- `/`* `
-/// bullets turned into plain lines and `•`, `[text](url)` as `text (url)`, CRLF as LF, and
-/// runs of blank lines as one.
+/// A body as plain text, the `core::markup` way: markers dropped, headings as plain lines,
+/// bullets as `•` (or `n.`), `[text](url)` as `text (url)`, runs of blank lines as one.
 pub fn plain(body: &str) -> String {
-    let mut out: Vec<String> = vec![];
-    for line in body.replace("\r\n", "\n").lines() {
-        let line = line.trim_end();
-        let indent = &line[..line.len() - line.trim_start().len()];
-        let rest = line.trim_start();
-        let rest = rest.trim_start_matches('#');
-        let rest = if rest.len() < line.trim_start().len() { rest.trim_start() } else { rest };
-        let rest = ["- ", "* ", "+ "]
-            .iter()
-            .find_map(|b| rest.strip_prefix(b))
-            .map_or_else(|| rest.to_string(), |r| format!("• {r}"));
-        let text = links(&rest.replace("**", "").replace("__", "").replace('`', ""));
-        if text.is_empty() && out.last().is_none_or(String::is_empty) {
-            continue;
-        }
-        out.push(format!("{indent}{text}"));
-    }
-    while out.last().is_some_and(String::is_empty) {
-        out.pop();
-    }
-    out.join("\n")
-}
-
-/// `[text](url)` → `text (url)`.
-fn links(s: &str) -> String {
-    let mut out = String::new();
-    let mut rest = s;
-    while let Some(open) = rest.find('[') {
-        let after = &rest[open + 1..];
-        let Some((text, tail)) = after.split_once("](") else { break };
-        let Some((url, tail)) = tail.split_once(')') else { break };
-        if text.contains('[') {
-            out.push_str(&rest[..=open]);
-            rest = after;
-            continue;
-        }
-        out.push_str(&rest[..open]);
-        out.push_str(text);
-        out.push_str(" (");
-        out.push_str(url);
-        out.push(')');
-        rest = tail;
-    }
-    out.push_str(rest);
-    out
+    crate::core::markup::plain(body)
 }
 
 /// What the card shows of `text`: at most `CARD_LINES` lines and `CARD_CHARS` characters,
@@ -210,9 +165,10 @@ mod tests {
     #[test]
     fn markdown_becomes_plain_text() {
         let md = "## Plan\r\n\r\n\r\n- **one** `x`\n  * two\n+ [docs](https://a.b/c)\n\n#tag stays\n\n";
-        assert_eq!(plain(md), "Plan\n\n• one x\n  • two\n• docs (https://a.b/c)\n\ntag stays");
+        assert_eq!(plain(md), "Plan\n\n• one x\n  • two\n• docs (https://a.b/c)\n\n#tag stays");
         assert_eq!(plain("[a] and [b](u) and [c"), "[a] and b (u) and [c");
         assert_eq!(plain("[x](no close"), "[x](no close");
+        assert_eq!(plain("*soft* 1. one\n1. one"), "soft 1. one\n1. one");
         assert_eq!(plain(""), "");
     }
 

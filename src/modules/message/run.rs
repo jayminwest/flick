@@ -281,15 +281,26 @@ mod tests {
 
     #[test]
     fn the_worker_runs_on_a_thread_and_queues_results() {
+        // No polling: the job waits at a gate the test holds, and `notify` signals a condvar,
+        // so every line runs the same way however the threads are scheduled (flick-2b94).
+        static GATE: Mutex<()> = Mutex::new(());
+        static NOTIFIED: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
         let w = Worker::default();
-        w.start(Job::new(&["x".into()], "c1", "go", 3, String::new()), |_| Exit::Sent, || {});
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let mut done = w.take();
-        while done.is_empty() && Instant::now() < deadline {
-            thread::sleep(POLL);
-            done = w.take();
-        }
-        assert_eq!(done, [Done { card: "c1".into(), press: 3, exit: Exit::Sent }]);
+        let gate = GATE.lock().unwrap();
+        let exec = |_: &Job| {
+            drop(GATE.lock().unwrap_or_else(PoisonError::into_inner));
+            Exit::Sent
+        };
+        let notify = || {
+            *NOTIFIED.0.lock().unwrap() = true;
+            NOTIFIED.1.notify_all();
+        };
+        w.start(Job::new(&["x".into()], "c1", "go", 3, String::new()), exec, notify);
+        assert!(w.take().is_empty(), "the job is held at the gate");
+        drop(gate);
+        let wait = NOTIFIED.1.wait_timeout_while(NOTIFIED.0.lock().unwrap(), Duration::from_secs(15), |n| !*n);
+        assert!(*wait.unwrap().0, "notified");
+        assert_eq!(w.take(), [Done { card: "c1".into(), press: 3, exit: Exit::Sent }]);
         assert!(w.take().is_empty());
     }
 }
