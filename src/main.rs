@@ -53,7 +53,7 @@ fn launch() {
 
     let hotkeys = hotkey::init();
     ui::init();
-    // After init: a bad module table swaps in the default config, hotkey included.
+    // A bad module table is skipped (that module runs on its defaults); the rest apply.
     let launcher = app::init(config, store);
     if let Err(e) = hotkeys.and_then(|()| app::bind_hotkeys()) {
         eprintln!("flick: {e}");

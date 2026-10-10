@@ -611,7 +611,11 @@ writes a commented default (`DEFAULT_CONFIG`).
   `window_keys` → `[window] keys`, `quicklinks` → `[quicklink] links`. If both forms are set,
   arrays join (table entries first) and tables merge. Any other overlap is an error. Do not
   read legacy keys in a module.
-- Startup: a bad file or a bad module table means the whole default config, with a log line.
+- Startup: a bad file (syntax, `hotkey`, legacy keys, `[launcher]`) means the whole default
+  config, with a log line. A bad module table does not: `modules::lenient` skips that table
+  (its module is configured from an empty table, so it runs on its defaults; a bad `enabled`
+  leaves it on) and applies every other table. The errors, named with `Config::files`, are
+  logged and shown as root search's footer until a reload succeeds.
 - Reload (`Reload Flick Config`, `flick reload`): `modules::reload` builds a fresh registry to
   validate the file. On error nothing changes. Modules still enabled keep their instance and
   get `configure` again. Newly enabled modules start fresh. Migrations run again, the fresh

@@ -1,5 +1,5 @@
 //! Controller: launcher state, the screen on the panel, and routing to modules. Knows no
-//! feature: modules come from `crate::modules::registry`. All calls happen on the main thread.
+//! feature: modules come from `crate::modules::lenient`. All calls happen on the main thread.
 
 mod overlay;
 mod screen;
@@ -49,6 +49,8 @@ pub struct State {
     selected: usize,
     scroll: usize,
     status: Option<String>,
+    /// The module tables startup skipped, shown as root search's footer until a reload works.
+    config_error: Option<String>,
 }
 
 thread_local! {
@@ -59,32 +61,24 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
     STATE.with(|s| s.borrow_mut().as_mut().map(f))
 }
 
-/// The modules `config` sets up; an error names the file and the bad table.
-fn registry(config: &Config) -> Result<Registry, String> {
-    modules::registry(config).map_err(|e| format!("{}: {e}", config.files(&config::config_path())))
-}
-
-/// The modules `build` sets up from `config`. A bad module table means defaults, like a
-/// bad file.
+/// The modules `build` sets up from `config` (`modules::lenient`: a bad module table is
+/// skipped, the rest apply), and the skipped tables' errors, naming the file.
 fn modules_for(
-    config: Config,
-    build: impl Fn(&Config) -> Result<Registry, String>,
-) -> (Config, Registry) {
-    match build(&config) {
-        Ok(registry) => (config, registry),
-        Err(e) => {
-            eprintln!("flick: {e}; using defaults");
-            let config = Config::default();
-            let registry = build(&config).unwrap_or_else(|_| Registry::new(vec![]));
-            (config, registry)
-        }
+    config: &Config,
+    build: impl Fn(&Config) -> (Registry, Vec<String>),
+) -> (Registry, Option<String>) {
+    let (registry, errors) = build(config);
+    if errors.is_empty() {
+        return (registry, None);
     }
+    let error = format!("{}: {}", config.files(&config::config_path()), errors.join("; "));
+    eprintln!("flick: {error}; skipped");
+    (registry, Some(error))
 }
 
-/// Set up the controller. Returns the launcher hotkey in effect, which is the default one
-/// when `config` falls back to defaults.
+/// Set up the controller. Returns the launcher hotkey in effect.
 pub fn init(config: Config, store: Store) -> String {
-    let (config, registry) = modules_for(config, registry);
+    let (registry, config_error) = modules_for(&config, modules::lenient);
     let launcher = config.hotkey.clone();
     ui::set_opacity(config.launcher().opacity);
     let mut state = State {
@@ -95,6 +89,7 @@ pub fn init(config: Config, store: Store) -> String {
         selected: 0,
         scroll: 0,
         status: None,
+        config_error,
     };
     if let Err(e) = state.registry.migrate(&state.env.store) {
         eprintln!("flick: store migration failed: {e}");
@@ -273,6 +268,7 @@ impl State {
             .map_err(|e| format!("{}: {e}", config.files(&config::config_path())))?;
         ui::set_opacity(config.launcher().opacity);
         self.env.config = config;
+        self.config_error = None;
         if let Err(e) = self.registry.migrate(&self.env.store) {
             eprintln!("flick: store migration failed: {e}");
         }
@@ -371,7 +367,10 @@ impl State {
                 ui::render_form(form, self.status.as_deref().unwrap_or("⇥  Next Field"));
                 return;
             }
-            Screen::Root => (None, "Flick", "No Results", screen::list_hint(item, has_actions)),
+            Screen::Root => {
+                let footer = self.config_error.as_deref().unwrap_or("Flick");
+                (None, footer, "No Results", screen::list_hint(item, has_actions))
+            }
             Screen::List(view) => (
                 None,
                 view.footer.as_str(),
@@ -473,13 +472,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_bad_module_table_falls_back_to_the_default_hotkey() {
-        let build = |c: &Config| modules::with_apps(c, vec![]);
-        let (config, _) = modules_for(config::parse("hotkey = \"cmd+K\"").unwrap(), build);
-        assert_eq!(config.hotkey, "cmd+K");
+    fn a_bad_module_table_is_skipped_and_reported() {
+        let build = |c: &Config| modules::lenient_with_apps(c, vec![]);
+        let (_, error) = modules_for(&config::parse("hotkey = \"cmd+K\"").unwrap(), build);
+        assert_eq!(error, None);
         let bad = config::parse("hotkey = \"cmd+K\"\n[window]\nenabled = 1").unwrap();
-        let (config, registry) = modules_for(bad, build);
-        assert_eq!(config.hotkey, Config::default().hotkey);
-        assert!(!registry.into_modules().is_empty());
+        let (registry, error) = modules_for(&bad, build);
+        let error = error.unwrap();
+        assert!(error.ends_with(": [window] enabled: expected true or false"), "{error}");
+        assert!(registry.into_modules().iter().any(|m| m.id() == "window"));
     }
 }
