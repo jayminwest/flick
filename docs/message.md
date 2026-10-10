@@ -136,7 +136,7 @@ The values shown are the defaults, except `chat_hotkey`. `chat_history` and `cha
 - `chat_hotkey` shows the window on the screen under the pointer, with the caret in its input. Flick never activates, so the app you were in stays active and keeps its menu bar. Only your typing goes to the chat.
 - Esc, ⌘W or the hotkey again hides the window. The app you were in gets the keyboard back if it is still in front. If the window shows but another app has the keyboard, the hotkey gives the keyboard back to the chat.
 - You can resize and move the window by its background. It remembers its frame. It floats above other windows and shows on every Space.
-- `flick message chat [--thread t]` and **Chat Threads** (⌘K on the **Messages** root item, then Enter on a thread) also open it.
+- `flick message chat [--thread t]` and **Chat Threads** (⌘K on the **Messages** root item, then Enter on a thread) also open it, and so does **Open Chat** in the [KOTA](kota.md) menu bar item and the Ask KOTA view.
 
 ### Keys
 

@@ -16,8 +16,9 @@
 //! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`. Chat threads
 //! (`post --thread`, `--partial` streaming) are stored per thread; `thread.rs` reads them;
 //! `chat/` is the KOTA chat window (`message chat`, `message ask`, view `threads`, ids
-//! `message:thread:<t>`). While the window shows a thread, posts to it show no card and
-//! play no sound (`chat::model::alert`).
+//! `message:thread:<t>`; `message:chat:open` opens the window on its current thread). While
+//! the window shows a thread, posts to it show no card and play no sound
+//! (`chat::model::alert`).
 
 mod card;
 mod chat;
@@ -406,7 +407,10 @@ impl Module for Inbox {
             return Outcome::Push(ListView::new("message", RECENT));
         }
         if let Some(t) = chat::threads::thread_of(id.key()) {
-            return self.open_thread(t, cx);
+            return self.open_thread(Some(t), cx);
+        }
+        if id.key() == chat::threads::OPEN {
+            return self.open_thread(None, cx);
         }
         match cx.store.message(id.key()) {
             Some(m) => {
@@ -464,13 +468,17 @@ impl Module for Inbox {
     }
 
     /// `card_hotkey` gives the keyboard back when a card holds it, else moves it into the
-    /// newest card; `chat_hotkey` shows or hides the chat window. The launcher stays as it is.
+    /// newest card; `chat_hotkey` shows or hides the chat window, `chat:open` (no binding: a
+    /// menu row's route, `chat::threads::OPEN`) shows it. The launcher stays as it is.
     fn hotkey(&mut self, key: &str, cx: &mut Cx) -> Option<ListView> {
         if key == CARD && !(self.env.unfocus)() {
             (self.env.focus)();
         }
         if key == CHAT {
             self.chat_toggle(cx);
+        }
+        if key == chat::threads::OPEN {
+            self.summon(None, cx);
         }
         (key == RECENT).then(|| recent_view(&self.settings.name))
     }

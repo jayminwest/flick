@@ -50,7 +50,7 @@ pub const TOPICS: [Topic; 24] = [
     topic("activity", "Activity", "Start Activity Recording tracks the app in front. Activity Today shows where the day went.", "clock", "activity.md"),
     topic("tasks", "Tasks", "Start Task runs a timer on one task at a time. Tasks Today lists the time per task.", "play.circle", "tasks.md"),
     topic("herdr", "Herdr Agents", "Coding agents in herdr, waiting ones first. ↵ jumps to the agent's pane.", "terminal", "herdr.md"),
-    topic("kota", "KOTA", "The K in the menu bar is KOTA's state; the number is cards waiting on you. Ask KOTA… sends a question.", "k.circle", "kota.md"),
+    topic("kota", "KOTA", "The K in the menu bar is KOTA's state; the number is cards waiting on you. Ask KOTA… sends a question; Open Chat opens the chat window.", "k.circle", "kota.md"),
     topic("fleet", "Fleet", "Your Macs and their services from [[sys.machine]]. ⌘K: Screen Sharing, Open Dash, Tail Log, Restart….", "server.rack", "sys.md"),
     topic("keys", "Key Triggers", "Caps Lock as Hyper, and key chords that run an action. Set them up in [keys].", "keyboard", "keys.md"),
     topic("dictation", "Dictation", "Hold the dictation chord, speak, release: the text goes into the focused field. Runs on this Mac only.", "mic", "dictation.md"),
