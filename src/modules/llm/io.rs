@@ -191,12 +191,12 @@ pub fn fetch_models(shared: &Arc<Shared>, server: &Server, hooks: Hooks) -> u64 
         m.fetching = true;
         epoch
     };
-    let url = server.endpoint("models");
+    let (url, key) = (server.endpoint("models"), server.key());
     let sh = Arc::clone(shared);
     let started = Instant::now();
     let spawned = thread::Builder::new().name("llm-models".into()).spawn(move || {
         let mut body = String::new();
-        let call = Call { url, body: None, max_time: LIST_MAX_TIME };
+        let call = Call { url, body: None, max_time: LIST_MAX_TIME, key };
         let budget = LIST_MAX_TIME + WATCHDOG_MARGIN;
         // Killing a curl that already ended does nothing: it is reaped, so no other process
         // can have its pid.
@@ -271,7 +271,7 @@ pub fn chat(shared: &Arc<Shared>, server: &Server, body: Vec<u8>, timeout: u64, 
         st.streams.push(Stream { id, pieces: vec![], status: Status::Running, child: None });
         id
     };
-    let call = Call { url: server.endpoint("chat/completions"), body: Some(body), max_time: timeout };
+    let call = Call { url: server.endpoint("chat/completions"), body: Some(body), max_time: timeout, key: server.key() };
     let sh = Arc::clone(shared);
     let spawned = thread::Builder::new().name("llm-stream".into()).spawn(move || {
         let mut seen = Seen::default();
