@@ -6,17 +6,24 @@
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
 //! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`). Table `messages` holds the
-//! history. Each message shows as its own card, keyed by its id.
+//! history. Each message shows as its own card, keyed by its id. `message card <verb>`
+//! posts and manages structured cards (`card.rs`, `core::card`), stored in the same table.
 
+mod card;
 pub mod store;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_card;
 mod text;
 mod wire;
+
+use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
+use crate::core::card::State;
 use crate::core::{Action, Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::hud::{Content, Corner, Options, Placement, TextCard};
 use store::{Message, Messages};
@@ -104,6 +111,8 @@ impl Default for Settings {
 pub struct Inbox {
     env: Env,
     settings: Settings,
+    /// Cards dismissed through `card dismiss`; a `done` update of one stays in history.
+    dismissed: HashSet<String>,
 }
 
 /// The JSON answer of `post`.
@@ -135,38 +144,48 @@ impl Inbox {
         m.title.as_deref().unwrap_or(&self.settings.name)
     }
 
-    /// Show `m` the configured way; `panel_only` skips the notification (a re-show).
+    /// Show `m` the configured way; `panel_only` skips the notification (a re-show). A
+    /// card shows as text: its title as the header, the rest of `plain(card)` as the body.
     fn display(&self, m: &Message, panel_only: bool) {
-        let body = text::plain(&m.body);
+        let c = card::stored(m);
+        let body = c.as_ref().map_or_else(|| text::plain(&m.body), card::body);
+        let header = c.as_ref().map_or_else(|| self.header(m), |c| c.title.as_str());
+        let opts = c.as_ref().map_or_else(|| self.options(m), |c| self.card_options(c));
+        let pending = m.pending || c.as_ref().is_some_and(|c| c.state == State::Pending);
         let style = self.settings.style;
         if matches!(style, Style::Panel | Style::Both) || panel_only {
             let context = m.context.as_deref().map(|c| format!("Re: {}", text::preview(c, 80)));
             let time = text::stamp(m.ts, (self.env.now)(), (self.env.utc_offset)(m.ts));
             let card = TextCard {
-                header: self.header(m),
+                header,
                 time: &time,
                 context: context.as_deref().unwrap_or(""),
                 body: &text::clip(&body),
                 link: m.url.as_deref(),
-                pending: m.pending,
+                pending,
             };
-            (self.env.show)(&m.id, &Content::Text(card), &self.placement(), &self.options(m));
+            (self.env.show)(&m.id, &Content::Text(card), &self.placement(), &opts);
         }
-        if matches!(style, Style::Notification | Style::Both) && !panel_only && !m.pending {
-            (self.env.notify)(&m.id, self.header(m), &body);
+        if matches!(style, Style::Notification | Style::Both) && !panel_only && !pending {
+            (self.env.notify)(&m.id, header, &body);
         }
+    }
+
+    /// Save `m`; `took` (its `reply_to` was a pending message, now gone) also removes that
+    /// placeholder's card, which `m` takes the place of.
+    fn save(&self, m: &Message, took: bool, cx: &Cx) -> Result<(), String> {
+        cx.store.put_message(m, self.settings.max_history)?;
+        if let Some(pending) = m.reply_to.as_deref().filter(|r| took && *r != m.id) {
+            (self.env.dismiss)(pending);
+        }
+        Ok(())
     }
 
     /// Save and show a post; returns its id and whether it replaced a pending message.
     fn post(&self, args: &[String], cx: &Cx) -> Result<(String, bool), String> {
         let post = text::parse_post(args)?;
         let id = post.id.unwrap_or_else(self.env.new_id);
-        let mut replaced = false;
-        let context = post.reply_to.as_deref().and_then(|r| {
-            let taken = cx.store.take_pending(r);
-            replaced = taken.is_some();
-            taken.or_else(|| cx.store.message(r)).map(|m| m.body)
-        });
+        let (context, replaced) = quote(post.reply_to.as_deref(), cx);
         let m = Message {
             id: id.clone(),
             ts: (self.env.now)(),
@@ -176,12 +195,9 @@ impl Inbox {
             reply_to: post.reply_to,
             context,
             pending: post.pending,
+            ..Message::default()
         };
-        cx.store.put_message(&m, self.settings.max_history)?;
-        // The reply takes the place of its placeholder's card.
-        if let Some(pending) = m.reply_to.as_deref().filter(|r| replaced && *r != id) {
-            (self.env.dismiss)(pending);
-        }
+        self.save(&m, replaced, cx)?;
         self.display(&m, false);
         Ok((id, replaced))
     }
@@ -213,9 +229,10 @@ impl Inbox {
         list.iter().map(line).collect::<Vec<_>>().join("\n")
     }
 
-    fn run_verb(&self, args: &[String], cx: &Cx) -> Result<String, String> {
+    fn run_verb(&mut self, args: &[String], cx: &Cx) -> Result<String, String> {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
+            ["card", ..] => self.card_verb(&args[1..], cx),
             ["post", ..] => {
                 let (id, replaced) = self.post(&args[1..], cx)?;
                 if cx.json {
@@ -249,6 +266,16 @@ impl Inbox {
             }
             _ => Err(unknown_verb("message", args)),
         }
+    }
+}
+
+/// For a post answering `reply_to`: the body it quotes, and whether it was a pending
+/// message, which is taken out of history.
+fn quote(reply_to: Option<&str>, cx: &Cx) -> (Option<String>, bool) {
+    let Some(r) = reply_to else { return (None, false) };
+    match cx.store.take_pending(r) {
+        Some(m) => (Some(m.body), true),
+        None => (cx.store.message(r).map(|m| m.body), false),
     }
 }
 
@@ -380,6 +407,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all"
     }
 }

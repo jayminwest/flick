@@ -112,12 +112,6 @@ fn civil(days: i64) -> (i64, i64, i64) {
     (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
-/// A message id: 1 to 64 of `A-Z a-z 0-9 . _ -`.
-pub fn valid_id(id: &str) -> bool {
-    (1..=64).contains(&id.len())
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
 /// What `post` was asked to save.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Post {
@@ -175,7 +169,7 @@ pub fn parse_post(mut args: &[String]) -> Result<Post, String> {
         return Err(format!("--url {url}: only http and https links"));
     }
     for id in [&post.id, &post.reply_to].into_iter().flatten() {
-        if !valid_id(id) {
+        if !crate::core::card::valid_id(id) {
             return Err(format!("{id}: an id is 1-64 of A-Z a-z 0-9 . _ -"));
         }
     }
