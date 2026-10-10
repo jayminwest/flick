@@ -16,6 +16,10 @@
 //!   scrolled to the bottom only if it was there. Bubbles hold selectable markdown-lite
 //!   (`render`: bold, italic, code, headings, bullets; only `http(s)` links open); cards are
 //!   drawn by the HUD's card renderer, and their presses reach `Handlers::card_action`.
+//! - Copying (`bubble`, flick-0955): a bubble's row is not window background (a drag on it
+//!   selects, never moves the window), a click on its fill goes to its text, its text takes
+//!   the first click while the window is not key, and its context menu starts with Copy
+//!   Message (the whole message, `rows::message_text`, to the pasteboard).
 //! - Keys: the edit keys (⌘X/⌘C/⌘V/⌘A/⌘Z/⇧⌘Z) go to the input through `platform::edit`
 //!   before anything else. Every other ⌘ key, and Return, Escape, Up and Down in the input,
 //!   reach `Handlers::key` as a `Keystroke`; a key it does not take falls back to
@@ -31,7 +35,7 @@
 //!   spec's text and an accent outline mark it. The input has spell check, grammar,
 //!   autocorrect, completion, inline predictions, Writing Tools, math results, link and data
 //!   detection and undo off (`privacy::ALL`) and no context menu; bubbles cannot be selected
-//!   (and their links do not open). ⌘C/⌘X copy the input's selection only through
+//!   (and their links do not open) and have no Copy Message. ⌘C/⌘X copy the input's selection only through
 //!   `pasteboard::set_text_concealed` (Concealed + Transient, so clip history skips it); with
 //!   nothing selected they reach `Handlers::key`, never the pasteboard. `snapshot` refuses.
 //!   What `AppKit` keeps in its views after `set_rows`/`set_input` replace them is outside
@@ -42,6 +46,7 @@
 //!   the key's fate. Handlers must only queue work or post an event, never borrow app state
 //!   (mx-fcbc43). Surface functions may be called from inside a handler.
 
+mod bubble;
 mod geometry;
 mod input;
 mod keys;

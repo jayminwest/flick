@@ -63,6 +63,8 @@ pub struct Hooks {
     pub context: fn() -> Option<Front>,
     /// The clipboard's text, unless concealed.
     pub clipboard: fn() -> Option<String>,
+    /// Put text on the clipboard.
+    pub copy: fn(&str),
     /// Start a screenshot with the window out of the way; it arrives as `Note::Shot`.
     pub shoot: fn(),
     /// Replace the chips above the input.
@@ -105,9 +107,11 @@ pub enum Command {
     Clipboard,
     /// ⌘⇧S: attach a screenshot.
     Screenshot,
+    /// ⌘⇧C: copy the newest reply.
+    CopyReply,
 }
 
-/// The command bound to `k`, if any: ⌘ alone with N, [, ], R or W; ⌘⇧ with V or S.
+/// The command bound to `k`, if any: ⌘ alone with N, [, ], R or W; ⌘⇧ with V, S or C.
 pub fn binding(k: Keystroke) -> Option<Command> {
     if !k.cmd || k.opt {
         return None;
@@ -120,6 +124,7 @@ pub fn binding(k: Keystroke) -> Option<Command> {
         (false, Key::Char('w')) => Some(Command::Close),
         (true, Key::Char('v')) => Some(Command::Clipboard),
         (true, Key::Char('s')) => Some(Command::Screenshot),
+        (true, Key::Char('c')) => Some(Command::CopyReply),
         _ => None,
     }
 }
@@ -267,6 +272,7 @@ impl Inbox {
             }
             Command::Clipboard => return self.attach_clipboard(),
             Command::Screenshot => return self.attach_screenshot(),
+            Command::CopyReply => return self.copy_reply(cx),
             Command::Older => model::Step::Older,
             Command::Newer => model::Step::Newer,
         };
@@ -275,6 +281,20 @@ impl Inbox {
             self.chat.thread = Some(t.to_string());
             self.chat.notice = None;
         }
+    }
+
+    /// ⌘⇧C: the newest reply in the thread shown to the clipboard (`model::last_reply`); the
+    /// notice says whether there was one.
+    fn copy_reply(&mut self, cx: &Cx) {
+        let list = cx.store.thread(&self.current_thread(cx), self.settings.chat_history);
+        let notice = match model::last_reply(&list) {
+            Some(text) => {
+                (self.chat.hooks.copy)(text);
+                "Copied the last reply"
+            }
+            None => "No reply to copy yet",
+        };
+        self.chat.notice = Some(notice.into());
     }
 
     /// Redraw the window if it shows.

@@ -23,11 +23,11 @@ use objc2_foundation::{
 
 use super::geometry::{Rect, Size};
 use super::input::{filled, ns_rect};
-use super::render;
 use super::rows::{
     self, BubbleState, Coalesce, DIVIDER_H, Frames, Owned, Plan, Shape, Side, badge, full_width,
     text_max,
 };
+use super::{bubble, render};
 use crate::platform::hud::embed::Embedded;
 
 define_class!(
@@ -97,7 +97,7 @@ enum Parts {
 /// One row's views.
 struct Built {
     row: Owned,
-    view: Retained<Flipped>,
+    view: Retained<NSView>,
     parts: Parts,
 }
 
@@ -163,7 +163,11 @@ fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says, selectable: bool) -
         Side::System => NSColor::clearColor(),
     };
     let back = filled(mtm, &fill, 10.0);
-    let view = render::text_view(mtm, &string, selectable);
+    let view = if selectable {
+        bubble::text_view(mtm, &string, md)
+    } else {
+        render::text_view(mtm, &string, false)
+    };
     let (meta, meta_w) = meta(mtm, header, time);
     let badge = badge_view(mtm, state);
     for v in [&*back as &NSView, &view, &meta].into_iter().chain(badge.as_deref()) {
@@ -175,12 +179,22 @@ fn bubble(mtm: MainThreadMarker, into: &NSView, says: &Says, selectable: bool) -
 
 /// Row `row` in `doc`; bubble text is `selectable` (copy, links) unless the surface is private.
 fn build(mtm: MainThreadMarker, doc: &NSView, row: Owned, selectable: bool) -> Built {
+    if let Owned::Bubble { side, header, time, md, state, .. } = &row
+        && selectable
+    {
+        let view = bubble::row(mtm);
+        doc.addSubview(&view);
+        let says = Says { side: *side, header, time, md, state: *state };
+        let b = bubble(mtm, &view, &says, true);
+        view.hold(&b.back, &b.view);
+        return Built { row, view: view.into_super(), parts: Parts::Bubble(b) };
+    }
     let view = flipped(mtm);
     doc.addSubview(&view);
     let parts = match &row {
         Owned::Bubble { side, header, time, md, state, .. } => {
             let says = Says { side: *side, header, time, md, state: *state };
-            Parts::Bubble(bubble(mtm, &view, &says, selectable))
+            Parts::Bubble(bubble(mtm, &view, &says, false))
         }
         Owned::Card { .. } => {
             let back = filled(mtm, &NSColor::quaternaryLabelColor(), 10.0);
@@ -197,7 +211,7 @@ fn build(mtm: MainThreadMarker, doc: &NSView, row: Owned, selectable: bool) -> B
             Parts::Divider(l)
         }
     };
-    Built { row, view, parts }
+    Built { row, view: view.into_super(), parts }
 }
 
 impl Bubble {
