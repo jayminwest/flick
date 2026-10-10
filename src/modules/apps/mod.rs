@@ -146,9 +146,10 @@ impl Module for Apps {
 
     /// Rescans on `LauncherOpened` and `Wake`, so new apps show up, and on `Started` when it
     /// has no index yet (a config reload enabled it). Root search re-ranks on every
-    /// keystroke. `AppActivated` makes the running view stale: an app launched or quit.
+    /// keystroke. `AppActivated` and `AppTerminated` make the running view stale: an app
+    /// launched or quit.
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        if let Event::AppActivated { .. } = event {
+        if let Event::AppActivated { .. } | Event::AppTerminated { .. } = event {
             return true;
         }
         let rescan = match event {
@@ -266,8 +267,16 @@ mod tests {
             let mut flick = Apps { own: Some(own.into()), ..Apps::new(vec![]) };
             let id = ItemId::new("app", own).with_arg("quit");
             assert!(matches!(flick.activate(&id, cx), Outcome::Stay(Some(s)) if s.contains("is Flick")));
-            assert!(apps.on_event(Event::AppActivated { pid: 1 }, cx));
             assert!(apps.command(&["running".into()], cx).is_ok());
+        });
+    }
+
+    #[test]
+    fn app_launches_and_quits_make_the_running_view_stale() {
+        let mut apps = Apps::new(vec![]);
+        test_cx("", |cx| {
+            assert!(apps.on_event(Event::AppActivated { pid: 1 }, cx));
+            assert!(apps.on_event(Event::AppTerminated { pid: 1 }, cx));
         });
     }
 }

@@ -18,6 +18,8 @@ pub enum Event {
     LauncherOpened,
     /// App `pid` became frontmost.
     AppActivated { pid: i32 },
+    /// App `pid` quit.
+    AppTerminated { pid: i32 },
     /// Some app wrote the pasteboard.
     PasteboardChanged,
     /// The system woke from sleep.
@@ -94,6 +96,7 @@ mod tests {
             (Event::Reloaded, r#"{"event":"reloaded"}"#),
             (Event::LauncherOpened, r#"{"event":"launcher_opened"}"#),
             (Event::AppActivated { pid: 42 }, r#"{"event":"app_activated","pid":42}"#),
+            (Event::AppTerminated { pid: 42 }, r#"{"event":"app_terminated","pid":42}"#),
             (Event::PasteboardChanged, r#"{"event":"pasteboard_changed"}"#),
             (Event::Wake, r#"{"event":"wake"}"#),
             (Event::DisplaysChanged, r#"{"event":"displays_changed"}"#),

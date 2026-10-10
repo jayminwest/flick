@@ -14,8 +14,9 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{
-    NSApplicationDidChangeScreenParametersNotification, NSWorkspace,
-    NSWorkspaceDidActivateApplicationNotification, NSWorkspaceDidWakeNotification,
+    NSApplicationDidChangeScreenParametersNotification, NSRunningApplication, NSWorkspace,
+    NSWorkspaceApplicationKey, NSWorkspaceDidActivateApplicationNotification,
+    NSWorkspaceDidTerminateApplicationNotification, NSWorkspaceDidWakeNotification,
     NSWorkspaceSessionDidBecomeActiveNotification, NSWorkspaceSessionDidResignActiveNotification,
     NSWorkspaceWillSleepNotification,
 };
@@ -76,14 +77,20 @@ pub fn start(sink: fn(Event)) {
     }
     let ws = NSWorkspace::sharedWorkspace().notificationCenter();
     // SAFETY: notification names are immutable framework constants, set at load time.
-    let (activated, wake, screens) = unsafe {
+    let (activated, terminated, wake, screens) = unsafe {
         (
             NSWorkspaceDidActivateApplicationNotification,
+            NSWorkspaceDidTerminateApplicationNotification,
             NSWorkspaceDidWakeNotification,
             NSApplicationDidChangeScreenParametersNotification,
         )
     };
     observe(&ws, activated, || workspace::frontmost_pid().map(|pid| Event::AppActivated { pid }));
+    observe_note(&ws, terminated, |note| {
+        if let (Some(pid), Some(sink)) = (app_pid(note), SINK.get()) {
+            sink(Event::AppTerminated { pid });
+        }
+    });
     observe(&ws, wake, || Some(Event::Wake));
     observe(&NSNotificationCenter::defaultCenter(), screens, || Some(Event::DisplaysChanged));
     on_session(session_event);
@@ -180,7 +187,25 @@ const SCREEN_UNLOCKED: &str = "com.apple.screenIsUnlocked";
 
 /// Call `f` on each `name` notification from `center`, on the posting thread.
 fn observe_with(center: &NSNotificationCenter, name: &NSNotificationName, f: impl Fn() + 'static) {
-    let block = RcBlock::new(move |_n: NonNull<NSNotification>| f());
+    observe_note(center, name, move |_| f());
+}
+
+/// The pid of the app a workspace notification is about (its `NSWorkspaceApplicationKey`).
+fn app_pid(note: &NSNotification) -> Option<i32> {
+    // SAFETY: an immutable framework constant, set at load time.
+    let key = unsafe { NSWorkspaceApplicationKey };
+    let app = note.userInfo()?.objectForKey(key)?;
+    Some(app.downcast::<NSRunningApplication>().ok()?.processIdentifier())
+}
+
+/// `observe_with`, handing `f` the notification.
+fn observe_note(
+    center: &NSNotificationCenter,
+    name: &NSNotificationName,
+    f: impl Fn(&NSNotification) + 'static,
+) {
+    // SAFETY: the center passes a valid notification that lives for the call.
+    let block = RcBlock::new(move |n: NonNull<NSNotification>| f(unsafe { n.as_ref() }));
     // SAFETY: the block is 'static, takes the `NSNotification` argument the center passes,
     // and runs on the posting (main) thread; the observer is kept below, which keeps the
     // registration.
@@ -238,6 +263,8 @@ extern "C" fn run_job(context: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
+    use objc2_foundation::NSDictionary;
+
     use super::*;
 
     thread_local! {
@@ -267,5 +294,26 @@ mod tests {
         }
         let seen = SEEN.with(|s| s.borrow().clone());
         assert_eq!(seen, [SessionChange::Sleep, SessionChange::Locked, SessionChange::Unlocked]);
+    }
+
+    #[test]
+    fn terminate_notifications_name_the_app_that_quit() {
+        // SAFETY: immutable framework constants, set at load time.
+        let (name, key) =
+            unsafe { (NSWorkspaceDidTerminateApplicationNotification, NSWorkspaceApplicationKey) };
+        // Any running app will do (a test process is not a registered app: its pid reads -1).
+        let apps = NSWorkspace::sharedWorkspace().runningApplications();
+        let me = apps.firstObject().unwrap();
+        let info = NSDictionary::from_slices(&[key], &[&*me]);
+        // SAFETY: an NSDictionary of any key and value type is an NSDictionary.
+        let info = unsafe { Retained::cast_unchecked::<NSDictionary>(info) };
+        // SAFETY: a framework name, no object and a dictionary.
+        let note = unsafe {
+            NSNotification::notificationWithName_object_userInfo(name, None, Some(&info))
+        };
+        assert_eq!(app_pid(&note), Some(me.processIdentifier()));
+        // SAFETY: a framework name and no object.
+        let bare = unsafe { NSNotification::notificationWithName_object(name, None) };
+        assert_eq!(app_pid(&bare), None);
     }
 }
