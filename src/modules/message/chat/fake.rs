@@ -2,10 +2,12 @@
 //! and an ssh that never runs. The window's calls go to the module tests' log (`chat …`).
 
 use std::cell::{Cell, RefCell};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use super::session::{Hooks, Note};
 use crate::modules::message::run::{Exit, Job};
 use crate::modules::message::tests::log;
+use crate::platform::context::Front;
 use crate::platform::surface::{self, Row};
 
 thread_local! {
@@ -14,6 +16,40 @@ thread_local! {
     static FRONT: Cell<Option<i32>> = const { Cell::new(Some(42)) };
     static NOTES: RefCell<Vec<Note>> = const { RefCell::new(Vec::new()) };
     static THREADS: Cell<u32> = const { Cell::new(0) };
+    static CONTEXT: RefCell<Option<Front>> = const { RefCell::new(None) };
+    static CLIPBOARD: RefCell<Option<String>> = const { RefCell::new(None) };
+    static SHOT: RefCell<Result<Arc<[u8]>, String>> = RefCell::new(Err("no shot".into()));
+}
+
+/// What summon reads from the app in front.
+pub fn set_context(front: Option<Front>) {
+    CONTEXT.set(front);
+}
+
+/// The clipboard's text.
+pub fn set_clipboard(text: Option<&str>) {
+    CLIPBOARD.set(text.map(str::to_string));
+}
+
+/// What the next screenshot gives.
+pub fn set_shot(shot: Result<&[u8], &str>) {
+    SHOT.set(shot.map(Arc::from).map_err(str::to_string));
+}
+
+/// Every upload so far, as `<remote command> <bytes>`, from any test.
+pub fn uploads() -> Vec<String> {
+    UPLOADS.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+static UPLOADS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// A fake upload, run on the worker thread: never runs ssh. Recorded; an attach dir with
+/// `fail` in it fails.
+fn upload(argv: &[String], png: &[u8]) -> Exit {
+    let command = argv.last().cloned().unwrap_or_default();
+    let failed = command.contains("fail");
+    UPLOADS.lock().unwrap_or_else(PoisonError::into_inner).push(format!("{command} {}", png.len()));
+    if failed { Exit::Failed("ssh: lost".into()) } else { Exit::Sent }
 }
 
 /// Queue `note` as the window's handlers would.
@@ -115,4 +151,15 @@ pub const HOOKS: Hooks = Hooks {
         log(format!("chat snapshot {path}"));
         if path.starts_with('/') { Ok(()) } else { Err(format!("can't write {path}")) }
     },
+    context: || CONTEXT.with(|c| c.borrow().clone()),
+    clipboard: || CLIPBOARD.with(|c| c.borrow().clone()),
+    shoot: || {
+        log("chat shoot".into());
+        queue(Note::Shot(SHOT.with(|s| s.borrow().clone())));
+    },
+    chips: |chips| {
+        let labels: Vec<String> = chips.iter().map(|c| format!("{}:{}", c.symbol, c.label)).collect();
+        log(format!("chat chips {}", labels.join(" | ")));
+    },
+    upload,
 };

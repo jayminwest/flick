@@ -1,12 +1,15 @@
 //! Chat asks (flick-eedd): the window's Return, `message ask` and ⌘R.
 //!
 //! 1. The question is checked (`ask::compose`; empty or over 2000 characters is refused
-//!    and the window puts the text back in the input) and the argv built (`ask::argv`).
+//!    and the window puts the text and its chips back) and the argv built (`ask::argv`).
+//!    From the window it carries its chips (`context.rs`): a `[context]` block, and the
+//!    screenshot uploads the worker runs first.
 //! 2. It is stored at once as the user's message (`role` me, id = the request id, in the
 //!    thread), so the window shows it and "Thinking…" under it.
 //! 3. A worker runs `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=8 <kota_host>
 //!    <kota_ask> --id <req> --thread <t>` with the question on stdin (20 s budget,
-//!    `run::exec`). One ask runs at a time; the rest wait in order, so KOTA gets them as typed.
+//!    `run::exec`), after the uploads; a failed upload is the ask's failure and kota-ask
+//!    does not run. One ask runs at a time; the rest wait in order, so KOTA gets them as typed.
 //! 4. Exit 0: done; KOTA answers with `message post --thread <t> --reply-to <req> --id <x>
 //!    [--partial]`. Anything else marks the question failed (`Not sent · ⌘R retries`), puts
 //!    the reason on the window's notice line and, for `message ask`, is the verb's error.
@@ -19,6 +22,7 @@
 use std::sync::mpsc::Sender;
 
 use super::ask;
+use super::context::{self, Attached, Upload};
 use crate::core::card::valid_id;
 use crate::core::later::{self, Answer};
 use crate::core::Cx;
@@ -38,6 +42,10 @@ pub struct Ask {
     pub stdin: String,
     /// Where `message ask` waits for the outcome.
     pub answer: Option<Sender<Answer>>,
+    /// Screenshots to upload before kota-ask runs.
+    pub uploads: Vec<Upload>,
+    /// The chips it was asked with, kept for ⌘R if it does not go out.
+    pub attached: Vec<Attached>,
 }
 
 /// An ask the worker finished.
@@ -46,6 +54,7 @@ pub struct Asked {
     pub req: String,
     pub exit: Exit,
     pub answer: Option<Sender<Answer>>,
+    pub attached: Vec<Attached>,
 }
 
 /// `--thread t` first, then the rest.
@@ -85,17 +94,18 @@ impl Inbox {
             return Err(ASK_USAGE.into());
         }
         let thread = thread.unwrap_or_else(|| self.current_thread(cx));
-        let req = self.ask(&thread, &rest.join(" "), true, cx)?;
+        let req = self.ask_with(&thread, &rest.join(" "), vec![], true, cx)?;
         Ok(format!("Asking KOTA ({req}) in thread {thread}"))
     }
 
-    /// Store question `text` in `thread` and queue it for KOTA; `Ok` is the request id.
-    /// `wait`: the control request answers once ssh is done (`core::later`). A refused
-    /// question stores and sends nothing, and answers at once.
-    pub fn ask(&mut self, thread: &str, text: &str, wait: bool, cx: &Cx) -> Result<String, String> {
-        let stdin = ask::compose(text, &[])?;
+    /// Store question `text` with context `attached` in `thread` and queue it for KOTA; `Ok`
+    /// is the request id. `wait`: the control request answers once ssh is done
+    /// (`core::later`). A refused question stores and sends nothing, and answers at once.
+    pub fn ask_with(&mut self, thread: &str, text: &str, attached: Vec<Attached>, wait: bool, cx: &Cx) -> Result<String, String> {
         let req = (self.env.new_id)();
         let s = &self.settings;
+        let (items, uploads) = context::plan(&attached, &s.kota_host, &s.attach_dir, &req)?;
+        let stdin = ask::compose(text, &items)?;
         let argv = ask::argv(&s.kota_host, &s.kota_ask, &req, thread)?;
         let m = Message {
             id: req.clone(),
@@ -108,7 +118,7 @@ impl Inbox {
         cx.store.put_message(&m, self.keep())?;
         self.chat.notice = None;
         let answer = wait.then(later::answer_later);
-        self.chat.queue.push_back(Ask { req: req.clone(), argv, stdin, answer });
+        self.chat.queue.push_back(Ask { req: req.clone(), argv, stdin, answer, uploads, attached });
         self.pump();
         Ok(req)
     }
@@ -124,14 +134,18 @@ impl Inbox {
         }
     }
 
-    /// Mark failed question `q` as sent again and queue it, under its own id.
+    /// Mark failed question `q` as sent again and queue it, under its own id and with the
+    /// chips it was asked with.
     fn resend(&mut self, q: Message, thread: &str, cx: &Cx) -> Result<(), String> {
-        let stdin = ask::compose(&q.body, &[])?;
-        let argv = ask::argv(&self.settings.kota_host, &self.settings.kota_ask, &q.id, thread)?;
+        let attached = self.take_unsent(&q.id);
+        let s = &self.settings;
+        let (items, uploads) = context::plan(&attached, &s.kota_host, &s.attach_dir, &q.id)?;
+        let stdin = ask::compose(&q.body, &items)?;
+        let argv = ask::argv(&s.kota_host, &s.kota_ask, &q.id, thread)?;
         let m = Message { state: Progress::Done, ..q };
         cx.store.put_message(&m, self.keep())?;
         self.chat.notice = None;
-        self.chat.queue.push_back(Ask { req: m.id, argv, stdin, answer: None });
+        self.chat.queue.push_back(Ask { req: m.id, argv, stdin, answer: None, uploads, attached });
         Ok(())
     }
 
@@ -150,10 +164,14 @@ impl Inbox {
             stdin: a.stdin,
             budget: ask::BUDGET,
         };
-        let (exec, req) = (self.chat.hooks.ask, a.req);
-        let answer = a.answer.clone();
-        let failed = Asked { req: req.clone(), exit: Exit::Failed(run::NO_THREAD.into()), answer };
-        let work = move || Asked { req, exit: exec(&job), answer: a.answer };
+        let (exec, upload, req) = (self.chat.hooks.ask, self.chat.hooks.upload, a.req);
+        let (answer, attached) = (a.answer.clone(), a.attached.clone());
+        let failed = Asked { req: req.clone(), exit: Exit::Failed(run::NO_THREAD.into()), answer, attached };
+        let (uploads, attached) = (a.uploads, a.attached);
+        let work = move || {
+            let exit = context::upload_all(upload, &uploads).map_or_else(Exit::Failed, |()| exec(&job));
+            Asked { req, exit, answer: a.answer, attached }
+        };
         self.chat.done.spawn("flick-chat-ask", work, failed, self.env.changed);
     }
 
@@ -171,6 +189,7 @@ impl Inbox {
             // The ask's error stands whether or not the mark is saved.
             let _ = cx.store.put_message(&Message { state: Progress::Failed, ..q }, self.keep());
             self.chat.notice = Some(format!("Not sent: {why}"));
+            self.keep_unsent(&done.req, done.attached);
         }
         if let Some(tx) = done.answer {
             let _ = tx.send(match why {
