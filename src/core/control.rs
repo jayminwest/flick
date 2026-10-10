@@ -132,10 +132,13 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 }
 
 /// Requests a network caller may not send: `(module, verbs)`, where no verbs means every
-/// request to that module (or the bare word, for `reload`). These change config, run code,
-/// read the screen, write files or delete data that cannot come back (`task rm` drops the
-/// task's tracked time). Review this table when a module gains a verb with side
-/// effects. `remote` is handled apart: only `remote status` is allowed.
+/// request to that module (or the bare word, for `reload`). A verb may be several words
+/// (`card press`): it matches when the request's words after the module start with them,
+/// so `message card press` is denied while `message card post` is not. These change config,
+/// run code, take the keyboard, read the screen, write files or delete data that cannot
+/// come back (`task rm` drops the task's tracked time). Review this table when a module
+/// gains a verb with side effects. `remote` is handled apart: only `remote status` is
+/// allowed.
 const NET_DENIED: &[(&str, &[&str])] = &[
     ("reload", &[]),
     ("flick", &["rebuild", "cancel"]),
@@ -145,31 +148,40 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("capture", &[]),
     ("feedback", &["resolve"]),
     ("task", &["rm"]),
+    ("script", &["run"]),
+    ("message", &["card press", "card focus"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.
 const REMOTE_MODULE: &str = "remote";
 
 /// Whether a network caller may send `words` (a request after `split_flags`). `Err` is the
-/// refusal to send back. Everything not denied here is allowed; modules still apply their
-/// own remote guards, since every network request has `Cx::remote` set.
+/// refusal to send back, naming the module and the denied verb's words. Everything not
+/// denied here is allowed; modules still apply their own remote guards, since every network
+/// request has `Cx::remote` set.
 pub fn net_policy(words: &[String]) -> Result<(), String> {
-    let (module, verb) = match words {
-        [] => return Ok(()),
-        [module, rest @ ..] => (module.as_str(), rest.first().map(String::as_str)),
+    let Some((module, rest)) = words.split_first() else { return Ok(()) };
+    let first = rest.first().map(String::as_str);
+    let starts = |verb: &str| {
+        let verb: Vec<&str> = verb.split(' ').collect();
+        rest.len() >= verb.len() && rest.iter().zip(&verb).all(|(w, v)| w == v)
     };
     let denied = if module == REMOTE_MODULE {
-        verb != Some("status")
+        (first != Some("status")).then(|| first.unwrap_or_default())
     } else {
-        NET_DENIED.iter().any(|(m, verbs)| {
-            *m == module && (verbs.is_empty() || verb.is_some_and(|v| verbs.contains(&v)))
+        NET_DENIED.iter().filter(|(m, _)| m == module).find_map(|(_, verbs)| {
+            if verbs.is_empty() {
+                Some(first.unwrap_or_default())
+            } else {
+                verbs.iter().copied().find(|v| starts(v))
+            }
         })
     };
-    if !denied {
-        return Ok(());
+    match denied {
+        None => Ok(()),
+        Some("") => Err(format!("{module}: not allowed over the network")),
+        Some(verb) => Err(format!("{module} {verb}: not allowed over the network")),
     }
-    let what = verb.map_or_else(|| module.to_string(), |v| format!("{module} {v}"));
-    Err(format!("{what}: not allowed over the network"))
 }
 
 /// What the network transport should serve: built by the remote module from `[remote]`.
@@ -376,7 +388,7 @@ mod tests {
             net_policy(&words(&["capture"])).unwrap_err(),
             "capture: not allowed over the network"
         );
-        let allowed: [&[&str]; 12] = [
+        let allowed: [&[&str]; 13] = [
             &[],
             &["task", "ls"],
             &["herdr", "ls"],
@@ -386,11 +398,39 @@ mod tests {
             &["clip", "list"],
             &["activity", "status"],
             &["remote", "status"],
+            &["remote", "status", "x"],
             &["flick", "version"],
             &["keys", "list"],
             &["feedback", "add", "hi"],
         ];
         for req in allowed {
+            assert_eq!(net_policy(&words(req)), Ok(()), "{req:?}");
+        }
+    }
+
+    #[test]
+    fn multi_word_verbs_deny_only_that_verb() {
+        let refusal = |req: &[&str]| net_policy(&words(req)).unwrap_err();
+        assert_eq!(
+            refusal(&["message", "card", "press", "c1", "ok"]),
+            "message card press: not allowed over the network"
+        );
+        assert_eq!(
+            refusal(&["message", "card", "focus"]),
+            "message card focus: not allowed over the network"
+        );
+        assert_eq!(refusal(&["script", "run", "Lock"]), "script run: not allowed over the network");
+        assert_eq!(refusal(&["remote", ""]), "remote: not allowed over the network");
+        for req in [
+            &["message", "card", "post", "--stdin"][..],
+            &["message", "card"],
+            &["message", "card", "pressed"],
+            &["message", "press"],
+            &["message", "post", "card", "press"],
+            &["message", "focus"],
+            &["script"],
+            &["script", "ls"],
+        ] {
             assert_eq!(net_policy(&words(req)), Ok(()), "{req:?}");
         }
     }

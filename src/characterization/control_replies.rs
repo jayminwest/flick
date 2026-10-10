@@ -188,6 +188,9 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["capture"], "capture"),
         (&["feedback", "resolve", "x"], "feedback resolve"),
         (&["task", "rm", "3"], "task rm"),
+        (&["script", "run", "Lock"], "script run"),
+        (&["message", "card", "press", "c1", "ok"], "message card press"),
+        (&["message", "card", "focus"], "message card focus"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
@@ -223,6 +226,19 @@ fn network_requests_are_remote_even_without_the_flag() {
     let post = ["message", "post", "--reply-to", "k1", "hi"].map(String::from);
     assert_eq!(net_policy(&post), Ok(()));
     assert_eq!(net_reply(&["message", "ls", "--json"]), r#"{"ok":[]}"#);
+    // Card verbs other than press and focus are for peers too: posting a card passes the
+    // policy (the deny table matches `card press`, not every `card` verb).
+    let card = ["message", "card", "post", "{\"id\":\"c1\"}"].map(String::from);
+    assert_eq!(net_policy(&card), Ok(()));
+    for verb in ["get", "ls", "show", "dismiss", "spec"] {
+        let req = ["message", "card", verb].map(String::from);
+        assert_eq!(net_policy(&req), Ok(()), "{verb}");
+    }
+    // Scripts run only locally: the same request that peers are refused answers here.
+    assert_eq!(
+        run(vec!["script".into(), "run".into(), "Lock".into()], Flags::default()).to_line(),
+        r#"{"error":"script: no command \"Lock\" (none in [[script.commands]])"}"#
+    );
     // Network callers may read the toggle; it stays off by default.
     assert_eq!(
         net_reply(&["remote", "status", "--json"]),

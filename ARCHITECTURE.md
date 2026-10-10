@@ -380,10 +380,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   5 s). Tests use fakes and never run the CLI.
 - Network policy: `core::control::net_policy` is a deny table, not an allowlist. A network
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
-  `quicklink add|remove`, `capture` (any verb), `feedback resolve` or `task rm`, and of
-  `remote` only `remote status`. `["events"]` needs `[remote] events = true`. Everything
+  `quicklink add|remove`, `capture` (any verb), `feedback resolve`, `task rm`, `script run`
+  or `message card press|focus`, and of `remote` only `remote status`. A table verb may be
+  several words; it matches a prefix of the words after the module, so `message card press`
+  is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
-  `message` (all verbs, notably `post`) is allowed on purpose: peers post messages to this
+  `message` (every verb but `card press|focus`, notably `post`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
   reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
@@ -408,6 +410,11 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
   runs in this process (launcher, help, snapshot, import-raycast, config example) is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
+- `--stdin` (`src/cli/stdin.rs`): before a request is sent, locally or to a host, a request
+  word equal to `--stdin` is replaced by stdin's contents, verbatim. At most one such word;
+  twice, or stdin a terminal, exits 2. Over 16 KiB or not UTF-8 exits 1 and sends nothing.
+  Requests without it never read stdin. The server never sees the word, so this is a client
+  convenience (keeps card JSON off argv), not part of the protocol.
 
 ## Build stamp, install and rebuild
 
