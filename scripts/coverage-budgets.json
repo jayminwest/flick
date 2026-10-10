@@ -72,6 +72,8 @@
     "src/platform/ink/legend.rs": 100.0,
     "src/platform/ink/model.rs": 100.0,
     "src/platform/pill/layout.rs": 100.0,
+    "src/platform/surface/geometry.rs": 100.0,
+    "src/platform/surface/keys.rs": 100.0,
     "src/root.rs": 100.0
   }
 }

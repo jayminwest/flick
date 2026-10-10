@@ -10,14 +10,14 @@
 use objc2::rc::Retained;
 use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSApplication, NSBackingStoreType, NSButton, NSColor, NSEvent, NSFont, NSImage, NSImageScaling,
-    NSImageView, NSLineBreakMode, NSPanel, NSResponder, NSTextAlignment, NSTextField, NSTextView,
-    NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
-    NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSBackingStoreType, NSButton, NSColor, NSEvent, NSFont, NSImage, NSImageScaling, NSImageView,
+    NSLineBreakMode, NSPanel, NSResponder, NSTextAlignment, NSTextField, NSTextView, NSView,
+    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
+    NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_foundation::{NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
 
-use crate::platform::{panel as launcher, timer};
+use crate::platform::{edit, timer};
 
 const LEVEL: isize = 25;
 /// The close button's side, and the square in the top right corner that it answers to.
@@ -47,18 +47,7 @@ define_class!(
         // (mx-43d3f4).
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
-            let flags = event.modifierFlags();
-            let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
-            let chars = chars.as_deref().unwrap_or("");
-            let only = launcher::command_only(flags);
-            launcher::edit_action(only, launcher::command_shift(flags), chars).is_some_and(
-                |action| {
-                    let app = NSApplication::sharedApplication(self.mtm());
-                    // SAFETY: a standard edit action, a nil target (the responder chain) and
-                    // the panel as sender.
-                    unsafe { app.sendAction_to_from(action, None, Some(self)) }
-                },
-            )
+            edit::send(event, self)
                 // SAFETY: the superclass method, with the argument it was called with.
                 || unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }

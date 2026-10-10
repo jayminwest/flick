@@ -12,18 +12,18 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSApplication, NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl,
-    NSControlTextEditingDelegate, NSEvent, NSEventModifierFlags, NSFocusRingType, NSFont,
-    NSFontWeightMedium, NSImage, NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField,
-    NSTextFieldDelegate, NSTextView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
-    NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowCollectionBehavior,
-    NSWindowDelegate, NSWindowStyleMask,
+    NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl, NSControlTextEditingDelegate,
+    NSEvent, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSPanel, NSResponder, NSScreen,
+    NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView, NSVisualEffectBlendingMode,
+    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
+    NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
     NSRunLoop, NSSize,
 };
 
+use super::edit::{self, command_only};
 pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
 pub use rows::{Frame, Icon, Row, render};
@@ -88,14 +88,7 @@ define_class!(
             let chars = chars.as_deref().unwrap_or("");
             let key = key_equivalent(command_only(flags), chars, event.keyCode());
             key.is_some_and(send_key)
-                || edit_action(command_only(flags), command_shift(flags), chars).is_some_and(
-                    |action| {
-                        let app = NSApplication::sharedApplication(self.mtm());
-                        // SAFETY: a standard edit action, a nil target (the responder chain)
-                        // and the panel as sender.
-                        unsafe { app.sendAction_to_from(action, None, Some(self)) }
-                    },
-                )
+                || edit::send(event, self)
                 // SAFETY: the superclass method, with the argument it was called with.
                 || unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
@@ -165,16 +158,6 @@ fn send_key(key: Key) -> bool {
     HANDLERS.get().is_some_and(|h| (h.key)(key))
 }
 
-/// Whether ⌘ is the only modifier held (Caps Lock, Fn and the keypad flag don't count).
-pub(in crate::platform) fn command_only(flags: NSEventModifierFlags) -> bool {
-    let held = flags
-        & (NSEventModifierFlags::Shift
-            | NSEventModifierFlags::Control
-            | NSEventModifierFlags::Option
-            | NSEventModifierFlags::Command);
-    held == NSEventModifierFlags::Command
-}
-
 /// The key command for a key equivalent: `chars` ignores modifiers, `key_code` is the virtual
 /// key (36 Return, 76 keypad Enter).
 fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key> {
@@ -187,35 +170,6 @@ fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key>
     } else {
         None
     }
-}
-
-/// Whether ⌘ and ⇧ are the only modifiers held.
-pub(in crate::platform) fn command_shift(flags: NSEventModifierFlags) -> bool {
-    let held = flags
-        & (NSEventModifierFlags::Shift
-            | NSEventModifierFlags::Control
-            | NSEventModifierFlags::Option
-            | NSEventModifierFlags::Command);
-    held == NSEventModifierFlags::Command | NSEventModifierFlags::Shift
-}
-
-/// The standard edit action for a key equivalent. An app without a main menu has no Edit menu
-/// to send these, so the panel sends them itself.
-pub(in crate::platform) fn edit_action(
-    command_only: bool,
-    command_shift: bool,
-    chars: &str,
-) -> Option<Sel> {
-    let c = chars.to_ascii_lowercase();
-    Some(match (command_only, command_shift, c.as_str()) {
-        (true, _, "x") => sel!(cut:),
-        (true, _, "c") => sel!(copy:),
-        (true, _, "v") => sel!(paste:),
-        (true, _, "a") => sel!(selectAll:),
-        (true, _, "z") => sel!(undo:),
-        (_, true, "z") => sel!(redo:),
-        _ => return None,
-    })
 }
 
 fn key_for(sel: Sel) -> Option<Key> {
@@ -455,12 +409,6 @@ mod tests {
 
     #[test]
     fn cmd_k_and_cmd_enter_need_command_alone() {
-        use NSEventModifierFlags as F;
-        assert!(command_only(F::Command));
-        assert!(command_only(F::Command | F::CapsLock | F::NumericPad | F::Function));
-        assert!(!command_only(F::Command | F::Shift));
-        assert!(!command_only(F::Option));
-
         assert_eq!(key_equivalent(true, "k", 40), Some(Key::CmdK));
         assert_eq!(key_equivalent(true, "K", 40), Some(Key::CmdK));
         assert_eq!(key_equivalent(true, "\r", 36), Some(Key::CmdEnter));
@@ -471,25 +419,5 @@ mod tests {
         }
         assert_eq!(key_equivalent(false, "k", 40), None);
         assert_eq!(key_equivalent(false, "\r", 36), None);
-    }
-
-    #[test]
-    fn edit_keys_send_the_standard_edit_actions() {
-        use NSEventModifierFlags as F;
-        assert!(command_shift(F::Command | F::Shift | F::CapsLock));
-        assert!(!command_shift(F::Command));
-        assert!(!command_shift(F::Command | F::Shift | F::Option));
-
-        let pairs = [("x", sel!(cut:)), ("c", sel!(copy:)), ("v", sel!(paste:))];
-        for (c, action) in pairs {
-            assert_eq!(edit_action(true, false, c), Some(action));
-        }
-        assert_eq!(edit_action(true, false, "a"), Some(sel!(selectAll:)));
-        assert_eq!(edit_action(true, false, "z"), Some(sel!(undo:)));
-        assert_eq!(edit_action(false, true, "Z"), Some(sel!(redo:)));
-        // Without ⌘ alone (or ⇧⌘ for redo) the key types, and other letters are not edits.
-        assert_eq!(edit_action(false, false, "v"), None);
-        assert_eq!(edit_action(false, true, "v"), None);
-        assert_eq!(edit_action(true, false, "k"), None);
     }
 }
