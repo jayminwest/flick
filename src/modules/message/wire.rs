@@ -78,6 +78,6 @@ mod tests {
         assert_eq!(base36(36 * 36 + 35), "10z");
         let (a, b) = (new_id(), new_id());
         assert_ne!(a, b);
-        assert!(a.starts_with('m') && crate::modules::message::text::valid_id(&a), "{a}");
+        assert!(a.starts_with('m') && crate::core::card::valid_id(&a), "{a}");
     }
 }

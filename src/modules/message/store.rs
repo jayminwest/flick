@@ -8,6 +8,9 @@ use crate::core::store::Store;
 /// Append only.
 pub const MIGRATIONS: &[&str] = &[
     "CREATE TABLE messages (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, title TEXT, body TEXT NOT NULL, url TEXT, reply_to TEXT, context TEXT, pending INTEGER NOT NULL DEFAULT 0);",
+    // Cards (plan flick-7da1): `card` is the normalized card JSON (`core::card::to_json`),
+    // NULL for a text message; `remote` is 1 when it was posted over the network.
+    "ALTER TABLE messages ADD COLUMN card TEXT; ALTER TABLE messages ADD COLUMN remote INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// One posted message.
@@ -29,9 +32,27 @@ pub struct Message {
     pub context: Option<String>,
     /// A placeholder its reply replaces.
     pub pending: bool,
+    /// A card's normalized JSON (`core::card::to_json`); `body` then holds its plain text.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "as_json")]
+    pub card: Option<String>,
+    /// Posted over the network (`Cx::remote`): a card from an untrusted origin.
+    #[serde(skip_serializing_if = "is_false")]
+    pub remote: bool,
 }
 
-const COLUMNS: &str = "id, ts, title, body, url, reply_to, context, pending";
+/// A stored card as its JSON object rather than a string.
+#[expect(clippy::ref_option, reason = "serde's serialize_with passes &T")]
+fn as_json<S: serde::Serializer>(card: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+    let value = card.as_deref().and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok());
+    value.serialize(s)
+}
+
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde's skip_serializing_if passes &T")]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+const COLUMNS: &str = "id, ts, title, body, url, reply_to, context, pending, card, remote";
 
 fn row(r: &Row) -> rusqlite::Result<Message> {
     Ok(Message {
@@ -43,6 +64,8 @@ fn row(r: &Row) -> rusqlite::Result<Message> {
         reply_to: r.get(5)?,
         context: r.get(6)?,
         pending: r.get(7)?,
+        card: r.get(8)?,
+        remote: r.get(9)?,
     })
 }
 
@@ -52,6 +75,8 @@ pub trait Messages {
     fn put_message(&self, m: &Message, keep: usize) -> Result<(), String>;
     /// At most `limit` messages, newest first.
     fn messages(&self, limit: usize) -> Vec<Message>;
+    /// At most `limit` cards (messages with a card), newest first.
+    fn cards(&self, limit: usize) -> Vec<Message>;
     fn message(&self, id: &str) -> Option<Message>;
     /// Remove message `id` if it is pending, and return it.
     fn take_pending(&self, id: &str) -> Option<Message>;
@@ -61,8 +86,8 @@ impl Messages for Store {
     fn put_message(&self, m: &Message, keep: usize) -> Result<(), String> {
         let conn = self.conn();
         conn.execute(
-            &format!("INSERT OR REPLACE INTO messages ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
-            params![m.id, m.ts, m.title, m.body, m.url, m.reply_to, m.context, m.pending],
+            &format!("INSERT OR REPLACE INTO messages ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"),
+            params![m.id, m.ts, m.title, m.body, m.url, m.reply_to, m.context, m.pending, m.card, m.remote],
         )
         .map_err(|e| format!("message: can't save: {e}"))?;
         let keep = i64::try_from(keep).unwrap_or(i64::MAX);
@@ -75,10 +100,11 @@ impl Messages for Store {
     }
 
     fn messages(&self, limit: usize) -> Vec<Message> {
-        let sql = format!("SELECT {COLUMNS} FROM messages ORDER BY ts DESC, rowid DESC LIMIT ?1");
-        let Ok(mut stmt) = self.conn().prepare(&sql) else { return vec![] };
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-        stmt.query_map([limit], row).map(|rows| rows.flatten().collect()).unwrap_or_default()
+        newest(self, "", limit)
+    }
+
+    fn cards(&self, limit: usize) -> Vec<Message> {
+        newest(self, "WHERE card IS NOT NULL", limit)
     }
 
     fn message(&self, id: &str) -> Option<Message> {
@@ -91,6 +117,14 @@ impl Messages for Store {
         let _ = self.conn().execute("DELETE FROM messages WHERE id = ?1", [id]);
         Some(m)
     }
+}
+
+/// At most `limit` messages matching `filter` (a WHERE clause or ""), newest first.
+fn newest(store: &Store, filter: &str, limit: usize) -> Vec<Message> {
+    let sql = format!("SELECT {COLUMNS} FROM messages {filter} ORDER BY ts DESC, rowid DESC LIMIT ?1");
+    let Ok(mut stmt) = store.conn().prepare(&sql) else { return vec![] };
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    stmt.query_map([limit], row).map(|rows| rows.flatten().collect()).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -132,5 +166,30 @@ mod tests {
         assert!(s.message("p").is_none());
         assert!(s.take_pending("p").is_none());
         assert_eq!(s.message("q").map(|m| m.pending), Some(false));
+    }
+
+    #[test]
+    fn cards_keep_their_json_and_origin() {
+        let s = store();
+        let card = Message { card: Some(r#"{"id":"c","title":"T"}"#.into()), remote: true, ..msg("c", 2) };
+        s.put_message(&msg("t", 1), 5).unwrap();
+        s.put_message(&card, 5).unwrap();
+        assert_eq!(s.message("c"), Some(card.clone()));
+        assert_eq!(s.cards(10), [card]);
+        assert_eq!(s.messages(10).len(), 2);
+        // `ls --json`: the card as an object, `remote` only when set.
+        let json = serde_json::to_string(&s.messages(10)).unwrap();
+        assert!(json.contains(r#""card":{"id":"c","title":"T"},"remote":true}"#), "{json}");
+        assert!(json.ends_with(r#""pending":false}]"#), "{json}");
+    }
+
+    #[test]
+    fn migration_2_keeps_old_rows_as_local_text_messages() {
+        let s = Store::in_memory();
+        s.migrate("message", &MIGRATIONS[..1]).unwrap();
+        s.conn().execute_batch("INSERT INTO messages (id, ts, body) VALUES ('old', 1, 'hi')").unwrap();
+        s.migrate("message", MIGRATIONS).unwrap();
+        let old = s.message("old").unwrap();
+        assert_eq!((old.card, old.remote, old.body.as_str()), (None, false, "hi"));
     }
 }

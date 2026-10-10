@@ -9,7 +9,7 @@ use crate::core::Ranker;
 use crate::core::store::Store;
 
 /// 2026-10-09 18:31:01 UTC.
-const TS: i64 = 1_791_570_661;
+pub(super) const TS: i64 = 1_791_570_661;
 
 thread_local! {
     /// What the fakes saw, in order.
@@ -20,11 +20,11 @@ fn log(line: String) {
     LOG.with(|l| l.borrow_mut().push(line));
 }
 
-fn take_log() -> Vec<String> {
+pub(super) fn take_log() -> Vec<String> {
     LOG.with(|l| std::mem::take(&mut *l.borrow_mut()))
 }
 
-fn inbox(config: &str) -> Inbox {
+pub(super) fn inbox(config: &str) -> Inbox {
     let mut m = Inbox {
         env: Env {
             now: || TS,
@@ -49,35 +49,38 @@ fn inbox(config: &str) -> Inbox {
             open_url: |url| log(format!("open {url}")),
         },
         settings: Settings::default(),
+        dismissed: HashSet::new(),
     };
     m.configure(&parse(config).unwrap().section("message").unwrap().unwrap()).unwrap();
     m
 }
 
-struct Fixture {
-    store: Store,
+pub(super) struct Fixture {
+    pub(super) store: Store,
     ranker: Ranker,
+    /// Requests come from this Mac, not the network.
+    pub(super) local: bool,
 }
 
 impl Fixture {
-    fn new() -> Fixture {
+    pub(super) fn new() -> Fixture {
         let store = Store::in_memory();
         store.migrate("message", store::MIGRATIONS).unwrap();
-        Fixture { store, ranker: Ranker::new() }
+        Fixture { store, ranker: Ranker::new(), local: false }
     }
 
-    fn cx<R>(&mut self, query: &str, json: bool, f: impl FnOnce(&mut Cx) -> R) -> R {
+    pub(super) fn cx<R>(&mut self, query: &str, json: bool, f: impl FnOnce(&mut Cx) -> R) -> R {
         f(&mut Cx {
             query,
             store: &self.store,
             ranker: &mut self.ranker,
             hide: || log("launcher hide".into()),
             json,
-            remote: true,
+            remote: !self.local,
         })
     }
 
-    fn run(&mut self, m: &mut Inbox, json: bool, words: &[&str]) -> Result<String, String> {
+    pub(super) fn run(&mut self, m: &mut Inbox, json: bool, words: &[&str]) -> Result<String, String> {
         let args: Vec<String> = words.iter().map(|w| (*w).to_string()).collect();
         self.cx("", json, |cx| m.command(&args, cx))
     }
