@@ -455,6 +455,8 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   closed, `Event::Locked`, `Event::Sleep` (`wipe_on`), config reload, quit, by hand.
 - With no `[[llm.servers]]` nothing runs; `llm ping|models` start a fetch only when asked
   and wait for it at most 3.5 s on the main thread (the child runs on its thread).
+  `llm ping private [server]` (flick-72b5) is the one verb that reaches a private server:
+  the same bodiless `GET /v1/models`, answering only name, time and model count.
 - Normal chat (`chat.rs`, `view.rs`, `views.rs`, flick-6a0d): with a normal server the root
   item `llm:chat` (⌘K: `models` view, `threads` view) and `[llm] hotkey` show the
   `platform::surface` "llm" (`Input::Multi`, not private, built on the first summon, never
@@ -467,7 +469,7 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   ⌘. is `io::cancel` (the reply so far is kept as stopped), ⌘N a new thread (a reply in
   flight is stopped and kept in its own), ⌘W hide. The model is the `models` view's pick,
   else `default_model`, else the first one `/v1/models` lists (fetched on the first send; the
-  prompt waits for it). `models` lists `llm:model:<server>/<model>` from `State::models`,
+  prompt waits for a list fetched after it, `Chat::asked`, so an old error does not refuse it). `models` lists `llm:model:<server>/<model>` from `State::models`,
   refetched on open; a server's error row `llm:retry:<server>` refetches. `threads` lists
   `llm:thread:<id>`. All window calls go through `chat::Ui` (`wire::UI`; fakes in
   `testkit::UI`).
@@ -478,7 +480,7 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   no `private = true` server the item answers `NO_PRIVATE` and the hotkey returns the
   `private` view saying it; nothing falls back to a normal server. Its handlers queue
   `chat::Note`s in their own static. Its functions take no `Cx`, so they cannot reach the
-  store; it has no control verb, no notification and no log line; its header and window
+  store; it has no control verb (`llm ping private` only lists models), no notification and no log line; its header and window
   title never hold chat text. Model: `default_model` if the private server lists it, else
   the first listed; a prompt sent with no model waits for a list fetched after it (`Open::asked`). ⌘C with nothing selected copies the last reply with
   `pasteboard::set_text_concealed`. Wipes (drop the session, `io::cancel` its stream and

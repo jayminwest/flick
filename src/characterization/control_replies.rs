@@ -210,6 +210,7 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["kota", "ask"], "kota ask"),
         // Every llm verb: a peer must never make this Mac send requests to model servers.
         (&["llm", "ping"], "llm ping"),
+        (&["llm", "ping", "private"], "llm ping"),
         (&["llm", "models", "mlx"], "llm models"),
         (&["llm"], "llm"),
         // A peer must never restart this Mac's services or read its logs (flick-4a4c); the

@@ -90,6 +90,7 @@ What Flick cannot clear: copies that macOS keeps inside the window's text views 
 
 ```bash
 flick llm ping [server]            # does it answer, how fast, how many models
+flick llm ping private [server]    # the same for a private server: models list only, no prompt
 flick llm models [server] [--json] # its models: id, state, context length, capabilities
 ```
 

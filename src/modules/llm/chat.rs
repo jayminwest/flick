@@ -136,12 +136,15 @@ pub struct Chat {
     reply: Option<Reply>,
     /// A prompt waiting for the server's model list.
     waiting: Option<String>,
+    /// The `Models::seq` the waiting prompt needs: a list fetched after it was sent, so an
+    /// error from before (the server was down, then started) does not refuse it.
+    asked: u64,
     notice: Option<String>,
 }
 
 impl Chat {
     pub fn new(ui: Ui) -> Chat {
-        Chat { ui, opened: false, front: None, thread: None, pick: None, reply: None, waiting: None, notice: None }
+        Chat { ui, opened: false, front: None, thread: None, pick: None, reply: None, waiting: None, asked: 0, notice: None }
     }
 
     fn visible(&self) -> bool {
@@ -274,6 +277,14 @@ impl Llm {
         if self.chat.thread.is_none() {
             self.new_thread();
         }
+        if let (Some(t), Ok(server)) = (&self.chat.thread, self.server())
+            && t.model.is_empty()
+        {
+            let listed = self.shared.lock().models.get(&server.name).is_some_and(|m| matches!(m.result, Some(Ok(_))));
+            if !listed {
+                self.chat.asked = io::fetch_models(&self.shared, &server, self.hooks);
+            }
+        }
         self.chat.waiting = Some(text);
         self.retry_waiting(cx);
     }
@@ -297,14 +308,17 @@ impl Llm {
         };
         if unresolved {
             let listed = self.shared.lock().models.get(&server.name).cloned().unwrap_or_default();
-            let first = match listed.result {
-                _ if listed.fetching => return,
-                None => {
-                    io::fetch_models(&self.shared, &server, self.hooks);
-                    return;
-                }
-                Some(Err(e)) => return self.give_back(format!("llm: {}: {e}", server.name)),
-                Some(Ok(list)) => list.into_iter().next(),
+            if listed.fetching {
+                return;
+            }
+            if listed.result.is_none() || listed.seq < self.chat.asked {
+                // Never fetched, or the fetch was stopped before it landed: ask again.
+                self.chat.asked = io::fetch_models(&self.shared, &server, self.hooks);
+                return;
+            }
+            let first = match listed.result.unwrap_or(Err(String::new())) {
+                Err(e) => return self.give_back(format!("llm: {}: {e}", server.name)),
+                Ok(list) => list.into_iter().next(),
             };
             let Some(first) = first else { return self.give_back(format!("llm: {} lists no models", server.name)) };
             if let Some(t) = &mut self.chat.thread {

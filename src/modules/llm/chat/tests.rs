@@ -317,6 +317,27 @@ fn the_model_list_decides_the_first_send() {
     assert_eq!(only("notice", &take_log()), ["llm: vault is private; only the private chat talks to it"]);
 }
 
+/// flick-72b5: the server was down when the window opened, then started. The next prompt
+/// asks for the list again instead of failing on the old error (as the private chat does).
+#[test]
+fn a_prompt_after_a_failed_list_asks_again_and_sends() {
+    let mut f = Fx::new();
+    let mut m = llm(MLX);
+    hotkey(&mut f, &mut m);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while m.shared.lock().models.get("mlx").is_some_and(|l| l.fetching) && Instant::now() < deadline {
+        event(&mut f, &mut m);
+        thread::sleep(Duration::from_millis(2));
+    }
+    let failed = io::Models { result: Some(Err("(7) Failed to connect".into())), ..io::Models::default() };
+    m.shared.lock().models.insert("mlx".into(), failed);
+    take_log();
+    send(&mut f, &mut m, "back up");
+    assert_eq!(m.chat.thread.as_ref().unwrap().model, "qwen3-30b-a3b-4bit");
+    assert_eq!(m.chat.thread.as_ref().unwrap().msgs.len(), 2);
+    assert!(!only("notice", &take_log()).iter().any(|n| n.contains("Failed to connect")));
+}
+
 #[test]
 fn the_root_item_offers_the_picker_and_the_history() {
     let mut f = Fx::new();
