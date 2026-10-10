@@ -377,7 +377,7 @@ fn the_model_list_decides_the_first_send() {
     let mut f = Fx::new();
     let server = |host: &str| format!("[[llm.servers]]\nname = \"{host}\"\nurl = \"http://{host}\"\nprivate = true\n");
     for (host, why) in [
-        ("down", "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server"),
+        ("down", "llm: down: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server (is the server running, and its port published (tailscale serve)?)"),
         ("none", "llm: none lists no models"),
     ] {
         let mut m = llm(&server(host));
@@ -398,12 +398,33 @@ fn the_model_list_decides_the_first_send() {
     opened(&mut f, &mut m);
     lock(&m.private.room).as_mut().unwrap().session.set_model("");
     m.shared.lock().models.remove("vault");
-    send(&mut f, &mut m, "late");
+    queue_private(Note::Submit("late".into()));
+    changed(&mut f, &mut m);
+    // The fetch the prompt started is stopped before it lands; the prompt still goes out.
+    m.shared.stop();
+    m.shared.lock().models.insert("vault".into(), io::Models::default());
+    until(&mut f, &mut m, |m| !busy(m));
     assert_eq!(lock(&m.private.room).as_ref().unwrap().session.entries().len(), 2);
     // A blank prompt (the surface never sends one) is refused.
     queue_private(Note::Submit("  ".into()));
     changed(&mut f, &mut m);
     assert_eq!(only("notice", &take_log()).last().unwrap(), "llm: nothing to send");
+}
+
+/// flick-f4b8: the server was down when the window opened, then started. The next prompt
+/// asks for the list again instead of failing on the old error.
+#[test]
+fn a_prompt_after_a_failed_list_asks_again_and_sends() {
+    let mut f = Fx::new();
+    let mut m = llm(VAULT);
+    opened(&mut f, &mut m);
+    lock(&m.private.room).as_mut().unwrap().session.set_model("");
+    m.shared.lock().models.get_mut("vault").unwrap().result = Some(Err("(7) Failed to connect".into()));
+    take_log();
+    send(&mut f, &mut m, "back up");
+    assert_eq!(model(&m), QWEN);
+    assert_eq!(lock(&m.private.room).as_ref().unwrap().session.entries().len(), 2);
+    assert!(!only("notice", &take_log()).iter().any(|n| n.contains("Failed to connect")));
 }
 
 #[test]

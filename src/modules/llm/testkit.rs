@@ -101,6 +101,7 @@ impl Write for Stdin {
 /// Canned answers by host (`http://<host>/v1/...`):
 /// - `mlx`: `MLX_MODELS` / `STREAM`; `reason`: `REASONING`;
 /// - `down`: curl's connect error, exit 7; `err`: an error body, exit 22;
+/// - `gateway`: a proxy's empty 502 (nothing behind `tailscale serve`), exit 22;
 /// - `junk`: a non-JSON body, exit 0; `empty`: nothing, exit 0;
 /// - `inband`: an error chunk inside the stream; `none`: an empty model list;
 /// - `hang`: blocks until killed; `half`: one text chunk, then blocks until killed;
@@ -123,6 +124,7 @@ fn spawn(argv: &[String]) -> Result<Spawned, String> {
         "down" => ("", "curl: (7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server\n", Some(7), false),
         "err" => (r#"{"error":{"message":"model not found"}}"#, "curl: (22) The requested URL returned error: 404\n", Some(22), false),
         "junk" => ("<html>hi</html>\n", "", Some(0), false),
+        "gateway" => ("", "curl: (22) The requested URL returned error: 502\n", Some(22), false),
         "none" if models => (r#"{"object":"list","data":[]}"#, "", Some(0), false),
         "inband" => ("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\ndata: {\"error\":\"overloaded\"}\n", "", Some(0), false),
         "hang" => ("", "", Some(0), true),
