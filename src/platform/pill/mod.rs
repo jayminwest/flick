@@ -40,7 +40,6 @@ const LEVEL: isize = 25;
 const LEVEL_SECS: f64 = 0.05;
 
 /// What the pill shows.
-#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) shows them"))]
 #[derive(Clone, Copy, Debug)]
 pub enum Phase<'a> {
     /// Recording; the getter returns the input level, 0..=1, read every 50 ms on the main
@@ -78,7 +77,6 @@ static ON_CANCEL: OnceLock<fn()> = OnceLock::new();
 /// Send Esc presses during `Recording`/`Transcribing` to `handler`, on the main thread after
 /// the pill hid and outside any pill state borrow. The first handler wins; it must only
 /// queue work (post an event), never borrow app state. Tests must not call this.
-#[expect(dead_code, reason = "the dictation wiring (flick-a085) cancels through it")]
 pub fn on_cancel(handler: fn()) {
     let _ = ON_CANCEL.set(handler);
 }
@@ -113,7 +111,6 @@ fn next_epoch() -> u64 {
 }
 
 /// Show the pill in `phase`, or redraw it in place.
-#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) shows it"))]
 pub fn show(phase: Phase) {
     let mtm = super::mtm();
     let kind = phase.kind();
@@ -144,7 +141,6 @@ pub fn show(phase: Phase) {
 }
 
 /// Hide the pill and remove its key monitors. Does nothing while hidden.
-#[cfg_attr(not(test), expect(dead_code, reason = "the dictation wiring (flick-a085) hides it"))]
 pub fn hide() {
     next_epoch();
     let monitors = STATE.with_borrow_mut(|s| {
