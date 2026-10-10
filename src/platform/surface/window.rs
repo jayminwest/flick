@@ -21,6 +21,7 @@ use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSRect, NSSiz
 use super::geometry::{Rect, Screen, Size};
 use super::input::{Field, filled, ns_rect};
 use super::keys::{self, Mods};
+use super::transcript::Transcript;
 use super::{Chip, Input, Key, Keystroke, Spec, by_text, by_window, close, handle, relayout};
 use crate::platform::{edit, timer};
 
@@ -202,8 +203,8 @@ pub(super) struct Views {
     pub(super) subtitle: Retained<NSTextField>,
     pub(super) dot: Retained<NSBox>,
     pub(super) rule: Retained<NSBox>,
-    /// The rows area: empty until the transcript step (flick-59ea) fills it.
-    pub(super) body: Retained<NSView>,
+    /// The rows area.
+    pub(super) rows: Transcript,
     pub(super) notice: Retained<NSTextField>,
     pub(super) field: Field,
 }
@@ -261,8 +262,8 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
     let rule: Retained<NSBox> =
         unsafe { msg_send![NSBox::alloc(mtm), initWithFrame: NSRect::ZERO] };
     rule.setBoxType(NSBoxType::Separator);
-    let body = NSView::new(mtm);
-    for v in [&*title as &NSView, &subtitle, &dot, &rule, &body, &notice] {
+    let rows = Transcript::new(mtm);
+    for v in [&*title as &NSView, &subtitle, &dot, &rule, rows.view(), &notice] {
         root.addSubview(v);
     }
     let field = Field::new(mtm, &root, &delegate, spec.placeholder, spec.input == Input::Multi);
@@ -275,7 +276,7 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
         }
         panel.setFrameAutosaveName(&name);
     }
-    Views { panel, root, title, subtitle, dot, rule, body, notice, field }
+    Views { panel, root, title, subtitle, dot, rule, rows, notice, field }
 }
 
 /// Every display, in `AppKit` screen coordinates.
