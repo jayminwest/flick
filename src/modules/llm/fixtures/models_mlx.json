@@ -1,0 +1,1 @@
+{"object":"list","data":[{"id":"qwen3-30b-a3b-4bit","object":"model","owned_by":"mlx-serve","state":"loaded","context_length":40960,"capabilities":["chat","reasoning"]},{"id":"gemma-3-12b-it-4bit","object":"model","owned_by":"mlx-serve","state":"unloaded","capabilities":["chat"]}]}
