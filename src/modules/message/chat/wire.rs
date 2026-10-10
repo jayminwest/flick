@@ -104,6 +104,7 @@ pub const HOOKS: Hooks = Hooks {
     snapshot: |path| surface::snapshot(ID, path),
     context: || context::front(true),
     clipboard: pasteboard::copied_text,
+    copy: pasteboard::set_text,
     shoot,
     chips: |chips| surface::set_chips(ID, chips),
     upload: |argv, png| run::exec_bytes(argv, png.to_vec(), attach::BUDGET),

@@ -92,6 +92,13 @@ pub(in crate::platform) fn text_view(
     selectable: bool,
 ) -> Retained<NSTextView> {
     let view = NSTextView::initWithFrame(NSTextView::alloc(mtm), NSRect::ZERO);
+    show_in(&view, string, selectable);
+    view
+}
+
+/// Make `view` (a new text view, or a subclass of one) borderless and non-editable, showing
+/// `string` edge to edge; `selectable` as in `text_view`.
+pub(super) fn show_in(view: &NSTextView, string: &NSAttributedString, selectable: bool) {
     view.setEditable(false);
     view.setSelectable(selectable);
     view.setRichText(true);
@@ -105,7 +112,6 @@ pub(in crate::platform) fn text_view(
     if let Some(storage) = unsafe { view.textStorage() } {
         storage.setAttributedString(string);
     }
-    view
 }
 
 /// The size of `string` wrapped at `max` points, rounded up (at most `max` wide).

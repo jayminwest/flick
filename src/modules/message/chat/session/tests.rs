@@ -152,6 +152,26 @@ fn a_question_shows_at_once_and_the_reply_streams_into_its_bubble() {
 }
 
 #[test]
+fn cmd_shift_c_copies_the_newest_reply_of_the_thread_shown() {
+    assert_eq!(binding(Keystroke { shift: true, ..key('c') }), Some(Command::CopyReply));
+    assert_eq!(binding(key('c')), None, "⌘C is copy");
+    let (mut f, mut m) = (Fixture::new(), inbox(OK));
+    f.cx("", false, |cx| m.summon(Some("t1".into()), cx));
+    take_log();
+    queue(Note::Key(Command::CopyReply));
+    event(&mut f, &mut m);
+    assert_eq!(only("chat notice", &take_log()), ["No reply to copy yet"]);
+    f.run(&mut m, false, &["post", "--thread", "t1", "--id", "a", "**Two** calls"]).unwrap();
+    f.run(&mut m, false, &["post", "--thread", "t2", "--id", "b", "elsewhere"]).unwrap();
+    take_log();
+    queue(Note::Key(Command::CopyReply));
+    event(&mut f, &mut m);
+    let log = take_log();
+    assert_eq!(only("chat copy", &log), ["**Two** calls"]);
+    assert_eq!(only("chat notice", &log), ["Copied the last reply"]);
+}
+
+#[test]
 fn posts_to_other_threads_or_a_hidden_window_still_alert() {
     let (mut f, mut m) = (Fixture::new(), inbox(OK));
     f.run(&mut m, false, &["post", "--thread", "t1", "--id", "a", "first"]).unwrap();

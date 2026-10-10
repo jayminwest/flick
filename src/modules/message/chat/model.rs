@@ -26,6 +26,7 @@ use crate::core::card::Card;
 use crate::modules::message::card;
 use crate::modules::message::store::{Message, Progress, Role, Thread};
 use crate::modules::message::text;
+use crate::platform::surface::rows::message_text;
 
 /// Seconds a question shows "Thinking…" without an answer; after that KOTA is taken to
 /// have dropped it and the bubble goes.
@@ -194,6 +195,17 @@ pub fn status(list: &[Message], now: i64) -> Status {
 /// The question ⌘R sends again: the newest 'me' message, if it failed.
 pub fn retry(list: &[Message]) -> Option<&Message> {
     list.iter().rfind(|m| m.role == Role::Me).filter(|m| m.state == Progress::Failed)
+}
+
+/// The text ⌘⇧C copies: the newest peer reply in `list` (oldest first) with text, as its
+/// bubble's Copy Message would (`surface::rows::message_text`). Cards and posts still
+/// waiting for their text are skipped; a reply still streaming gives what has arrived.
+pub fn last_reply(list: &[Message]) -> Option<&str> {
+    list.iter()
+        .rev()
+        .filter(|m| m.role == Role::Peer && !m.pending && card::stored(m).is_none())
+        .map(|m| message_text(&m.body))
+        .find(|text| !text.is_empty())
 }
 
 /// A thread's title: its first message (`Thread::first_body`) on one line, clipped.
