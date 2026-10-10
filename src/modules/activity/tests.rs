@@ -259,12 +259,12 @@ fn forget_needs_yes() {
         assert_eq!(run(&mut a, cx, "forget today").unwrap_err(), need);
         assert_eq!(run(&mut a, cx, "forget app com.apple.mail").unwrap_err(), need);
         assert!(run(&mut a, cx, "forget yesterday --yes").unwrap_err().starts_with("activity: usage:"));
-        assert_eq!(run(&mut a, cx, "forget app com.apple.mail --yes").unwrap(), "Deleted 1 spans");
+        assert_eq!(run(&mut a, cx, "forget app com.apple.mail --yes").unwrap(), "Deleted 1 span");
         // Recording goes on from the frontmost app.
         assert_eq!(rows(cx), [(T, T + 60, "Safari".into()), (T + 70, T + 70, "Safari".into())]);
         assert_eq!(run(&mut a, cx, "forget today --yes").unwrap(), "Deleted 2 spans");
         assert_eq!(rows(cx).len(), 1);
-        assert_eq!(run(&mut a, cx, "forget all --yes").unwrap(), "Deleted 1 spans");
+        assert_eq!(run(&mut a, cx, "forget all --yes").unwrap(), "Deleted 1 span");
         assert!(rows(cx).is_empty() && !cx.store.recording());
     });
 }

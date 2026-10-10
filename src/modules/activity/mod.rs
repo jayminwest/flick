@@ -321,7 +321,7 @@ impl Activity {
             self.begin(store, now);
         }
         self.sync(store);
-        Ok(format!("Deleted {n} spans"))
+        Ok(format!("Deleted {n} span{}", if n == 1 { "" } else { "s" }))
     }
 
     fn today_items(&self, store: &Store) -> Vec<Item> {
