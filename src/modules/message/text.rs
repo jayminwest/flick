@@ -86,8 +86,6 @@ pub fn preview(text: &str, max: usize) -> String {
 /// "14:03" for a time on the local day of `now`, else "Oct 9 14:03". `offset` is seconds
 /// east of UTC.
 pub fn stamp(ts: i64, now: i64, offset: i32) -> String {
-    const MONTHS: [&str; 12] =
-        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let local = ts + i64::from(offset);
     let day = local.div_euclid(86_400);
     let secs = local.rem_euclid(86_400);
@@ -98,6 +96,24 @@ pub fn stamp(ts: i64, now: i64, offset: i32) -> String {
     let (_, month, mday) = civil(day);
     format!("{} {mday} {time}", MONTHS[(month - 1) as usize])
 }
+
+/// The local day of `ts` as a transcript divider says it: "Today", "Yesterday", "Oct 9",
+/// or "Oct 9 2025" outside the year of `now`. `offset` is seconds east of UTC.
+#[cfg_attr(not(test), expect(dead_code, reason = "the chat transcript's dividers; wired in flick-eedd"))]
+pub fn day(ts: i64, now: i64, offset: i32) -> String {
+    let day = (ts + i64::from(offset)).div_euclid(86_400);
+    let today = (now + i64::from(offset)).div_euclid(86_400);
+    match today - day {
+        0 => return "Today".into(),
+        1 => return "Yesterday".into(),
+        _ => {}
+    }
+    let (year, month, mday) = civil(day);
+    let label = format!("{} {mday}", MONTHS[(month - 1) as usize]);
+    if year == civil(today).0 { label } else { format!("{label} {year}") }
+}
+
+const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// Days since 1970-01-01 → (year, month 1-12, day 1-31). Howard Hinnant's `civil_from_days`.
 fn civil(days: i64) -> (i64, i64, i64) {
@@ -225,6 +241,17 @@ mod tests {
         assert_eq!(stamp(0, ts, 0), "Jan 1 00:00");
         assert_eq!(civil(-1), (1969, 12, 31));
         assert_eq!(civil(11_016), (2000, 2, 29));
+    }
+
+    #[test]
+    fn days_are_named_relative_to_now() {
+        // 2026-10-09 18:31:01 UTC, PDT: 11:31 local.
+        let ts = 1_791_570_661;
+        assert_eq!(day(ts, ts, -25_200), "Today");
+        assert_eq!(day(ts - 11 * 3600, ts, -25_200), "Today", "00:31 local");
+        assert_eq!(day(ts - 12 * 3600, ts, -25_200), "Yesterday", "23:31 the day before");
+        assert_eq!(day(ts - 2 * 86_400, ts, -25_200), "Oct 7");
+        assert_eq!(day(ts - 365 * 86_400, ts, -25_200), "Oct 9 2025");
     }
 
     #[test]

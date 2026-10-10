@@ -12,9 +12,12 @@
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
 //! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`,
 //! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`. Chat threads
-//! (`post --thread`, `--partial` streaming) are stored per thread; `thread.rs` reads them.
+//! (`post --thread`, `--partial` streaming) are stored per thread; `thread.rs` reads them;
+//! `chat/` is the chat window's pure side (transcript model, ask composer, attach paths).
 
 mod card;
+#[cfg_attr(not(test), expect(dead_code, reason = "the KOTA chat window's pure side; wired in flick-eedd"))]
+mod chat;
 mod dispatch;
 mod local;
 mod pending;
