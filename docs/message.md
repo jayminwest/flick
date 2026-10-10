@@ -48,7 +48,7 @@ A post with `--pending` is a placeholder: an hourglass, a dimmed body, "Waiting 
 
 ## Cards
 
-A card is a message with structure, posted as JSON. The schema, the action vocabulary, the press round trip and examples are in [cards.md](cards.md), the spec KOTA reads with `flick --host <mac> message card spec`; this section is the user side. It shows as a card with its title, blocks (text, key/value rows, lists, progress, choices, fields) and action buttons. It is stored in the same history as its plain text (the `message:<id>` row and `ls` show that text).
+A card is a message with structure, posted as JSON. The schema, the action vocabulary, the press round trip and examples are in [cards.md](cards.md), the spec KOTA reads with `flick --host <mac> message card spec`; this section is the user side. It shows as a card with its title, blocks (text, key/value rows, lists, progress, choices, fields) and action buttons. Text blocks render markdown-lite styled: bold, italic, `code`, fenced code, headings, bullets and links. It is stored in the same history as its plain text (the `message:<id>` row and `ls` show that text).
 
 ```bash
 printf %s "$json" | flick --host my-laptop message card post --stdin   # or: message card post '<json>'
