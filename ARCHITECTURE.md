@@ -408,6 +408,11 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
   runs in this process (launcher, help, snapshot, import-raycast, config example) is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
+- `--stdin` (`src/cli/stdin.rs`): before a request is sent, locally or to a host, a request
+  word equal to `--stdin` is replaced by stdin's contents, verbatim. At most one such word;
+  twice, or stdin a terminal, exits 2. Over 16 KiB or not UTF-8 exits 1 and sends nothing.
+  Requests without it never read stdin. The server never sees the word, so this is a client
+  convenience (keeps card JSON off argv), not part of the protocol.
 
 ## Build stamp, install and rebuild
 
