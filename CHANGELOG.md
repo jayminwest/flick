@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Cards:** `flick message card post --stdin` shows a structured card (text, key/value rows, lists, progress, choices, fields, up to 6 buttons) posted as JSON, usually by KOTA from another Mac. A button runs a local action (open a link or app, copy, a script, a flick request, a shell command after an in-card confirm) or sends the press back to KOTA through `[message] action_command`; KOTA answers by re-posting the card. `card_hotkey` moves the keyboard into a card without activating Flick. `flick message card spec` prints the spec. [Cards](docs/cards.md).
 - **Messages:** new `message` module. `flick message post [--title] [--url] [--reply-to] [--pending] <body>`, locally or from a remote peer, shows a corner card that does not take focus (click opens the link, Esc or a timeout dismisses it), a notification, or both; **Messages** in the launcher lists the history. `[message]` sets `name`, `style`, `position`, `width`, `timeout_secs`, `max_history`, `sound` and `hotkey`. A `--pending` post is replaced by its `--reply-to` reply. [Messages](docs/message.md).
 - **Script commands:** new `[[script.commands]]` table. Each command is a root item that runs `shell` with `/bin/sh -c`; one with `{query}` takes an argument, typed as `<keyword> <text>` and passed as one single-quoted word. A failed command posts a notification. [Script commands](docs/scripts.md).
 
