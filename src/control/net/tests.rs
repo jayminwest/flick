@@ -349,22 +349,52 @@ fn an_address_listed_twice_is_bound_once() {
     net.sync(None).unwrap();
 }
 
+/// Whether a process other than this one listens on `addr`, by `lsof`. A freed ephemeral
+/// port can go to another test process at once; then a failed bind there says nothing.
+fn held_by_another_process(addr: SocketAddr) -> bool {
+    let spec = format!("-iTCP@{addr}");
+    let out = std::process::Command::new("/usr/sbin/lsof")
+        .args(["-nP", &spec, "-sTCP:LISTEN", "-Fp"])
+        .output()
+        .unwrap();
+    let me = std::process::id().to_string();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.strip_prefix('p'))
+        .any(|p| p != me)
+}
+
+/// Start, restart on the same port, stop, then bind that port. `false` when another process
+/// took the port meanwhile, so the round proves nothing.
+fn stop_frees_the_port(net: &'static Net) -> bool {
+    let status = net.sync(Some(settings(&["a"], false))).unwrap();
+    let addr = status.listening[0];
+    // Restart on the same port, as a reload or a toggle does: no listener of the old run may
+    // still hold it.
+    let port = NetSettings { port: addr.port(), ..settings(&["a"], false) };
+    let again = net.sync(Some(port)).unwrap();
+    if again.error.is_some() && held_by_another_process(addr) {
+        net.sync(None).unwrap();
+        return false;
+    }
+    assert_eq!((again.listening.as_slice(), again.error), ([addr].as_slice(), None));
+    net.sync(None).unwrap();
+    // No retry here: the port is free the moment the stop returns.
+    match TcpListener::bind(addr) {
+        Ok(_) => true,
+        Err(e) => {
+            assert!(held_by_another_process(addr), "{addr} still held after the stop: {e}");
+            false
+        }
+    }
+}
+
 #[test]
 fn stopping_frees_every_port_before_it_returns() {
     static HUB: Hub = Hub::new();
     let net = net(Ok(vec!["a"]), &HUB);
-    for _ in 0..3 {
-        let status = net.sync(Some(settings(&["a"], false))).unwrap();
-        let addr = status.listening[0];
-        // Restart on the same port, as a reload or a toggle does: no listener of the old
-        // run may still hold it.
-        let port = NetSettings { port: addr.port(), ..settings(&["a"], false) };
-        let again = net.sync(Some(port)).unwrap();
-        assert_eq!((again.listening.as_slice(), again.error), ([addr].as_slice(), None));
-        net.sync(None).unwrap();
-        // No retry here: the port is free the moment the stop returns.
-        drop(TcpListener::bind(addr).unwrap());
-    }
+    let rounds = (0..20).filter(|_| stop_frees_the_port(net)).take(3).count();
+    assert_eq!(rounds, 3, "other processes kept taking the freed ports");
 }
 
 #[test]

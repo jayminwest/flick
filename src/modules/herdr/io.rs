@@ -72,7 +72,8 @@ pub struct Info {
     pub pong: Option<Pong>,
     /// Why `herdr machine list` failed, when it did.
     pub discovery: Option<String>,
-    /// The last jump's error; cleared by a good jump.
+    /// The newest jump's error; cleared by a good jump. An older jump that ends later
+    /// stores nothing.
     pub jump: Option<String>,
 }
 
@@ -96,6 +97,8 @@ pub struct Shared {
     timer_gen: AtomicU64,
     /// Bumped when the machine list changes, so a late discovery does not overwrite it.
     machines_gen: AtomicU64,
+    /// Bumped by each `jump`; only the newest jump stores its outcome in `Info::jump`.
+    jump_gen: AtomicU64,
 }
 
 /// A poisoned lock still holds usable data: a panicking thread never leaves the fleet
@@ -385,6 +388,7 @@ pub fn jump(
 ) {
     let (sh, t) = (Arc::clone(shared), t.clone());
     let (machine, pane_id, terminal) = (machine.to_string(), pane_id.to_string(), terminal.to_string());
+    let generation = shared.jump_gen.fetch_add(1, Ordering::AcqRel) + 1;
     let _ = thread::Builder::new().name("herdr-jump".into()).spawn(move || {
         let focused = if machine == LOCAL {
             let focused = t.local.focus(&pane_id);
@@ -398,7 +402,11 @@ pub fn jump(
         if let Some(e) = &error {
             eprintln!("flick: herdr: {e}");
         }
-        lock(&sh.info).jump = error;
+        // Checked under the lock, so a newer jump that ends meanwhile always wins.
+        let mut info = lock(&sh.info);
+        if sh.jump_gen.load(Ordering::Acquire) == generation {
+            info.jump = error;
+        }
     });
 }
 
