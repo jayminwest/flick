@@ -82,7 +82,11 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 # A stable identity keeps macOS privacy grants (Accessibility) across rebuilds;
 # ad-hoc signatures change every build, so macOS would ask again each time.
-identity="${FLICK_SIGN_IDENTITY:-$({ security find-identity -v -p codesigning 2>/dev/null || true; } | awk -F'"' '/Apple Development/ {print $2; exit}')}"
+# Not ${FLICK_SIGN_IDENTITY:-$(...)}: macOS /bin/bash 3.2 misparses the quotes inside.
+identity="${FLICK_SIGN_IDENTITY:-}"
+if [[ -z "$identity" ]]; then
+  identity="$({ security find-identity -v -p codesigning 2>/dev/null || true; } | awk -F'"' '/Apple Development/ {print $2; exit}')"
+fi
 if [[ -z "$identity" ]]; then
   identity=-
   echo "warning: no Apple Development identity; ad-hoc signing (Accessibility resets on rebuild)" >&2
