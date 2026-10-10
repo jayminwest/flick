@@ -195,7 +195,8 @@
 # services it checks: "flick sys snapshot" and "flick sys services" (add --json for the
 # fields), and the fleet of [[sys.machine]] below: "flick sys fleet". All are read-only, so
 # peers may ask them over the network. Nothing runs until one is asked or the launcher
-# opens: no timers, no checks in the background unless refresh_secs is set.
+# opens: no timers, no checks in the background unless refresh_secs is set. With at least
+# one [[sys.machine]], the launcher lists "Fleet": each machine and its services.
 #[sys]
 #enabled = true
 # Also poll the fleet in the background every this many seconds (0 = off, else >= 30).

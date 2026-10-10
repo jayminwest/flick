@@ -54,27 +54,46 @@ fn verdict(e: &Entry) -> (Status, &str, Option<f64>) {
 
 /// One line per fact the probe read, then a services summary and the probe's error.
 pub fn snapshot_text(snap: &Snapshot, error: Option<&str>, services: &[Entry], now: u64) -> String {
+    let mut lines = vec![head(snap, now)];
+    for (label, text) in facts(snap) {
+        lines.push(format!("{label:<9}{text}"));
+    }
+    if !services.is_empty() {
+        lines.push(format!("{:<9}{}", "services", summary(services)));
+    }
+    if let Some(e) = error {
+        lines.push(format!("last probe failed: {e}"));
+    }
+    lines.join("\n")
+}
+
+/// `mbp-server · up 3d 13h · read 4s ago`.
+pub fn head(snap: &Snapshot, now: u64) -> String {
     let mut head = vec![snap.host.clone().unwrap_or_else(|| "this Mac".into())];
     if let Some(up) = snap.uptime_secs {
         head.push(format!("up {}", span(up)));
     }
     head.push(format!("read {} ago", ago(now.saturating_sub(snap.at))));
-    let mut lines = vec![head.join(" · ")];
-    let mut row = |label: &str, text: String| lines.push(format!("{label:<9}{text}"));
+    head.join(" · ")
+}
+
+/// Each fact the probe read as (label, text): load, memory, each disk, battery, thermal.
+pub fn facts(snap: &Snapshot) -> Vec<(&'static str, String)> {
+    let mut rows = vec![];
     if let Some([a, b, c]) = snap.cpu_load {
         let cpus = snap.ncpu.map_or(String::new(), |n| format!(" · {n} CPUs"));
-        row("load", format!("{a:.2} {b:.2} {c:.2}{cpus}"));
+        rows.push(("load", format!("{a:.2} {b:.2} {c:.2}{cpus}")));
     }
     let mem = [snap.mem_total.map(bytes), snap.mem_free_pct.map(|p| format!("{p}% free"))];
     let mem: Vec<String> = mem.into_iter().flatten().collect();
     if !mem.is_empty() {
-        row("memory", mem.join(" · "));
+        rows.push(("memory", mem.join(" · ")));
     }
     for d in &snap.disks {
         let used = d.used_pct.map_or(String::new(), |p| format!(" {p}% used ·"));
-        row("disk", format!("{}{used} {} free", d.mount, bytes(d.avail)));
+        rows.push(("disk", format!("{}{used} {} free", d.mount, bytes(d.avail))));
     }
-    row("battery", snap.battery.as_ref().map_or("none".into(), |b| {
+    rows.push(("battery", snap.battery.as_ref().map_or("none".into(), |b| {
         let parts = [
             b.percent.map(|p| format!("{p}%")),
             b.state.clone(),
@@ -82,7 +101,7 @@ pub fn snapshot_text(snap: &Snapshot, error: Option<&str>, services: &[Entry], n
             b.remaining_mins.filter(|m| *m > 0).map(|m| format!("{} left", span(u64::from(m) * 60))),
         ];
         parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
-    }));
+    })));
     if let Some(t) = &snap.thermal {
         let text = if t.nominal {
             "nominal".to_string()
@@ -94,15 +113,9 @@ pub fn snapshot_text(snap: &Snapshot, error: Option<&str>, services: &[Entry], n
             ];
             parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
         };
-        row("thermal", text);
+        rows.push(("thermal", text));
     }
-    if !services.is_empty() {
-        row("services", summary(services));
-    }
-    if let Some(e) = error {
-        lines.push(format!("last probe failed: {e}"));
-    }
-    lines.join("\n")
+    rows
 }
 
 /// `3 ok · 1 fail`, in status order, skipping zero counts.
