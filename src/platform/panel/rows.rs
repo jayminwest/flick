@@ -18,11 +18,32 @@ pub enum Icon<'a> {
     Symbol(&'a str),
 }
 
+/// A row's status tint for a symbol icon (`core::Tone`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tone {
+    #[default]
+    Neutral,
+    Ok,
+    Warn,
+    Error,
+}
+
 pub struct Row<'a> {
     pub title: &'a str,
     pub subtitle: &'a str,
     pub accessory: &'a str,
     pub icon: Icon<'a>,
+    pub tone: Tone,
+}
+
+/// The tint of a symbol icon: the system status colors, which follow light and dark mode.
+fn tint(tone: Tone) -> Retained<NSColor> {
+    match tone {
+        Tone::Neutral => NSColor::secondaryLabelColor(),
+        Tone::Ok => NSColor::systemGreenColor(),
+        Tone::Warn => NSColor::systemOrangeColor(),
+        Tone::Error => NSColor::systemRedColor(),
+    }
 }
 
 /// Everything the panel shows for a list.
@@ -150,7 +171,7 @@ pub fn render(frame: &Frame) {
             row.bg.setTransparent(Some(index) != frame.selected);
 
             row.icon.setImage(icon_image(ui, &item.icon).as_deref());
-            let tint = matches!(item.icon, Icon::Symbol(_)).then(NSColor::secondaryLabelColor);
+            let tint = matches!(item.icon, Icon::Symbol(_)).then(|| tint(item.tone));
             row.icon.setContentTintColor(tint.as_deref());
 
             let title_x = 46.0;

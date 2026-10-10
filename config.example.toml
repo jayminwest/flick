@@ -23,6 +23,12 @@
 # The launcher hotkey.
 #hotkey = "alt+shift+Space"
 
+# --- launcher: the launcher panel itself (not a module: no "enabled").
+#[launcher]
+# Background opacity, 0.6 to 1.0 (clamped). Lower shows more of the desktop through the
+# blur; text and icons stay opaque. 1.0 is the plain blur of earlier versions.
+#opacity = 0.9
+
 # --- app: installed apps in root search. No settings.
 #[app]
 #enabled = true

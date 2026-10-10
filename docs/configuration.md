@@ -32,7 +32,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 ## Per-host overlay
 
@@ -92,6 +92,19 @@ Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `K
 > A global hotkey overrides that shortcut in every app. For example, `cmd+KeyL` would replace the browser address bar. A Hyper key (`cmd+ctrl+alt+shift`) avoids conflicts.
 
 Each module's settings are in its own page: [script commands](scripts.md), [keys](keys.md), [activity](activity.md), [tasks](tasks.md), [herdr](herdr.md), [KOTA](kota.md), [system and fleet](sys.md), [dictation](dictation.md), [capture](capture.md), [feedback](feedback.md), [messages](message.md), [remote](remote.md), and [rebuild](install.md#rebuild-settings).
+
+## Launcher appearance
+
+`[launcher]` sets how the launcher panel looks. It is not a module, so it has no `enabled` key.
+
+```toml
+[launcher]
+opacity = 0.9    # 0.6 to 1.0; lower shows more of the desktop through the blur
+```
+
+`opacity` applies to the blurred background only. Text and icons stay fully opaque. Flick clamps values below 0.6 or above 1.0 into that range, so the text stays easy to read. The default is 0.9. Set 1.0 to get the solid blur of earlier versions. A reload applies a change.
+
+Status icons in some rows have a color: green for running, done or healthy, orange for something that needs a look, red for failed or down. The colors follow light and dark mode. Rows that use them: fleet machines and services and the **Fleet** root item (only while something is wrong), herdr agents (done, blocked), tasks in the task list (running, done) and the rebuild status row (installed, failed).
 
 ## Quicklinks
 

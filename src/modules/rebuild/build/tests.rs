@@ -205,6 +205,16 @@ fn progress_text_for_each_phase() {
 }
 
 #[test]
+fn only_an_installed_or_failed_build_is_tinted() {
+    let tone = |phase| Progress { phase, ..Progress::default() }.tone();
+    assert_eq!(tone(Phase::Installed), Tone::Ok);
+    assert_eq!(tone(Phase::Failed("x".into())), Tone::Error);
+    for phase in [Phase::Idle, Phase::Building, Phase::Installing, Phase::Cancelled] {
+        assert_eq!(tone(phase), Tone::Neutral);
+    }
+}
+
+#[test]
 fn failures_explain_known_causes() {
     const NO_CARGO: &str = "cargo not found on login-shell PATH: install Rust with rustup";
     let src = Path::new("/src/flick");
