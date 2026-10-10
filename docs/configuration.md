@@ -32,7 +32,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `task`, `keys`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 Hotkeys use `cmd`, `alt`, `ctrl`, and `shift` with key names such as `Space`, `KeyA`, `Digit1`, `ArrowLeft`, and `Backquote`. Window action names are the command titles in kebab case: `top-left-quarter`, `first-two-thirds`, `almost-maximize`.
 
