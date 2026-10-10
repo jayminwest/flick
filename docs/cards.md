@@ -146,7 +146,7 @@ stdin: {"env":"prod","note":"ship it","tags":["a","b"]}   then EOF
 - **Exit 2**: rejected. The last non-empty stderr line (≤ 200 chars) shows as `KOTA rejected: <line>`; actions come back.
 - **Anything else** (another code, a signal, a spawn failure): `Sending to KOTA failed (exit n): <last stderr line>`; actions come back.
 - **20 s budget** from spawn to exit, then the command is killed: "No answer from KOTA in 20 s". Queue the work and exit; do the work after.
-- A press on a pending or running card is ignored, so a press is never sent twice. A card dismissed while its press runs drops the result.
+- A press on a `pending` or `done` card, or on one whose press still runs, is ignored (`card press` answers `Card <id> is done: its actions are off`), so a press is never sent twice and a finished card never runs its actions again. A card dismissed while its press runs drops the result.
 
 The KOTA side (`kota-ask --action`) should: read the values, queue a tick that names the card and action, exit 0 at once, then re-post the card (`done` with the outcome, `open` with the next question, or `error` with what failed).
 
