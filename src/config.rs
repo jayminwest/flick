@@ -152,6 +152,7 @@ hotkey = "alt+shift+Space"
 # position = "top-right"
 # width = 380
 # timeout_secs = 20
+# max_cards = 4
 # max_history = 50
 # sound = true
 # hotkey = "cmd+ctrl+alt+shift+KeyM"

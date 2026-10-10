@@ -106,7 +106,8 @@ fn default_config_message_example_parses_uncommented() {
     let section = config.section("message").unwrap().unwrap();
     let message: Table = section.get().unwrap();
     assert_eq!(message.get("name").and_then(Value::as_str), Some("KOTA"));
-    assert_eq!(message.len(), 8);
+    assert_eq!(message.get("max_cards").and_then(Value::as_integer), Some(4));
+    assert_eq!(message.len(), 9);
     assert!(!DEFAULT_CONFIG.contains("\n[message]"), "the default leaves [message] commented");
 }
 
