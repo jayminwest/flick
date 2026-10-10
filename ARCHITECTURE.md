@@ -447,6 +447,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
   a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
   Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
+  `kota status` (cached presence, no I/O) is allowed on purpose too.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
   reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
   refusals are pinned in `src/characterization/control_replies.rs`.
