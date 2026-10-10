@@ -122,7 +122,6 @@ pub enum Status {
 /// A removable chip above the input; clicking it reports `chip_removed` with its index (the
 /// module then calls `set_chips` without it).
 #[derive(Clone, Copy, Debug)]
-#[expect(dead_code, reason = "context chips in chat (flick-65bd)")]
 pub struct Chip<'a> {
     pub label: &'a str,
     /// An SF Symbol name; empty for none.
@@ -337,7 +336,6 @@ pub fn set_header(id: SurfaceId, header: &Header) {
 }
 
 /// Replace the chips; each shows its symbol, its label and a remove mark.
-#[expect(dead_code, reason = "context chips in chat (flick-65bd)")]
 pub fn set_chips(id: SurfaceId, chips: &[Chip]) {
     let Some(s) = get(id) else { return };
     let mtm = mtm();

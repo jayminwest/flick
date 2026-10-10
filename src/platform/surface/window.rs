@@ -382,7 +382,6 @@ pub(super) fn screens(mtm: MainThreadMarker) -> Vec<Screen> {
 }
 
 /// A chip: its symbol, label and a remove mark, reporting `chipPressed:` with tag `index`.
-#[expect(dead_code, reason = "context chips in chat (flick-65bd)")]
 pub(super) fn chip_button(mtm: MainThreadMarker, chip: &Chip, index: usize) -> Retained<NSButton> {
     let target = delegate(mtm);
     let title = ns(&format!("{}  \u{d7}", chip.label));
