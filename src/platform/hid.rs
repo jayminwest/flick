@@ -122,10 +122,13 @@ fn to_json(mappings: &[Mapping]) -> String {
 /// )
 /// ```
 ///
+/// On a Mac with several HID services and no global mapping, `--get` prints a per-service
+/// table (`RegistryID  Key  Value` header, one row per service); all `(null)` means unset.
+///
 /// `None` for anything else, so a format change never writes back a list that lost entries.
 fn parse(out: &str) -> Option<Vec<Mapping>> {
     let out = out.trim();
-    if out.is_empty() || out == "(null)" {
+    if out.is_empty() || out == "(null)" || all_null_table(out) {
         return Some(Vec::new());
     }
     let body = out.strip_prefix('(')?.strip_suffix(')')?.trim();
@@ -138,6 +141,16 @@ fn parse(out: &str) -> Option<Vec<Mapping>> {
         rest = open[close + 1..].trim_start().trim_start_matches(',').trim_start();
     }
     Some(mappings)
+}
+
+/// The per-service table with every value `(null)`.
+fn all_null_table(out: &str) -> bool {
+    let mut lines = out.lines();
+    let header: Vec<&str> = lines.next().unwrap_or_default().split_whitespace().collect();
+    header == ["RegistryID", "Key", "Value"]
+        && lines.all(|l| {
+            matches!(l.split_whitespace().collect::<Vec<_>>()[..], [_, "UserKeyMapping", "(null)"])
+        })
 }
 
 /// `Key = value;` pairs; exactly Src and Dst.
@@ -241,6 +254,8 @@ mod tests {
         assert_eq!(parse(&listing(&[OTHER, OURS])), Some(vec![OTHER, OURS]));
         let hex = "({HIDKeyboardModifierMappingSrc = 0x700000039; HIDKeyboardModifierMappingDst = 0X70000006D;})";
         assert_eq!(parse(hex), Some(vec![OURS]));
+        let table = "RegistryID  Key                   Value\n10000075d   UserKeyMapping   (null)\n100000a4e   UserKeyMapping   (null)\n";
+        assert_eq!(parse(table), Some(vec![]));
     }
 
     #[test]
@@ -254,6 +269,8 @@ mod tests {
             "( { HIDKeyboardModifierMappingSrc 1; } )",
             "( { HIDKeyboardModifierMappingSrc = 1; HIDKeyboardModifierMappingDst = 2; ",
             "( x )",
+            "RegistryID  Key  Value\n10000075d   UserKeyMapping   (\n",
+            "RegistryID  Key\n10000075d   UserKeyMapping   (null)\n",
         ] {
             assert_eq!(parse(bad), None, "{bad}");
         }
