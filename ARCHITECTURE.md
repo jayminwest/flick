@@ -486,14 +486,22 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   no view. As with KOTA chat, the pid in front at summon is made frontmost again on hide if
   it still is in front. Every surface handler queues a `chat::Note` in a static and posts
   `ModuleChanged { module: "llm" }`; `on_event` drains the notes, then `Shared::take`s the
-  reply's pieces, then redraws if the window shows. Return sends the whole thread
-  (`system_prompt` first) through `openai::chat_body` and `io::chat`; one reply at a time.
+  reply's pieces, then redraws if the window shows. Return sends the newest turns of the
+  thread that fit `[llm] context_chars` with `system_prompt` (`context::fit`, flick-5dfe:
+  characters, the prompt always, never starting with a reply; 0 sends all) through
+  `openai::chat_body` and `io::chat`; one reply at a time.
   ⌘. is `io::cancel` (the reply so far is kept as stopped), ⌘N a new thread (a reply in
-  flight is stopped and kept in its own), ⌘W hide. The model is the `models` view's pick,
+  flight is stopped and kept in its own), ⌘W hide. The model is the `models` view's pick
+  (kept in `llm_pick`, read once on first use, ignored while its server is not a normal one),
   else `default_model`, else the first one `/v1/models` lists (fetched on the first send; the
   prompt waits for a list fetched after it, `Chat::asked`, so an old error does not refuse it). `models` lists `llm:model:<server>/<model>` from `State::models`,
-  refetched on open; a server's error row `llm:retry:<server>` refetches. `threads` lists
-  `llm:thread:<id>`. All window calls go through `chat::Ui` (`wire::UI`; fakes in
+  refetched on open; a server's error row `llm:retry:<server>` refetches (a `model:` id naming
+  a private server is refused). `threads` lists `llm:thread:<id>`; its ⌘K `delete` returns a
+  destructive `Confirm` (token `delete:<id>`), and `confirmed` stops and keeps a reply in
+  flight on that thread before `llm_delete`, then shows a new chat. A shown thread whose
+  server is gone from the config or private now moves to `Settings::normal(None)` and
+  `default_model` (`chat::rehome`, on load, summon and send) with a notice; never to a
+  private server. All window calls go through `chat::Ui` (`wire::UI`; fakes in
   `testkit::UI`).
 - Private chat (`private_chat.rs`, flick-c325): the root item `llm:private` (shown with any
   server) and `[llm] private_hotkey` (bound whenever set) show the private surface
@@ -589,7 +597,10 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   (`user`, `assistant`), model, body and `state` (NULL done, `'stopped'`, `'failed'` with
   `error`). Written only with `[llm] history` on: a prompt when sent, a reply when it ends.
   Each write moves its thread to the top and drops the oldest threads past `max_threads`
-  with their messages. The private chat has no path here.
+  with their messages. Delete Chat removes one thread with its messages (`llm_delete`).
+  Migration 2 adds `llm_pick` (flick-5dfe): one row (`id` 1), the `models` view's last
+  server and model, written on each pick regardless of `history`; no chat text. The private
+  chat has no path here.
 
 ## Config
 

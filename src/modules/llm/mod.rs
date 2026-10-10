@@ -11,9 +11,10 @@
 //!   `api_key` goes in a 0600 curl config file that `keyfile.rs` writes and removes.
 //! - `io.rs`: the threads: model lists, streamed replies into an inbox, cancel, watchdog.
 //! - `chat.rs`: the normal chat window (surface "llm"): summon, send, stream, stop, history;
-//!   `view.rs` draws it, pure; `store.rs` keeps it (`llm_threads`, `llm_messages`).
+//!   `view.rs` draws it, pure; `store.rs` keeps it (`llm_threads`, `llm_messages`, and the
+//!   model pick in `llm_pick`); `context.rs` trims what a prompt sends to `context_chars`.
 //! - `views.rs`: the root item `llm:chat` (only with a normal server), the `models` picker
-//!   and the `threads` list.
+//!   and the `threads` list (with Delete Chat).
 //! - `private.rs`: `PrivateSession`, the private chat's in-memory transcript (no store, no
 //!   `Serialize`, redacted `Debug`, wiped on clear and drop), its `private = true` server gate
 //!   and when it is wiped (`Wipe`, `wipe_on`).
@@ -32,6 +33,7 @@
 //! error message.
 
 mod chat;
+mod context;
 mod io;
 mod keyfile;
 mod openai;
@@ -135,7 +137,8 @@ impl Module for Llm {
         false
     }
 
-    fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
+    fn items(&mut self, cx: &mut Cx) -> Vec<Item> {
+        self.recall_pick(cx);
         self.root_items()
     }
 
@@ -144,6 +147,7 @@ impl Module for Llm {
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        self.recall_pick(cx);
         self.fill(view, cx);
     }
 
@@ -152,14 +156,16 @@ impl Module for Llm {
     }
 
     fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
-        Llm::root_actions(id)
+        Llm::item_actions(id)
     }
 
-    fn act(&mut self, id: &ItemId, key: &str, _cx: &mut Cx) -> Outcome {
-        match Llm::root_actions(id).iter().find(|a| a.key == key) {
-            Some(a) => Outcome::Push(ListView::new(ID, a.key)),
-            None => Outcome::Stay(None),
-        }
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        Llm::item_act(id, key, cx)
+    }
+
+    /// Delete Chat (a `threads` item's ⌘K) was confirmed.
+    fn confirmed(&mut self, token: &str, cx: &mut Cx) -> Outcome {
+        self.delete_confirmed(token, cx)
     }
 
     /// `hotkey` shows or hides the chat window; only with a normal server. `private_hotkey`
