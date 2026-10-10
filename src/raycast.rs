@@ -80,7 +80,13 @@ pub fn import_file(path: &Path) -> Result<String, String> {
     let config = config::load()?;
     let import = convert(&json, &quicklinks::links(&config)?)?;
 
-    let config_path = config::config_path();
+    // The overlay holds the links when it sets them; its list replaces config.toml's.
+    let config_path = config::target::entries_file(
+        &config::config_path(),
+        config::host_name().as_deref(),
+        "quicklink",
+        "links",
+    );
     append(&config_path, &import.added)?;
 
     let mut report = format!(
