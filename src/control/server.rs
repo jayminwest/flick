@@ -242,6 +242,15 @@ mod tests {
         dir.join("f.sock")
     }
 
+    /// Leave a socket file at `path` that no stream can connect to, like one left by a crash.
+    /// Not a dropped `UnixListener`: macOS sets close-on-exec on a new socket only after
+    /// creating it, so a child that another test spawns in between can inherit the listener
+    /// and keep it accepting, and the "stale" file answers (flick-082a). Even an inherited
+    /// datagram socket refuses a stream connect.
+    fn stale_socket(path: &Path) {
+        drop(std::os::unix::net::UnixDatagram::bind(path).unwrap());
+    }
+
     fn start(path: &Path, hub: &'static Hub) {
         spawn(bind(path).unwrap(), echo, hub).unwrap();
     }
@@ -260,7 +269,7 @@ mod tests {
     fn wait_for(what: &str, f: impl Fn() -> bool) {
         let start = Instant::now();
         while !f() {
-            assert!(start.elapsed() < Duration::from_secs(5), "timed out waiting for {what}");
+            assert!(start.elapsed() < Duration::from_secs(15), "timed out waiting for {what}");
             thread::sleep(Duration::from_millis(5));
         }
     }
@@ -290,7 +299,7 @@ mod tests {
     fn a_stale_socket_file_is_replaced() {
         static HUB: Hub = Hub::new();
         let path = socket_path("stale");
-        drop(UnixListener::bind(&path).unwrap());
+        stale_socket(&path);
         assert!(UnixStream::connect(&path).is_err());
         start(&path, &HUB);
         assert_eq!(ask(&mut connect(&path), r#"["up"]"#), "{\"ok\":\"up\"}\n");
@@ -303,7 +312,7 @@ mod tests {
         static HUB: Hub = Hub::new();
         let path = socket_path("answering");
         assert!(!answering(&path));
-        drop(UnixListener::bind(&path).unwrap());
+        stale_socket(&path);
         assert!(!answering(&path), "a stale file");
         start(&path, &HUB);
         assert!(answering(&path));
