@@ -441,6 +441,14 @@
 # --thread <t>" (20 s budget). kota_ask is relative to that host's home.
 #kota_host = "jaymin@mbp-server"
 #kota_ask = ".dotfiles/home/.local/bin/kota-ask"
+# Context chips: summoning the chat window attaches the app in front, its window title and
+# its selected text (Accessibility; never the clipboard), each a chip you can click off.
+# Cmd-Shift-V adds the clipboard text, Cmd-Shift-S a screenshot of the display under the
+# pointer (needs Screen Recording; the chat window is hidden for the shot). Screenshots go to
+# this dir on kota_host, relative to its home, before the question is sent (one ssh with the
+# PNG on stdin; files older than 7 days there are deleted); the question names the path.
+# A-Z a-z 0-9 . _ / - only.
+#attach_dir = ".cache/flick/attach"
 
 # --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
 # addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not

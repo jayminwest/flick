@@ -137,7 +137,14 @@ impl Worker<Done> {
 
 /// Run `job.argv` with `job.stdin`, killed after `job.budget`.
 pub fn exec(job: &Job) -> Exit {
-    let Some((program, args)) = job.argv.split_first() else {
+    exec_bytes(&job.argv, job.stdin.as_bytes().to_vec(), job.budget)
+}
+
+/// Run `command` (an argv) with `input` on stdin, killed after `budget`. It is written on its own thread, so
+/// a child that stops reading (a stalled ssh) can't block past the budget: the kill closes the
+/// pipe and the write fails.
+pub fn exec_bytes(command: &[String], input: Vec<u8>, budget: Duration) -> Exit {
+    let Some((program, args)) = command.split_first() else {
         return Exit::Failed("action_command is empty".into());
     };
     let child = Command::new(program)
@@ -151,9 +158,8 @@ pub fn exec(job: &Job) -> Exit {
         Err(e) => return Exit::Failed(format!("action_command: {program}: {e}")),
     };
     // A child that exits without reading stdin closes the pipe: the write error is moot.
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(job.stdin.as_bytes());
-    }
+    let pipe = child.stdin.take();
+    thread::spawn(move || pipe.map(|mut p| p.write_all(&input)));
     let (tx, rx) = mpsc::channel();
     if let Some(mut stderr) = child.stderr.take() {
         thread::spawn(move || {
@@ -162,7 +168,7 @@ pub fn exec(job: &Job) -> Exit {
             let _ = tx.send(out);
         });
     }
-    let deadline = Instant::now() + job.budget;
+    let deadline = Instant::now() + budget;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
@@ -170,7 +176,7 @@ pub fn exec(job: &Job) -> Exit {
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Exit::Failed(format!("No answer from KOTA in {} s", job.budget.as_secs()));
+                return Exit::Failed(format!("No answer from KOTA in {} s", budget.as_secs()));
             }
             Err(e) => return Exit::Failed(format!("action_command: {e}")),
         }
@@ -257,6 +263,20 @@ mod tests {
         assert!(e.starts_with("action_command: /nonexistent/kota-ask: "), "{e}");
         let empty = Job { argv: vec![], ..missing };
         assert_eq!(exec(&empty), Exit::Failed("action_command is empty".into()));
+    }
+
+    #[test]
+    fn exec_bytes_sends_binary_stdin_and_never_blocks_on_a_child_that_stops_reading() {
+        let argv = |script: &str| ["/bin/sh", "-c", script].map(String::from).to_vec();
+        // A megabyte with NULs and high bytes arrives whole.
+        let png: Vec<u8> = (0..1024 * 1024).map(|i| (i % 256) as u8).collect();
+        let budget = Duration::from_secs(10);
+        assert_eq!(exec_bytes(&argv("[ \"$(wc -c | tr -d ' ')\" = 1048576 ]"), png.clone(), budget), Exit::Sent);
+        // Far more than a pipe holds, to a child that never reads: the budget still holds.
+        let started = Instant::now();
+        let stuck = exec_bytes(&argv("sleep 5"), png, Duration::from_millis(200));
+        assert_eq!(stuck, Exit::Failed("No answer from KOTA in 0 s".into()));
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]

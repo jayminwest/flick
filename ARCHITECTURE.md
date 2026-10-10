@@ -332,6 +332,19 @@ once). Rows: `chat::model::transcript` of `Messages::thread` mapped by `chat::vi
 `surface::Row`, a card's press state (`dispatch.rs`) folded into its version; card presses
 in the window go through the HUD cards' `press`. Keys: ⌘N new thread (`t` + base-36 ms),
 ⌘[ / ⌘] older/newer (`model::neighbor`), ⌘R resend a failed question, ⌘W hide.
+Context chips (`chat/context.rs`, flick-65bd): summoned from hidden, the window reads
+`platform::context::front(true)` before it shows and makes app, window-title and selection
+chips (on by default, each removable by a click, `Note::Unchip`); a new summon replaces all
+chips. ⌘⇧V adds the clipboard text (`pasteboard::copied_text`, one chip), ⌘⇧S a screenshot
+(`context::shoot_display` with the window hidden and re-shown; the PNG is read into memory
+and the temp file deleted on the shot's worker, then queued as `Note::Shot`; at most 3; no
+Screen Recording: a notice, and `capture::request_permission` once per run). Return sends
+the chips with the question and clears them; `message ask` sends none. Each screenshot `n`
+uploads first, in the ask's worker job, with `attach::upload_argv` (one ssh, the PNG on
+stdin, `run::exec_bytes` writing stdin on its own thread, 30 s) to `<[message]
+attach_dir>/<req>-<n>.png` on `kota_host`; a failed upload fails the ask and kota-ask does
+not run. The `[context]` block (`ask::compose`, capped) names `~/<attach_dir>/<req>-<n>.png`.
+A failed question keeps its chips (last 4) for ⌘R, under the same paths.
 Asks (`chat/asks.rs`): the question is stored at once as a `role` me message whose id is
 the request id, then one worker at a time (FIFO) runs `/usr/bin/ssh -o BatchMode=yes -o
 ConnectTimeout=8 <kota_host> <kota_ask> --id <req> --thread <t>` with the question on
