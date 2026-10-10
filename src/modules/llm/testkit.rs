@@ -132,7 +132,7 @@ fn spawn(argv: &[String]) -> Result<Spawned, String> {
         "none" if models => (r#"{"object":"list","data":[]}"#, "", Some(0), false),
         "inband" => ("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\ndata: {\"error\":\"overloaded\"}\n", "", Some(0), false),
         "hang" => ("", "", Some(0), true),
-        "half" => ("data: {\"choices\":[{\"delta\":{\"content\":\"part\"}}]}\n", "", Some(0), true),
+        "half" => ("data: {\"choices\":[{\"delta\":{\"content\":\"part\"}}]}\n\n", "", Some(0), true),
         _ => ("", "", Some(0), false),
     };
     let stdout: Box<dyn Read + Send> = if hang {

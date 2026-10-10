@@ -6,7 +6,7 @@
 //!
 //! - `settings.rs`: `[llm]` and `[[llm.servers]]` (`name`, `url`, `private`,
 //!   `api_key`). With no server the module runs nothing.
-//! - `openai.rs`: the chat request body, the SSE line parser, error bodies, `/v1/models`.
+//! - `openai.rs`: the chat request body, the SSE event reader, error bodies, `/v1/models`.
 //! - `transport.rs`: one curl per call, body on stdin, never prompt text in argv; an
 //!   `api_key` goes in a 0600 curl config file that `keyfile.rs` writes and removes.
 //! - `io.rs`: the threads: model lists, streamed replies into an inbox, cancel, watchdog.

@@ -450,10 +450,12 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
   (after `-q`) names a curl config holding only `header = "Authorization: Bearer <key>"`,
   created new with mode 0600 in `$TMPDIR/flick-llm` (0700, refused if a symlink or open to
   others) by `keyfile::KeyFile`, which removes it on drop once curl is reaped, on a spawn
-  failure or a panic. `Server`'s `Debug` prints only whether a key is set. The spawn is an `io::Hooks` fn pointer; tests use `testkit`'s fake
-  curls, never a server.
-- A streamed reply's SSE lines become `openai::Piece`s (text, reasoning, finish, usage,
-  done, error) in the stream's inbox in `io::Shared`; the main thread drains it with
+  failure or a panic. `Server`'s `Debug` prints only whether a key is set. The spawn is an
+  `io::Hooks` fn pointer; tests use `testkit`'s fake curls, never a server.
+- A streamed reply's SSE events (`openai::Events`: the `data:` lines up to a blank line,
+  joined with `\n`, flick-d73a; a new `data:` line after data that already reads as a whole
+  chunk ends the event, so a server that skips blank lines still streams) become
+  `openai::Piece`s (text, reasoning, finish, usage, done, error) in the stream's inbox in `io::Shared`; the main thread drains it with
   `Shared::take(id)`. `io::cancel(id)` kills curl and keeps what arrived. A watchdog thread
   kills a call still running past its budget. Request and line buffers are zeroed before
   they are freed (best effort), and so are pieces left in an inbox when a stream is dropped.
