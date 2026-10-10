@@ -307,7 +307,8 @@ impl Module for Inbox {
     }
 
     /// `ModuleChanged` for this module: card presses, dismissals and finished sends. Then,
-    /// and at `Started`, the count of cards waiting on the user (`pending.rs`).
+    /// and at `Started`, the count of cards waiting on the user (`pending.rs`); at
+    /// `Reloaded` that count even when unchanged, for a module the reload just started.
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         match event {
             Event::ModuleChanged { module: "message" } => {
@@ -315,6 +316,7 @@ impl Module for Inbox {
                 self.chat_drain(cx);
             }
             Event::Started => {}
+            Event::Reloaded => self.announced = None,
             _ => return false,
         }
         self.announce(cx);
