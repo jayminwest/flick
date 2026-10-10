@@ -7,8 +7,22 @@ use crate::config::parse;
 use crate::core::test_cx;
 use crate::core::keys::{HYPER_FLAGS, flags};
 
+thread_local! {
+    /// The requests `fake_local` was handed, in order.
+    static LOCAL: std::cell::RefCell<Vec<Vec<String>>> = const { std::cell::RefCell::new(vec![]) };
+}
+
+/// The `Local` hook in tests: records the request instead of running it.
+fn fake_local(words: Vec<String>) {
+    LOCAL.with(|l| l.borrow_mut().push(words));
+}
+
+fn sent() -> Vec<String> {
+    LOCAL.with(|l| l.borrow_mut().drain(..).map(|w| w.join(" ")).collect())
+}
+
 fn configured(text: &str) -> Result<Keys, String> {
-    let mut keys = Keys::default();
+    let mut keys = Keys::new(fake_local);
     keys.wire = Wire::with(&STUB);
     keys.configure(&parse(text)?.section("keys")?.ok_or("disabled")?)?;
     Ok(keys)
@@ -205,6 +219,32 @@ fn started_keys_install_the_rules_and_run_chords() {
     drop(keys);
     // The stub's clear fails, so dropping the module tries once more.
     assert_eq!(calls(), ["clear_remap"]);
+}
+
+const DICTATE: &str = r#"
+    [[keys.chord]]
+    name = "dictate"
+    keys = ["right_cmd", "right_shift"]
+    on_down = { flick = "dictation start" }
+    on_up = { flick = "dictation stop" }
+"#;
+
+#[test]
+fn flick_actions_go_to_the_local_hook_not_the_worker() {
+    sent();
+    let mut keys = configured(DICTATE).unwrap();
+    assert_eq!(
+        keys.list(),
+        "0\tdictate\tright_cmd+right_shift\tdown: flick dictation start\tup: flick dictation stop"
+    );
+    let send = |keys: &mut Keys, event| test_cx("", |cx| keys.on_event(event, cx));
+    send(&mut keys, Event::Chord { index: 0, down: true });
+    send(&mut keys, Event::Chord { index: 0, down: false });
+    assert_eq!(run(&mut keys, &["fire", "dictate", "down"]).unwrap(), "dictate down: queued flick dictation start");
+    assert_eq!(sent(), ["dictation start", "dictation stop", "dictation start"]);
+    assert!(keys.worker.idle());
+    let err = configured("[[keys.chord]]\nname = \"x\"\nkeys = [\"fn\"]\non_up = { flick = \"a 'b\" }");
+    assert_eq!(err.err().unwrap(), "[keys] chord \"x\": flick \"a 'b\": unclosed '");
 }
 
 #[test]

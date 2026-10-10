@@ -60,3 +60,15 @@ fn run(words: Vec<String>, flags: Flags) -> Reply {
         |result| Reply::answer(result, flags.json),
     )
 }
+
+/// Run request `words` as a local caller on the main queue, after whatever runs now, and
+/// log an error reply. For in-process triggers that fire while the controller holds its
+/// state (the `keys` module's `flick` chord actions): they cannot call `app::control`
+/// directly, and nothing waits for the reply.
+pub fn local(words: Vec<String>) {
+    events::on_main(move || {
+        if let Err(e) = crate::app::control(&words, Flags::default()) {
+            eprintln!("flick: {}: {e}", words.join(" "));
+        }
+    });
+}

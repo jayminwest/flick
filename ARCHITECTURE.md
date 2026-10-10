@@ -250,7 +250,15 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   `core::keys::Engine::process` step under a short `Mutex`, then `events::post` of each chord
   edge as `Event::Chord { index, down }`. `index` is the chord's position in
   `[[keys.chord]]`. `Keys::on_event` (main thread) only sends the chord's action to the
-  module's FIFO worker thread. Actions never run on the tap or main thread.
+  module's FIFO worker thread. `http` and `shell` actions never run on the tap or main thread.
+- A `{ flick = "<module> <verb> [args]" }` action is a local control request (words split
+  shell-like by `keys/words.rs`, checked by `core::card::Do::check` with `Origin::Local`). `Keys::on_event` runs inside `Registry::dispatch` with the
+  controller's state borrowed, so it never calls `app::control`: it hands the words to its
+  `keys::Local` hook, a plain `fn(Vec<String>)` that the `modules!` line passes to
+  `Keys::new` (`crate::control::local`, like `Remote::new(control::net::HOOKS)`). The hook
+  does `events::on_main(|| app::control(&words, Flags::default()))`, so the request runs as
+  a local caller right after the current event, and logs an error reply. It skips the
+  worker, so a stuck `http` action never delays it; the main queue keeps edge order.
 - The tap exists only while the rules are non-empty, from `Event::Started` on. A reload
   installs new rules in place and posts `up` for chords held under the old ones.
 - Re-arm: the callback re-enables the tap on a disable notice, and a 5 s timer on the tap

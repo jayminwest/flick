@@ -149,14 +149,21 @@
 #hyper_tap_ms = 300
 
 # Chords: on_down runs when all keys are held, on_up when one is released. An action is
-# { http = "POST http://host:port/path" } (http:// only) or { shell = "command" }; both are
-# optional. Keys: cmd, alt, ctrl, shift, fn, right_cmd, left_alt, ... plus one key such as
-# KeyA. Repeat the table for each chord; none by default. Example (push-to-talk):
+# { http = "POST http://host:port/path" } (http:// only), { shell = "command" } or
+# { flick = "<module> <verb> [args]" } (a local Flick request, like "flick <module> <verb>"
+# without the process; words split like a shell's, quotes allowed); both are optional.
+# Keys: cmd, alt, ctrl, shift, fn, right_cmd, left_alt, ... plus one key such as KeyA.
+# Repeat the table for each chord; none by default. Examples (push-to-talk, dictation):
 #[[keys.chord]]
 #name = "ptt"
 #keys = ["right_cmd", "right_alt"]
 #on_down = { http = "POST http://localhost:8600/pipeline/listen/start" }
 #on_up = { http = "POST http://localhost:8600/pipeline/listen/stop" }
+#[[keys.chord]]
+#name = "dictate"
+#keys = ["right_cmd", "right_shift"]
+#on_down = { flick = "dictation start" }
+#on_up = { flick = "dictation stop" }
 
 # --- dictation: hold a chord, speak, release: the transcript goes into the focused field.
 # Local only: the recorder and the engine are programs on this Mac, nothing goes over the

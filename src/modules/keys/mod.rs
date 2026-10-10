@@ -6,9 +6,15 @@
 //! Configure checks key names with `core::keys::names` and compiles the engine's `Rules`;
 //! from `Event::Started` on, `wire` installs them in the key tap (and the Caps Lock remap for
 //! `hyper = "caps_lock"`), and each `Event::Chord` the tap posts runs that chord's action.
+//!
+//! A `{ flick = "..." }` action is a local control request. `fire` runs inside
+//! `Registry::dispatch` with the controller's state borrowed, so it cannot run the request
+//! itself: it hands the words to `Local`, a plain fn the `modules!` line passes in
+//! (`crate::control::local`), which queues the request on the main queue for later.
 
 mod action;
 mod wire;
+mod words;
 
 use action::{Action, Job, Spec, Worker};
 use serde::Deserialize;
@@ -73,7 +79,10 @@ struct Hyper {
     tap_ms: u32,
 }
 
-#[derive(Default)]
+/// Runs a local control request (`["<module>", "<verb>", args...]`, as a local caller) on
+/// the main queue after the current event, logging an error reply. Never blocks.
+pub type Local = fn(Vec<String>);
+
 pub struct Keys {
     hyper: Option<Hyper>,
     chords: Vec<Chord>,
@@ -83,6 +92,8 @@ pub struct Keys {
     remap: bool,
     worker: Worker,
     wire: Wire,
+    /// Where `flick` actions go.
+    local: Local,
 }
 
 /// The chords in `specs`, checked: names unique and non-empty, keys known (modifiers plus at
@@ -136,6 +147,18 @@ fn hyper(s: &Settings) -> Result<Option<(Hyper, keys::Hyper)>, String> {
 }
 
 impl Keys {
+    pub fn new(local: Local) -> Self {
+        Keys {
+            hyper: None,
+            chords: vec![],
+            rules: Rules::default(),
+            remap: false,
+            worker: Worker::default(),
+            wire: Wire::default(),
+            local,
+        }
+    }
+
     fn off(&self) -> bool {
         self.rules.is_empty()
     }
@@ -149,7 +172,11 @@ impl Keys {
             return Ok(format!("{} {state}: no action", chord.name));
         };
         let done = format!("{} {state}: queued {action}", chord.name);
-        self.worker.send(Job { chord: chord.name.clone(), down, action })?;
+        match action {
+            // Not through the worker: an http action stuck on its timeout never delays it.
+            Action::Flick(words) => (self.local)(words),
+            action => self.worker.send(Job { chord: chord.name.clone(), down, action })?,
+        }
         Ok(done)
     }
 
