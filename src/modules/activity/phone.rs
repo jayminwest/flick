@@ -60,7 +60,8 @@ fn token(flag: &str, v: &str, extra: &[char]) -> Result<String, String> {
         return Err(bad(flag, &format!("needs 1 to {MAX_ID} characters")));
     }
     if !v.chars().all(ok) {
-        return Err(bad(flag, "only letters, digits and . _ - are allowed"));
+        let extra: String = extra.iter().flat_map(|&c| [' ', c]).collect();
+        return Err(bad(flag, &format!("only letters, digits and . _ -{extra} are allowed")));
     }
     Ok(v.to_owned())
 }
