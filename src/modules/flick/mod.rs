@@ -1,6 +1,8 @@
 //! Module `builtin`: Flick's own commands in root search. Ids are `builtin:<title>`.
 
-use crate::config;
+use std::path::{Path, PathBuf};
+
+use crate::config::{self, target};
 use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome};
 use crate::platform::app;
 
@@ -40,10 +42,16 @@ impl Module for Flick {
             // A request by name: `quicklink` builds and saves the form.
             "Create Quicklink" => Outcome::Form { module: "quicklink", name: "new".into() },
             "Open Flick Config" => {
-                cx.hide();
-                let _ =
-                    std::process::Command::new("open").arg("-t").arg(config::config_path()).spawn();
-                Outcome::Hide
+                let base = config::config_path();
+                let files = target::files_to_open(&base, config::host_name().as_deref());
+                let _ = std::process::Command::new("open").arg("-t").args(&files).spawn();
+                read_only_note(&files, Path::new(target::NIX_STORE)).map_or_else(
+                    || {
+                        cx.hide();
+                        Outcome::Hide
+                    },
+                    |note| Outcome::Stay(Some(note)),
+                )
             }
             "Reload Flick Config" => Outcome::ReloadConfig,
             "Quit Flick" => {
@@ -55,6 +63,20 @@ impl Module for Flick {
     }
 }
 
+/// Status for "Open Flick Config" when an opened file resolves into the Nix store at
+/// `store`: the editor shows it read-only, so say where edits go instead.
+fn read_only_note(files: &[PathBuf], store: &Path) -> Option<String> {
+    let names: Vec<String> = files
+        .iter()
+        .filter(|f| target::in_store(f, store))
+        .filter_map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    (!names.is_empty()).then(|| {
+        let names = names.join(", ");
+        format!("Read-only (Nix store): {names}. Edit the source in your Nix config, then rebuild")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +86,19 @@ mod tests {
         let id = ItemId::new("builtin", "Create Quicklink");
         let out = crate::core::test_cx("", |cx| Flick.activate(&id, cx));
         assert!(matches!(out, Outcome::Form { module: "quicklink", name } if name == "new"));
+    }
+
+    #[test]
+    fn store_files_get_a_read_only_note() {
+        let store = Path::new("/nix/store");
+        let home = PathBuf::from("/Users/me/dotfiles/config.toml");
+        let built = PathBuf::from("/nix/store/abc-hm/config.toml");
+        let over = PathBuf::from("/nix/store/abc-hm/config.mbp.toml");
+        assert_eq!(read_only_note(std::slice::from_ref(&home), store), None);
+        assert_eq!(
+            read_only_note(&[built, over], store).unwrap(),
+            "Read-only (Nix store): config.toml, config.mbp.toml. Edit the source in your Nix \
+             config, then rebuild"
+        );
     }
 }

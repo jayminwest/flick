@@ -1,4 +1,5 @@
-//! Edit the `[[<module>.<key>]]` entries of config.toml in place. Everything outside the
+//! Edit the `[[<module>.<key>]]` entries of config.toml, or of the per-host overlay when that
+//! is where they live (`target::entries_file`), in place. Everything outside the
 //! edited entry (comments, blank lines, key order) stays byte for byte. Writes are atomic and
 //! never leave a file that `config::parse` rejects.
 
@@ -8,7 +9,7 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
-use super::{LEGACY, config_path, parse, write_default};
+use super::{LEGACY, config_path, host_name, parse, target, write_default};
 
 /// One entry: `(field, value)` pairs in file order. Leave a field out to drop it.
 pub type Entry = Vec<(&'static str, String)>;
@@ -24,19 +25,32 @@ pub enum Edit {
     Remove { name: String },
 }
 
-/// Apply `edit` to the config file, writing the default file first when there is none.
+/// Apply `edit` to the file that holds the entries: this Mac's overlay when it sets them,
+/// else config.toml (written with the default first when there is none).
 pub fn edit_entries(module: &str, key: &str, edit: &Edit) -> Result<(), String> {
-    edit_file(&config_path(), module, key, edit)
+    edit_in(&config_path(), host_name().as_deref(), module, key, edit)
+}
+
+/// `edit_entries` for config file `base` and the overlay of `host` next to it.
+pub fn edit_in(
+    base: &Path,
+    host: Option<&str>,
+    module: &str,
+    key: &str,
+    edit: &Edit,
+) -> Result<(), String> {
+    edit_file(&target::entries_file(base, host, module, key), module, key, edit)
 }
 
 /// Re-read `path` (never a cached copy, so a hand edit is not lost), edit it and replace it
-/// atomically. A symlink is written through to its target.
+/// atomically. A symlink is written through to its target, unless that is in the Nix store
+/// or read-only (`target::writable`).
 pub fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Result<(), String> {
     let at = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
-    if !path.exists() {
+    if !path.exists() && fs::symlink_metadata(path).is_err() {
         write_default(path);
     }
-    let target = fs::canonicalize(path).map_err(|e| at(&e))?;
+    let target = target::writable(path)?;
     let text = fs::read_to_string(&target).map_err(|e| at(&e))?;
     let text = edit_text(&text, module, key, edit).map_err(|e| at(&e))?;
     write_atomic(&target, &text).map_err(|e| at(&e))

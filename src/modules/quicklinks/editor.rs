@@ -11,10 +11,11 @@ const EDIT: &str = "edit/";
 const DELETE: &str = "delete/";
 
 impl Quicklinks {
-    /// Write `edit` to config.toml (or the test file).
+    /// Write `edit` to the file that holds the links: this Mac's overlay when it sets them,
+    /// else config.toml (or the test files).
     fn write(&self, edit: &Edit) -> Result<(), String> {
         match &self.file {
-            Some(path) => edit::edit_file(path, "quicklink", "links", edit),
+            Some((path, host)) => edit::edit_in(path, host.as_deref(), "quicklink", "links", edit),
             None => edit::edit_entries("quicklink", "links", edit),
         }
     }
@@ -167,7 +168,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.toml");
         fs::write(&path, text).unwrap();
-        let mut m = Quicklinks { file: Some(path.clone()), ..Quicklinks::default() };
+        let mut m = Quicklinks { file: Some((path.clone(), None)), ..Quicklinks::default() };
         m.configure(&parse(text).unwrap().section("quicklink").unwrap().unwrap()).unwrap();
         (m, path)
     }
@@ -326,5 +327,19 @@ mod tests {
         fs::write(&path, "not = [valid").unwrap();
         assert!(run(&mut m, &["add", "X", "/"]).unwrap_err().contains("does not load"));
         assert_eq!(names(&m), ["Docs", "Old"]);
+    }
+
+    #[test]
+    fn edits_go_to_the_overlay_that_sets_the_links() {
+        let over = "[[quicklink.links]]\nname = \"Here\"\nurl = \"/\"\n";
+        let (mut m, path) = module("overlay", over);
+        let overlay = path.with_file_name("config.mbp.toml");
+        fs::write(&overlay, over).unwrap();
+        fs::write(&path, CONFIG).unwrap();
+        m.file = Some((path.clone(), Some("mbp".into())));
+        assert_eq!(run(&mut m, &["add", "X", "/x"]).unwrap(), "Added quicklink X");
+        assert_eq!(run(&mut m, &["remove", "Here"]).unwrap(), "Removed quicklink Here");
+        assert_eq!(fs::read_to_string(&path).unwrap(), CONFIG);
+        assert_eq!(reloaded(&overlay), ["X=/x"]);
     }
 }

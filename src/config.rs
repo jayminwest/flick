@@ -13,6 +13,7 @@ pub mod example;
 mod host;
 pub mod launcher;
 pub mod overlay;
+pub mod target;
 
 pub use host::host_name;
 pub use launcher::Launcher;
