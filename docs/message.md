@@ -50,7 +50,7 @@ All keys are optional; the values above are the defaults except `name` (default 
 A post nobody asked for, `message post` without `--reply-to` (and not `--pending`, `--partial` or in a chat thread), is unread until you see it. KOTA's unprompted nudges are such posts.
 
 - Its card stays until you close it (`unprompted_timeout_secs`, default 0). Esc closes it like any message card.
-- Closing its card (x, a click, Esc) reads it. So does opening the message list (the launcher item, `hotkey`, or Inbox in the KOTA menu): rows read that way show `Unread` in that list, and their corner cards close. A timeout, `message hide` or a restart leave it unread.
+- Closing its card (x, a click, Esc) reads it. So does opening the message list (the launcher item or `hotkey`) or the cards view (Inbox in the KOTA menu, view `message/cards`: cards and unread posts only): rows read that way show `Unread` in that list, and their corner cards close. A timeout, `message hide` or a restart leave it unread.
 - The KOTA menu bar badge counts unread posts with the cards waiting on you. `flick events` sends `{"event":"cards_pending","count":<cards>,"unread":<posts>}`.
 - `message ls` marks it `(unread)`; `ls --json` has `"unread": true` (absent when read). A peer can check whether its post was seen.
 - Replies (`--reply-to`), placeholders and chat posts behave as before: `timeout_secs`, never unread.

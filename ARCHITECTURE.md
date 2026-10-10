@@ -225,8 +225,8 @@ Sources:
   editor's `on_done` when it closes), `sys` (its probe, service-check and fleet threads,
   its fleet timer, and its tail and restart threads),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
-  modifier-release poll), `kota` (its poll round, its timer, its ask thread, and its menu
-  bar item's picks and menu opens), `llm` (its model-list and reply-stream threads, at most
+  modifier-release poll), `kota` (its poll round, its timer, its ask thread, its menu
+  bar item's picks and menu opens, and its minute clock while the item shows), `llm` (its model-list and reply-stream threads, at most
   one undelivered event at a time, and its chat and private chat windows' handlers; the
   event never carries chat text, `Event` being `Copy`), `app` (its uninstall sizing thread:
   Uninstall… pushes view `app/uninstall`, which lists the paths with "Sizing…" until the
@@ -348,8 +348,10 @@ Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (s
 `[kota]` key set) and `status_item` is true, so a Mac without `[kota]` has none. Title: the
 state glyph plus the `CardsPending` count and unread posts; redrawn only when title, tooltip or rows change,
 on `Started`, `ModuleChanged`, `CardsPending`, sleep/wake, lock/unlock and `LauncherOpened`.
+While it shows, a `kota-clock` thread posts `ModuleChanged` every 60 s (not while asleep), so
+the age text moves between rounds.
 Rows: Ask KOTA…, Open Chat and Inbox are `Open` rows (kota hotkeys `ask` and `inbox`; `inbox`
-returns a request for the `message` module's `recent` view by name; Open Chat is the `message`
+returns a request for the `message` module's `cards` view by name (its cards and unread posts); Open Chat is the `message`
 module's hotkey key `chat:open`, which shows the chat window and never hides it), Open
 Dashboard and Refresh Now are picks. The pick handler and the menu-open hook only queue a key in `wire.rs` and post
 `ModuleChanged`; the module then opens the URL or starts a rate-limited round (as `kota

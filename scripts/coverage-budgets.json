@@ -70,6 +70,7 @@
     "src/modules/llm/view.rs": 100.0,
     "src/modules/llm/views.rs": 100.0,
         "src/modules/message/card.rs": 98.7,
+    "src/modules/message/cards.rs": 100.0,
     "src/modules/message/chat/ask.rs": 100.0,
     "src/modules/message/chat/asks.rs": 99.0,
     "src/modules/message/chat/attach.rs": 100.0,

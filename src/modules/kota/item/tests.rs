@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::config::parse;
+use std::sync::Arc;
 use crate::core::{Event, Module, test_cx};
 use crate::modules::kota::presence::Transition;
 use crate::modules::kota::testkit::{queue, take_ui};
@@ -145,8 +146,30 @@ fn the_menu_rows_route_through_hotkeys() {
     let mut k = configured("").unwrap();
     test_cx("", |cx| {
         let inbox = k.hotkey(INBOX, cx).unwrap();
+        assert_eq!(INBOX_VIEW, ("message", "cards"));
         assert!(inbox.is(INBOX_VIEW.0, INBOX_VIEW.1));
         assert!(k.hotkey("ask", cx).unwrap().is(ID, "ask"));
         assert!(k.hotkey("nope", cx).is_none());
     });
+}
+
+#[test]
+fn a_minute_clock_runs_while_the_item_shows_and_moves_its_age() {
+    take_ui();
+    let mut k = started(SERVER);
+    assert!(k.shared.lock().clock.is_some());
+    take_ui();
+    // The clock's `ModuleChanged` two minutes on: the age in the title row and tooltip moves.
+    k.hooks.now = || 1_000 + 2 * 60 + 5;
+    event(&mut k, Event::ModuleChanged { module: ID });
+    assert_eq!(take_ui(), [THINKING.replace("<1m", "2m")]);
+    // Hidden: no clock; shown again: a new one.
+    reconfigure(&mut k, &format!("{SERVER}status_item = false"));
+    assert_eq!(k.shared.lock().clock, None);
+    reconfigure(&mut k, SERVER);
+    assert_eq!(k.shared.lock().clock, Some(2));
+    let shared = Arc::clone(&k.shared);
+    drop(k);
+    assert_eq!(shared.lock().clock, None);
+    take_ui();
 }
