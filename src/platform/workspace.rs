@@ -26,14 +26,22 @@ pub fn open_url(url: &str) {
 
 /// The app bundle that `app` names: a `.app` path (`~/` allowed), an app name looked up in the
 /// standard folders and `~/Applications` ("Safari"), or a bundle id ("com.apple.Safari").
-/// `None` when nothing matches.
+/// Names match any case and one folder deep ("/Applications/Adobe Photoshop/…"), like
+/// `flick app open`. `None` when nothing matches.
 pub fn find_app(app: &str) -> Option<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
-    if let Some(found) = app_candidates(app, &home).into_iter().find(|p| p.is_dir()) {
+    let app = app.trim();
+    if app.is_empty() {
+        return None;
+    }
+    if let Some(path) = app_path(app, &home) {
+        return path.is_dir().then_some(path);
+    }
+    let dirs = APP_DIRS.iter().map(PathBuf::from).chain([home.join("Applications")]);
+    if let Some(found) = app_in(&dirs.collect::<Vec<_>>(), app) {
         return Some(found);
     }
-    let app = app.trim();
-    if !app.contains('.') || app.contains('/') {
+    if !app.contains('.') {
         return None;
     }
     let ws = NSWorkspace::sharedWorkspace();
@@ -41,23 +49,56 @@ pub fn find_app(app: &str) -> Option<PathBuf> {
     url.path().map(|p| PathBuf::from(p.to_string()))
 }
 
-/// Where app `app` could be, most specific first: the path itself when it is one, else
-/// `<dir>/<app>.app` for each app folder.
-fn app_candidates(app: &str, home: &Path) -> Vec<PathBuf> {
-    let app = app.trim();
-    if app.is_empty() {
-        return vec![];
-    }
+/// `app` as a path when it is one (absolute or `~/`), else `None`.
+fn app_path(app: &str, home: &Path) -> Option<PathBuf> {
     if let Some(rest) = app.strip_prefix("~/") {
-        return vec![home.join(rest)];
+        return Some(home.join(rest));
     }
-    if app.starts_with('/') {
-        return vec![PathBuf::from(app)];
+    app.starts_with('/').then(|| PathBuf::from(app))
+}
+
+/// The bundle named `name` ("Safari" or "safari.app", any case) in `dirs`, in order, else
+/// one folder into each of them, in order. A match in a folder beats one in its subfolders.
+fn app_in(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    let stem = if is_app(Path::new(name)) { &name[..name.len() - ".app".len()] } else { name };
+    if stem.is_empty() || stem.contains('/') {
+        return None;
     }
-    let is_bundle = Path::new(app).extension().is_some_and(|e| e.eq_ignore_ascii_case("app"));
-    let bundle = if is_bundle { app.to_string() } else { format!("{app}.app") };
-    let user = home.join("Applications");
-    APP_DIRS.iter().map(PathBuf::from).chain([user]).map(|dir| dir.join(&bundle)).collect()
+    let top = dirs.iter().find_map(|d| bundle_in(d, stem));
+    top.or_else(|| {
+        dirs.iter().find_map(|d| subdirs(d).into_iter().find_map(|s| bundle_in(&s, stem)))
+    })
+}
+
+/// The `.app` bundle in `dir` named `stem`: the exact spelling, else any case.
+fn bundle_in(dir: &Path, stem: &str) -> Option<PathBuf> {
+    let exact = dir.join(format!("{stem}.app"));
+    let named = |p: &PathBuf| {
+        let s = p.file_stem().and_then(|s| s.to_str());
+        is_app(p) && s.is_some_and(|s| s.eq_ignore_ascii_case(stem)) && p.is_dir()
+    };
+    let mut found: Vec<_> =
+        std::fs::read_dir(dir).ok()?.flatten().map(|e| e.path()).filter(named).collect();
+    found.sort_by_key(|p| *p != exact);
+    found.into_iter().next()
+}
+
+/// `path` ends in `.app`, any case.
+fn is_app(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("app"))
+}
+
+/// The folders in `dir` that are not app bundles, sorted for a stable search order.
+fn subdirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return vec![] };
+    let mut dirs: Vec<_> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.path())
+        .filter(|p| !is_app(p))
+        .collect();
+    dirs.sort();
+    dirs
 }
 
 /// Open `url` with the app bundle at `app` (from `find_app`) instead of the default app.
@@ -215,19 +256,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn app_candidates_cover_paths_names_and_bundles() {
+    fn app_path_takes_only_paths() {
         let home = Path::new("/Users/me");
-        assert!(app_candidates("  ", home).is_empty());
-        assert_eq!(app_candidates("~/Apps/X.app", home), [PathBuf::from("/Users/me/Apps/X.app")]);
+        assert_eq!(app_path("~/Apps/X.app", home), Some(PathBuf::from("/Users/me/Apps/X.app")));
         assert_eq!(
-            app_candidates("/Applications/X.app", home),
-            [PathBuf::from("/Applications/X.app")]
+            app_path("/Applications/X.app", home),
+            Some(PathBuf::from("/Applications/X.app"))
         );
-        let named = app_candidates(" Safari ", home);
-        assert_eq!(named.first(), Some(&PathBuf::from("/Applications/Safari.app")));
-        assert_eq!(named.last(), Some(&PathBuf::from("/Users/me/Applications/Safari.app")));
-        assert_eq!(named.len(), APP_DIRS.len() + 1);
-        assert_eq!(app_candidates("Safari.app", home), named);
+        assert_eq!(app_path("Safari", home), None);
+        assert_eq!(find_app("  "), None);
+        assert_eq!(find_app("/nonexistent/flick/X.app"), None);
+        assert_eq!(find_app("dev.flick.no-such-bundle-id"), None);
+        assert_eq!(find_app("No Such Flick App"), None);
+    }
+
+    #[test]
+    fn app_in_matches_any_case_one_folder_deep() {
+        let root = std::env::temp_dir().join(format!("flk-{}-ws-find", std::process::id()));
+        let (first, second) = (root.join("first"), root.join("second"));
+        for dir in [first.join("Top.app"), first.join("Vendor/Deep.app"), second.join("Deep.app")] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::create_dir_all(first.join("Vendor/Sub/Deeper.app")).unwrap();
+        std::fs::write(first.join("File.app"), "").unwrap();
+        let dirs = [first.clone(), second.clone()];
+        assert_eq!(app_in(&dirs, "Top"), Some(first.join("Top.app")));
+        assert_eq!(app_in(&dirs, "tOP.APP"), Some(first.join("Top.app")));
+        // A folder's own bundles come first: second/Deep.app beats first/Vendor/Deep.app.
+        assert_eq!(app_in(&dirs, "deep"), Some(second.join("Deep.app")));
+        assert_eq!(app_in(&dirs[..1], "deep"), Some(first.join("Vendor/Deep.app")));
+        // Only one folder deep, only bundles that are folders, never a path or an empty name.
+        for name in ["Deeper", "File", "Vendor/Deep", ".app", "Nope"] {
+            assert_eq!(app_in(&dirs, name), None, "{name}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// A minimal `.app` bundle with id `bid` in a fresh temp folder.
