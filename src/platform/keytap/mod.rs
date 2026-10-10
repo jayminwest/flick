@@ -25,15 +25,23 @@ use std::thread::{self, Thread};
 const HID_TAP: u32 = 0;
 /// `kCGEventSourceStateHIDSystemState`: the physical key state, without synthetic events.
 const HID_STATE: i32 = 1;
-/// `kCGEventSourceUserData`, and the stamp on events from `post_key` ("flk1").
+/// `kCGEventSourceUserData`, and the stamp on events Flick posts here ("flk1").
 const FIELD_SOURCE_USER_DATA: u32 = 42;
 const INJECTED_MARK: i64 = 0x666c_6b31;
+/// `kCGEventFlagMaskCommand`.
+pub const FLAG_COMMAND: u64 = 0x0010_0000;
+/// `kVK_ANSI_V`.
+pub const KEY_V: u16 = 9;
+/// UTF-16 units per `CGEventKeyboardSetUnicodeString` event; longer strings are cut by
+/// some apps.
+const UNICODE_CHUNK: usize = 20;
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGEventCreateKeyboardEvent(source: *const c_void, key: u16, down: bool) -> *mut c_void;
     fn CGEventSetFlags(event: *mut c_void, flags: u64);
     fn CGEventSetIntegerValueField(event: *mut c_void, field: u32, value: i64);
+    fn CGEventKeyboardSetUnicodeString(event: *mut c_void, len: usize, chars: *const u16);
     fn CGEventPost(tap: u32, event: *mut c_void);
     fn CGEventSourceFlagsState(state: i32) -> u64;
 }
@@ -66,7 +74,7 @@ pub struct TapEvent {
     /// `CGEventFlags`, device-dependent bits included.
     pub flags: u64,
     pub autorepeat: bool,
-    /// Posted by `post_key`.
+    /// Posted by `post_key`, `post_combo`, `paste` or `type_text`.
     pub injected: bool,
 }
 
@@ -189,6 +197,55 @@ pub fn status() -> Status {
 /// Press and release `keycode` with no modifiers. The tap sees both events with
 /// `injected: true`.
 pub fn post_key(keycode: u16) {
+    post_marked(keycode, 0, &[]);
+}
+
+/// Press and release `keycode` with exactly `flags` (`CGEventFlags`), whatever modifiers are
+/// physically held, marked as injected so the keys engine passes it untouched.
+#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085) posts cmd+V"))]
+pub fn post_combo(keycode: u16, flags: u64) {
+    post_marked(keycode, flags, &[]);
+}
+
+/// Cmd+V in the frontmost app with explicit flags (a held shift does not make it
+/// cmd+shift+V), marked as injected. Unlike `ax::send_paste`, the keys engine ignores it.
+#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085) pastes"))]
+pub fn paste() {
+    post_combo(KEY_V, FLAG_COMMAND);
+}
+
+/// Type `text` into the frontmost app as unicode key events (no clipboard), in chunks of
+/// at most 20 UTF-16 units that never split a surrogate pair. Marked as injected, no flags.
+#[cfg_attr(not(test), expect(dead_code, reason = "dictation insert = \"type\" (flick-a085)"))]
+pub fn type_text(text: &str) {
+    for chunk in utf16_chunks(text, UNICODE_CHUNK) {
+        post_marked(0, 0, &chunk);
+    }
+}
+
+/// `text` as UTF-16, cut into pieces of at most `max` units (at least 2), never between
+/// the two halves of a surrogate pair.
+fn utf16_chunks(text: &str, max: usize) -> Vec<Vec<u16>> {
+    let max = max.max(2);
+    let mut chunks = vec![];
+    let mut cur: Vec<u16> = vec![];
+    let mut buf = [0u16; 2];
+    for c in text.chars() {
+        let units = c.encode_utf16(&mut buf);
+        if cur.len() + units.len() > max {
+            chunks.push(std::mem::take(&mut cur));
+        }
+        cur.extend_from_slice(units);
+    }
+    if !cur.is_empty() {
+        chunks.push(cur);
+    }
+    chunks
+}
+
+/// Post a down and an up of `keycode` with exactly `flags`, carrying `unicode` if not
+/// empty, stamped with `INJECTED_MARK`.
+fn post_marked(keycode: u16, flags: u64, unicode: &[u16]) {
     for down in [true, false] {
         // SAFETY: a null source is allowed; the result is a +1 reference or null.
         let event = unsafe { CGEventCreateKeyboardEvent(ptr::null(), keycode, down) };
@@ -196,7 +253,12 @@ pub fn post_key(keycode: u16) {
             return;
         }
         // SAFETY: `event` is a live, non-null CGEvent.
-        unsafe { CGEventSetFlags(event, 0) };
+        unsafe { CGEventSetFlags(event, flags) };
+        if !unicode.is_empty() {
+            // SAFETY: as above; `unicode` is a live slice of `len` UTF-16 units, copied by
+            // the call.
+            unsafe { CGEventKeyboardSetUnicodeString(event, unicode.len(), unicode.as_ptr()) };
+        }
         // SAFETY: as above; the field id is a valid `CGEventField`.
         unsafe { CGEventSetIntegerValueField(event, FIELD_SOURCE_USER_DATA, INJECTED_MARK) };
         // SAFETY: as above; posting does not consume the reference.
@@ -241,6 +303,25 @@ mod tests {
     }
 
     #[test]
+    fn unicode_chunks_keep_surrogate_pairs_whole() {
+        assert!(utf16_chunks("", 20).is_empty());
+        let ascii: String = "a".repeat(45);
+        let chunks = utf16_chunks(&ascii, 20);
+        assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), [20, 20, 5]);
+        // "x" then 10 emoji (2 units each): a 20-unit chunk can't end mid-pair.
+        let text = format!("x{}", "\u{1F600}".repeat(10));
+        let chunks = utf16_chunks(&text, 20);
+        assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), [19, 2]);
+        let joined: Vec<u16> = chunks.concat();
+        assert_eq!(String::from_utf16(&joined).ok(), Some(text));
+        // A max below 2 still fits a pair.
+        assert_eq!(
+            utf16_chunks("\u{1F600}", 1),
+            vec!["\u{1F600}".encode_utf16().collect::<Vec<_>>()]
+        );
+    }
+
+    #[test]
     fn verdicts_differ() {
         assert_ne!(Verdict::Drop, Verdict::Pass);
         assert_ne!(Verdict::SetFlags(0), Verdict::Pass);
@@ -258,7 +339,10 @@ mod tests {
         assert!(matches!(running, Status::Running | Status::NoPermission), "{running:?}");
         stop();
         assert_eq!(status(), Status::Off);
-        // Not called: it would type into the focused app.
+        // Not called: they would type into the focused app.
         let _: fn(u16) = post_key;
+        let _: fn() = paste;
+        let _: fn(u16, u64) = post_combo;
+        let _: fn(&str) = type_text;
     }
 }
