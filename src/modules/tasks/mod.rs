@@ -5,8 +5,9 @@
 //! resume it. The open row's `end` advances on every event, so a crash loses at most the
 //! time since the last event; quit ends it. The running task survives reload and restart
 //! (`task_state`); the time Flick was down is not counted.
-//! Every change of the running task posts `Event::TaskChanged`, also at `Started`, so other
-//! modules (activity) learn it without reading this module's tables.
+//! Every change of the running task posts `Event::TaskChanged`, also at `Started` and, with a
+//! task running, at `Reloaded` (for an `activity` the reload enabled), so other modules learn
+//! it without reading this module's tables.
 //! Launcher: root items Start/Stop/Switch Task, Tasks and Tasks Today, views `task/pick`,
 //! `task/list` and `task/today` (`view.rs`, ids there), a task row's ⌘K menu (Start or Stop,
 //! Mark Done or Reopen, Rename, Delete; `manage.rs`).
@@ -388,7 +389,9 @@ impl Module for Tasks {
         (key == view::PICK).then(view::pick)
     }
 
-    /// `TaskChanged` (from the launcher, the CLI or a restart) makes the views stale.
+    /// `TaskChanged` (from the launcher, the CLI or a restart) makes the views stale. At
+    /// `Reloaded` the running task is posted again, unchanged, so a module the reload just
+    /// started (`activity`) tags its spans with it (flick-4bb4).
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         let (store, now) = (cx.store, (self.env.now)());
         match event {
@@ -397,6 +400,12 @@ impl Module for Tasks {
                 return true;
             }
             Event::Started => self.start_up(store, now),
+            Event::Reloaded => {
+                self.touch(store, now);
+                if let Some(task) = self.running {
+                    (self.env.post)(Event::TaskChanged { task: Some(task) });
+                }
+            }
             Event::Sleep | Event::Locked => {
                 self.away.asleep |= event == Event::Sleep;
                 self.away.locked |= event == Event::Locked;

@@ -28,7 +28,7 @@ flick --json task report today | jq .ok.total_secs
 
 - **Timer.** At most one task runs. It keeps running through `flick reload` and a restart; the time Flick was not running does not count. Idle (60 s without input) ends the task's time at the last input, and the next input starts it again. Sleep and screen lock pause it at once; wake and unlock resume it. A crash loses the time since the last event. Quit (**Quit Flick**, SIGTERM) ends the open time row. There is no ticking timer: durations are computed when a list or command reads them.
 - **Activity.** Task timing works with activity recording off. While recording is on, each activity span carries the id of the task that ran: `flick activity today --by task` gives totals per task id. For the apps used per task, filter the spans: `flick --json activity spans --since today | jq '.ok[] | select(.task == 3)'`.
-- **Events.** Each start, switch and stop, and the task restored at startup, is an event: `flick events` prints `{"event":"task_changed","task":3}` (`"task":null` after a stop).
+- **Events.** Each start, switch and stop, the task restored at startup, and the running task again after a config reload (so a newly enabled `[activity]` learns it), is an event: `flick events` prints `{"event":"task_changed","task":3}` (`"task":null` after a stop).
 
 ## Manual tests
 
