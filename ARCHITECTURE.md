@@ -527,8 +527,9 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
   A crash skips the hook, so at `Started` without `hyper = "caps_lock"`, `Wire::start` reads
   the list and clears Flick's entry if an earlier run left it set.
 - Conflict checks (Hyperkey with the remap, Hammerspoon with chords, a global hotkey on the
-  hyper key or a chord key) run in `flick keys status` and at `Started`. At `Started`,
-  hotkeys are not bound yet, so the log misses the hotkey conflicts.
+  hyper key or a chord key) run in `flick keys status` and after `Started`. `Started` runs
+  before the controller binds hotkeys, so `Wire::log_conflicts_later` queues the startup
+  log on the main queue (`Sys::later`); it runs once the hotkeys are bound (flick-6968).
 
 ## Store
 
