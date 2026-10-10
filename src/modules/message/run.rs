@@ -111,6 +111,12 @@ impl<D: Send + 'static> Worker<D> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 
+    /// Whether a worker thread still holds the queue (its result may be on the way).
+    #[cfg(test)]
+    pub fn running(&self) -> bool {
+        Arc::strong_count(&self.0) > 1
+    }
+
     /// Every finished result, oldest first.
     pub fn take(&self) -> Vec<D> {
         std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
