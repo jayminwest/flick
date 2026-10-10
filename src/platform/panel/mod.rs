@@ -5,6 +5,7 @@
 mod form;
 mod keys;
 mod rows;
+mod scroll;
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
@@ -27,8 +28,9 @@ use objc2_foundation::{
 use super::edit::{self, command_only};
 pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
-pub use rows::{Frame, Icon, Row, Tone, render};
-use rows::{RowViews, label, make_row, make_text, ns, separator, top_rect};
+pub use rows::{Frame, Icon, Row, Tone, render, scroll_text};
+use rows::{RowViews, TextViews, label, make_row, make_text, ns, separator, top_rect};
+pub use scroll::TextScroll;
 
 const W: f64 = 750.0;
 const H: f64 = 474.0;
@@ -54,6 +56,10 @@ pub enum Key {
     CmdK,
     /// ⌘↵.
     CmdEnter,
+    /// One line up or down (K, J with a read-only title). Up and Down move the selection;
+    /// these scroll read-only text where there is some.
+    LineUp,
+    LineDown,
     /// Half a page up or down (⌃U, ⌃D with a read-only title).
     PageUp,
     PageDown,
@@ -231,7 +237,7 @@ struct Ui {
     field: Retained<NSTextField>,
     rows: Vec<RowViews>,
     empty: Retained<NSTextField>,
-    text: Retained<NSTextField>,
+    text: TextViews,
     footer_left: Retained<NSTextField>,
     footer_action: Retained<NSTextField>,
     form: FormViews,
@@ -313,7 +319,7 @@ pub fn init(handlers: Handlers) {
     empty.setFrame(top_rect(H, 0.0, f64::midpoint(H - FOOTER_H, SEARCH_H) - 10.0, W, 20.0));
     root.addSubview(&empty);
     let text = make_text(mtm);
-    root.addSubview(&text);
+    root.addSubview(&text.scroll);
 
     root.addSubview(&separator(mtm, top_rect(H, 0.0, H - FOOTER_H, W, 1.0)));
     let footer_left = label(mtm, 12.0, &NSColor::secondaryLabelColor());

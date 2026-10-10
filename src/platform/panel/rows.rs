@@ -5,11 +5,12 @@ use std::path::Path;
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSBox, NSBoxType, NSColor, NSFont, NSImage, NSImageScaling, NSImageView, NSLineBreakMode,
-    NSTextAlignment, NSTextField, NSView, NSWorkspace,
+    NSBorderType, NSBox, NSBoxType, NSColor, NSFont, NSImage, NSImageScaling, NSImageView,
+    NSLineBreakMode, NSScrollView, NSTextAlignment, NSTextField, NSTextView, NSView, NSWorkspace,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
+use super::scroll::{self, Before, Extent, TextScroll};
 use super::{FOOTER_H, H, LIST_PAD, ROW_H, SEARCH_H, Ui, VISIBLE_ROWS, W, with_ui};
 
 /// A row's icon: a file's Finder icon, or an SF Symbol name.
@@ -59,8 +60,11 @@ pub struct Frame<'a> {
     pub footer: &'a str,
     /// Right-aligned footer text: what Return does.
     pub action: &'a str,
-    /// Read-only text under the rows, word-wrapped in a fixed-width font. Empty: none.
+    /// Read-only text under the rows, word-wrapped in a fixed-width font, scrollable (mouse,
+    /// `scroll_text`). Empty: none.
     pub text: &'a str,
+    /// New `text` starts at its end and follows it while the user is at the end.
+    pub text_tail: bool,
 }
 
 pub(super) struct RowViews {
@@ -95,16 +99,98 @@ pub(super) fn separator(mtm: MainThreadMarker, frame: NSRect) -> Retained<NSBox>
     b
 }
 
-/// The read-only text block under the rows (`Frame::text`), hidden until a frame has text.
-pub(super) fn make_text(mtm: MainThreadMarker) -> Retained<NSTextField> {
-    let text = NSTextField::wrappingLabelWithString(&ns(""), mtm);
-    text.setFont(NSFont::userFixedPitchFontOfSize(12.0).as_deref());
-    text.setTextColor(Some(&NSColor::labelColor()));
-    if let Some(cell) = text.cell() {
-        cell.setTruncatesLastVisibleLine(true);
+/// The read-only text block under the rows (`Frame::text`): a non-editable, non-selectable
+/// text view in a scroll view, hidden until a frame has text.
+pub(super) struct TextViews {
+    pub(super) scroll: Retained<NSScrollView>,
+    view: Retained<NSTextView>,
+    /// One line's height, in points.
+    line: f64,
+}
+
+pub(super) fn make_text(mtm: MainThreadMarker) -> TextViews {
+    let font = NSFont::userFixedPitchFontOfSize(12.0)
+        .unwrap_or_else(|| NSFont::monospacedSystemFontOfSize_weight(12.0, 0.0));
+    let scroll = NSTextView::scrollableTextView(mtm);
+    scroll.setDrawsBackground(false);
+    scroll.setBorderType(NSBorderType::NoBorder);
+    scroll.setHasVerticalScroller(true);
+    scroll.setAutohidesScrollers(true);
+    // `scrollableTextView` makes an NSTextView its document view; the fallback never runs.
+    let view = scroll.documentView().and_then(|v| v.downcast::<NSTextView>().ok());
+    let view = view.unwrap_or_else(|| {
+        let t = NSTextView::initWithFrame(NSTextView::alloc(mtm), NSRect::ZERO);
+        scroll.setDocumentView(Some(&t));
+        t
+    });
+    view.setEditable(false);
+    // Not selectable: a click would take the keyboard from the panel and its keys.
+    view.setSelectable(false);
+    view.setRichText(false);
+    view.setDrawsBackground(false);
+    view.setFont(Some(&font));
+    view.setTextColor(Some(&NSColor::labelColor()));
+    view.setTextContainerInset(NSSize::ZERO);
+    // SAFETY: the text view's own container, used on the main thread.
+    if let Some(c) = unsafe { view.textContainer() } {
+        c.setLineFragmentPadding(0.0);
     }
-    text.setHidden(true);
-    text
+    // SAFETY: the text view's own layout manager, used on the main thread.
+    let line =
+        unsafe { view.layoutManager() }.map_or(15.0, |lm| lm.defaultLineHeightForFont(&font));
+    scroll.setHidden(true);
+    TextViews { scroll, view, line }
+}
+
+impl TextViews {
+    fn offset(&self) -> f64 {
+        self.scroll.contentView().bounds().origin.y
+    }
+
+    /// Lay the text out and measure it.
+    fn extent(&self) -> Extent {
+        self.view.sizeToFit();
+        Extent {
+            visible: self.scroll.contentSize().height,
+            content: self.view.frame().size.height,
+            line: self.line,
+        }
+    }
+
+    fn scroll_to(&self, offset: f64) {
+        let clip = self.scroll.contentView();
+        clip.scrollToPoint(NSPoint::new(0.0, offset));
+        self.scroll.reflectScrolledClipView(&clip);
+    }
+
+    /// Show `text` at `frame`, scrolled as `scroll::after_change` says.
+    fn show(&self, frame: NSRect, text: &str, tail: bool) {
+        let old = self.view.string();
+        let before = Before {
+            empty: old.length() == 0,
+            at_bottom: self.extent().at_bottom(self.offset()),
+            offset: self.offset(),
+        };
+        self.scroll.setFrame(frame);
+        if old.to_string() != text {
+            self.view.setString(&ns(text));
+        }
+        self.scroll.setHidden(text.is_empty());
+        self.scroll_to(scroll::after_change(before, tail, self.extent()));
+    }
+}
+
+/// Scroll the read-only text block `by`. False when no text shows.
+pub fn scroll_text(by: TextScroll) -> bool {
+    with_ui(|ui| {
+        let t = &ui.text;
+        if t.scroll.isHidden() {
+            return false;
+        }
+        t.scroll_to(scroll::scrolled(by, t.offset(), t.extent()));
+        true
+    })
+    .unwrap_or(false)
 }
 
 pub(super) fn make_row(mtm: MainThreadMarker, index: usize) -> RowViews {
@@ -190,9 +276,9 @@ pub fn render(frame: &Frame) {
             row.view.setHidden(true);
         }
         let top = SEARCH_H + LIST_PAD + shown as f64 * ROW_H + 6.0;
-        ui.text.setFrame(top_rect(H, 20.0, top, W - 40.0, (H - FOOTER_H - top - 8.0).max(0.0)));
-        ui.text.setStringValue(&ns(frame.text));
-        ui.text.setHidden(frame.text.is_empty());
+        let h = scroll::whole_lines(H - FOOTER_H - top - 8.0, ui.text.line);
+        let area = top_rect(H, 20.0, top, W - 40.0, h);
+        ui.text.show(area, frame.text, frame.text_tail);
 
         ui.empty.setStringValue(&ns(frame.empty));
         ui.footer_left.setStringValue(&ns(frame.footer));
