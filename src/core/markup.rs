@@ -61,6 +61,13 @@ pub struct Block {
 
 impl Block {
     /// The block's text without styles.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the chat model (flick-1a7e) uses the plain form; HUD text blocks are styled"
+        )
+    )]
     pub fn text(&self) -> String {
         self.spans.iter().map(|s| s.text.as_str()).collect()
     }
@@ -106,6 +113,13 @@ pub fn parse(md: &str) -> Vec<Block> {
 /// `md` as plain text: markers dropped, bullets as `•` (or `n.`) indented two spaces per
 /// level, links as their text, code as written, runs of blank lines as one, and no blank
 /// lines at either end.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the chat model (flick-1a7e) uses the plain form; HUD text blocks are styled"
+    )
+)]
 pub fn plain(md: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     for b in parse(md) {

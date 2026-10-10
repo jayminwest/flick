@@ -24,7 +24,7 @@ use super::controls::{
 };
 use super::view::{CLOSE_ROOM, ContentView, label, ns, rect};
 use crate::core::card::{Action, Block, Card, Input, Opt, Style};
-use crate::core::markup;
+use crate::platform::surface::render;
 
 /// What drawing one card needs besides the card.
 struct Pen<'a> {
@@ -126,6 +126,18 @@ fn wrapped(
     h
 }
 
+/// Markdown-lite `md` as styled text (`surface::render`) at `at` (left, top, width), cut to
+/// `max_h`; returns its height.
+fn styled(pen: &Pen, md: &str, at: (f64, f64, f64), max_h: f64) -> f64 {
+    let (left, top, w) = at;
+    let text = render::attributed(md, 13.0, &NSColor::labelColor());
+    let h = render::measure(&text, w).1.min(max_h);
+    let view = render::text_view(pen.mtm, &text, false);
+    view.setFrame(rect(left, top, w, h));
+    pen.into.addSubview(&view);
+    h
+}
+
 /// A one-line secondary label (a block's label); returns the y under it.
 fn caption(pen: &Pen, text: &str, y: f64) -> f64 {
     let l = label(pen.mtm, &NSFont::systemFontOfSize(11.0), &NSColor::secondaryLabelColor());
@@ -146,9 +158,7 @@ fn block(
     let body = NSFont::systemFontOfSize(13.0);
     let ink = NSColor::labelColor();
     match b {
-        Block::Text { md } => {
-            y + wrapped(pen, &markup::plain(md), &body, &ink, (PAD, y, pen.inner), MAX_TEXT_H)
-        }
+        Block::Text { md } => y + styled(pen, md, (PAD, y, pen.inner), MAX_TEXT_H),
         Block::Kv { items } => {
             let small = NSFont::systemFontOfSize(12.0);
             let keys: Vec<Retained<NSTextField>> = items

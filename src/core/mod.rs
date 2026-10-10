@@ -18,13 +18,6 @@ mod event;
 mod form;
 mod item;
 pub mod keys;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "styles, links and heading levels are first read by platform::surface render.rs (flick-59ea)"
-    )
-)]
 pub mod markup;
 mod module;
 mod rank;

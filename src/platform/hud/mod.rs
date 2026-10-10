@@ -21,10 +21,13 @@
 //! - `focus_top` moves the keyboard into the newest card without activating Flick, `unfocus`
 //!   gives it back (`focus`, keys in `keys`). Esc on a card that holds the keyboard only
 //!   gives it back; a press gives it back too.
+//! - `embed` draws a card into another window's view (a `surface` transcript row) with the
+//!   same renderer; presses there go to `embed::on_press` instead of `on_press`.
 
 mod card_layout;
 mod card_view;
 mod controls;
+pub mod embed;
 mod focus;
 mod keys;
 mod stack;
@@ -420,15 +423,18 @@ fn clicked(window: usize, on_close: bool) {
     }
 }
 
-/// A press of the button tagged `tag` on the card in panel `window`: hand the action and the
-/// values to the `on_press` handler, or redraw the card with the error if the values are over
-/// the cap.
-fn pressed(window: usize, tag: isize) {
+/// A press of the button tagged `tag` on the card in panel `window` (else on an `embed` card
+/// drawn into view `host`): hand the action and the values to the `on_press` handler, or
+/// redraw the card with the error if the values are over the cap.
+fn pressed(window: usize, host: usize, tag: isize) {
     let hit = STATE.with_borrow(|s| {
         let e = s.cards.iter().find(|e| e.views.key() == window)?;
         let c = e.controls.as_ref()?;
         Some((e.id.clone(), c.action(tag)?, values_json(&c.values())))
     });
+    if hit.is_none() {
+        embed::pressed(host, tag);
+    }
     match hit {
         Some((id, action, Ok(values))) => {
             if let Some(handler) = ON_PRESS.get() {
