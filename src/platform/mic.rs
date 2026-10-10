@@ -61,10 +61,6 @@ pub fn status() -> Option<Access> {
 
 /// Ask for microphone access (macOS shows its prompt only while `NotDetermined`) and call
 /// `done(granted)` on an arbitrary thread. It must only queue work. Tests must not call it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "dictation start (flick-a085) asks when not determined")
-)]
 pub fn request(done: fn(bool)) {
     let Some(class) = device() else {
         done(false);

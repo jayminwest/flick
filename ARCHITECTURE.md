@@ -179,7 +179,9 @@ Sources:
 - `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
   `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
   threads and notification clicks), `capture` (its shutter thread, and the annotation
-  editor's `on_done` when it closes), `sys` (its probe and service-check threads).
+  editor's `on_done` when it closes), `sys` (its probe and service-check threads),
+  `dictation` (its recorder and transcription threads, the pill's Esc, and its
+  modifier-release poll).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -243,6 +245,38 @@ follows an external server.
   real notification.
 - State changes that need the main thread (notifications) queue in the shared state and are
   drained in `on_event(ModuleChanged)`.
+
+Dictation (`src/modules/dictation/`): two child processes and the main-thread steps around
+them; every program and macOS call goes through `dictation::Hooks` (`wire::REAL`; scripted
+fakes in `fake.rs` for tests).
+
+- `dictation start` (a keys chord's `on_down`) refuses while the microphone is denied
+  (pill "Microphone denied") or a program or model is missing. While the authorization is
+  not determined it calls `mic::request` and records nothing, so the first clip is never the
+  silence captured while the prompt shows. Else it spawns `rec --buffer 1600 -q -t raw -r
+  16000 -e signed -b 16 -c 1 -` and a named reader thread (`recorder.rs`) keeps the PCM in
+  memory (no file), publishes each 50 ms buffer's meter level in an `Arc<AtomicU32>` for
+  `pill::show(Recording)`, and at `max_seconds` stops `rec` and posts `ModuleChanged`.
+- `dictation stop` (`on_up`) discards a hold under `min_hold_ms`; else it records the
+  frontmost pid and starts a worker thread (`worker.rs`): SIGTERM the recorder, drain and
+  reap it (SIGKILL after 1 s), gate silence (`audio::is_silent`), write the clip to
+  `~/Library/Caches/Flick/dictation/<pid>-<epoch>.wav` (dir 0700, file 0600; `clip.rs`),
+  run the engine (`engine.rs`: whisper-cli, parakeet-cli or a `command` template; stderr
+  closed) within `timeout_secs` and the cancel flag, delete the clip on every outcome
+  (`Clip` deletes on drop), clean the text, and push the result to the inbox. `Started` (when on)
+  wipes leftover clips. Stop while idle (the key-up after an Esc) answers quietly.
+- `on_event(ModuleChanged { module: "dictation" })` takes a queued Esc (`pill::on_cancel`,
+  set once before the first recording, only sets a flag and posts), a recorder that ended
+  by itself, and the inbox. Results carry the session epoch; a cancelled run's late result
+  is stale. Insertion waits, never blocking, for the chord's modifiers to come up
+  (`keytap::current_flags`, re-polled by `timer::after(0.02)` posting `ModuleChanged`, at
+  most 500 ms), then refuses under `keytap::secure_input` or when the frontmost pid differs
+  from the one at chord-up (the text stays in `last`, memory only, and the pill says why);
+  else `insert = "paste"`: `pasteboard::snapshot`, `set_transient_text`, `keytap::paste`,
+  and after `restore_ms` `restore` only if the change count is still the one
+  `set_transient_text` returned; `insert = "type"`: `keytap::type_text`.
+- Transcripts and audio are never logged or stored; log lines carry durations and
+  character counts.
 
 ### Key tap
 
