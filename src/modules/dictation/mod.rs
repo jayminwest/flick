@@ -38,14 +38,13 @@ pub enum Probe {
 }
 
 /// Microphone authorization (`AVCaptureDevice` for audio), for `status`.
-#[cfg_attr(not(test), expect(dead_code, reason = "the platform check (flick-0654) answers the others"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mic {
     Authorized,
     Denied,
     Restricted,
     NotDetermined,
-    /// Not checked: this build has no platform check yet (flick-0654).
+    /// Not checked: `AVCaptureDevice` is missing or gave an unknown answer.
     Unchecked,
 }
 
@@ -64,8 +63,7 @@ impl Mic {
 /// What the module asks of the system: `wire::REAL` in the app, fakes in tests.
 pub struct Hooks {
     pub probe: fn(&Path) -> Probe,
-    /// The microphone authorization. The hook point for flick-0654's
-    /// `platform` check; `wire::REAL` answers `Mic::Unchecked` until then.
+    /// The microphone authorization (`platform::mic::status` in `wire::REAL`).
     pub mic: fn() -> Mic,
     /// The home directory, for `~/` in paths.
     pub home: fn() -> PathBuf,
