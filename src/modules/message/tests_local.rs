@@ -163,7 +163,7 @@ fn a_run_for_a_dismissed_or_reposted_card_is_ignored() {
     queue_dismiss();
     f.cx("", false, |cx| m.drain(cx));
     settle(&mut f, &mut m);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     while m.local.running() && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }

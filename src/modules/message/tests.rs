@@ -2,6 +2,7 @@
 //! notifications, the pasteboard and links. Nothing reaches `AppKit`.
 
 use std::cell::{Cell, RefCell};
+use std::sync::{Condvar, Mutex};
 
 use super::*;
 use crate::config::parse;
@@ -40,9 +41,25 @@ pub(super) fn queue(note: dispatch::Note) {
 
 /// A fake KOTA send, run on the worker thread: `action_command`'s program picks the exit;
 /// `echo` fails with the argv and stdin, so tests can read them off the error line.
+/// Whether `held` sends may answer (`hold_sends`). Only one test sends `held`.
+static RELEASED: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
+
+/// Hold `held` sends (`true`) or let them answer, waiting ones included (`false`).
+pub(super) fn hold_sends(hold: bool) {
+    *RELEASED.0.lock().unwrap() = !hold;
+    RELEASED.1.notify_all();
+}
+
 fn exec(job: &run::Job) -> run::Exit {
     match job.argv[0].as_str() {
         "sent" => run::Exit::Sent,
+        // Sent, once the test releases it: its result cannot land inside the drain that
+        // started it.
+        "held" => {
+            let released = RELEASED.0.lock().unwrap();
+            drop(RELEASED.1.wait_while(released, |r| !*r).unwrap());
+            run::Exit::Sent
+        }
         "reject" => run::Exit::Rejected("card is gone".into()),
         "echo" => run::Exit::Failed(format!("{} <{}", job.argv.join(" "), job.stdin)),
         other => run::Exit::Failed(format!("{other}: failed")),

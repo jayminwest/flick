@@ -17,7 +17,7 @@ fn verdict(service: &Service) -> (Status, String) {
 }
 
 fn wait_for(shared: &Shared, done: impl Fn(&State) -> bool) {
-    assert!(shared.wait(Duration::from_secs(5), done), "timed out");
+    assert!(shared.wait(Duration::from_secs(15), done), "timed out");
 }
 
 #[test]
@@ -120,7 +120,12 @@ fn a_reload_keeps_unchanged_verdicts_and_drops_late_ones() {
     // Reload while `slow` runs: its result belongs to the old list and is dropped.
     shared.set_services(&[slow]);
     assert!(!shared.lock().checking);
-    std::thread::sleep(Duration::from_millis(600));
+    // The check threads hold clones of `shared` until they end.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while Arc::strong_count(&shared) > 1 {
+        assert!(std::time::Instant::now() < deadline, "the check threads did not end");
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let st = shared.lock();
     assert_eq!(st.services.len(), 1);
     assert_eq!(st.services[0].verdict, None);

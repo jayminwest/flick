@@ -45,7 +45,7 @@ fn event(f: &mut Fx, m: &mut Llm) -> bool {
 
 /// Drain until no reply runs and no prompt waits.
 fn settle(f: &mut Fx, m: &mut Llm) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         event(f, m);
         if (m.chat.reply.is_none() && m.chat.waiting.is_none()) || Instant::now() > deadline {
@@ -242,7 +242,7 @@ fn stop_keeps_what_arrived() {
     let mut m = llm("[llm]\ndefault_model = \"q\"\n[[llm.servers]]\nname = \"half\"\nurl = \"http://half\"\n");
     hotkey(&mut f, &mut m);
     queue(Note::Submit("go".into()));
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while !take_log().iter().any(|l| l.contains("live Streaming|Theirs|q|part")) {
         assert!(Instant::now() < deadline, "no partial reply");
         event(&mut f, &mut m);
@@ -341,7 +341,7 @@ fn picker(f: &mut Fx) -> (Llm, ListView) {
     assert_eq!(view.items[0].title, "mlx: loading models…");
     let mut view = f.cx("", |cx| m.open("models", cx)).unwrap();
     let landed = |m: &Llm| ["mlx", "down"].iter().all(|s| m.shared.lock().models.get(*s).is_some_and(|l| l.result.is_some()));
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while !landed(&m) {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(2));

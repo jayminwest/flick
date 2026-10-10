@@ -106,7 +106,7 @@ impl Activity {
 /// `browser::front_tab_url` and posts `ModuleChanged`.
 pub fn ask(ask: Ask) {
     static WORKER: OnceLock<Sender<Ask>> = OnceLock::new();
-    let worker = WORKER.get_or_init(|| spawn(browser::front_tab_url, notify));
+    let worker = WORKER.get_or_init(|| spawn(Box::new(browser::front_tab_url), Box::new(notify)));
     let _ = worker.send(ask);
 }
 
@@ -116,7 +116,7 @@ fn notify() {
 
 /// Start a worker that answers asks with `read` and calls `notify` after each answer. Asks
 /// queued behind a running read are skipped for the newest.
-fn spawn(read: fn(&str) -> TabUrl, notify: fn()) -> Sender<Ask> {
+fn spawn(read: Box<dyn Fn(&str) -> TabUrl + Send>, notify: Box<dyn Fn() + Send>) -> Sender<Ask> {
     let (tx, rx) = mpsc::channel::<Ask>();
     let _ = std::thread::Builder::new().name("activity-urls".into()).spawn(move || {
         while let Ok(mut ask) = rx.recv() {
@@ -134,25 +134,43 @@ fn spawn(read: fn(&str) -> TabUrl, notify: fn()) -> Sender<Ask> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use super::*;
 
+    const WAIT: Duration = Duration::from_secs(15);
+
+    fn send(tx: &Sender<Ask>, seq: u64, inbox: &Inbox) {
+        let (bundle, name) = ("b.dev".to_owned(), "B".to_owned());
+        tx.send(Ask { seq, pid: 4, bundle, name, inbox: Arc::clone(inbox) }).unwrap();
+    }
+
+    /// Deterministic: the reader holds ask 1 until asks 2 and 3 are queued behind it, so
+    /// the worker must skip 2 and answer 3. No timing window decides what runs.
     #[test]
     fn the_worker_answers_the_newest_ask_with_its_reader() {
-        let tx = spawn(|bundle| TabUrl::Url(format!("https://{bundle}/")), || {});
+        let (entered_tx, entered) = mpsc::channel::<String>();
+        let (release, release_rx) = mpsc::channel::<()>();
+        let (notified_tx, notified) = mpsc::channel::<()>();
+        let read = move |bundle: &str| {
+            entered_tx.send(bundle.to_owned()).unwrap();
+            release_rx.recv_timeout(WAIT).unwrap();
+            TabUrl::Url(format!("https://{bundle}/"))
+        };
+        let tx = spawn(Box::new(read), Box::new(move || notified_tx.send(()).unwrap()));
         let inbox = Inbox::default();
-        for seq in 1..=3 {
-            let (bundle, name) = ("b.dev".to_owned(), "B".to_owned());
-            tx.send(Ask { seq, pid: 4, bundle, name, inbox: Arc::clone(&inbox) }).unwrap();
-        }
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !inbox.lock().unwrap().iter().any(|a| a.seq == 3) {
-            assert!(Instant::now() < deadline, "no answer to the last ask");
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        send(&tx, 1, &inbox);
+        assert_eq!(entered.recv_timeout(WAIT).unwrap(), "b.dev", "the worker reads ask 1");
+        send(&tx, 2, &inbox);
+        send(&tx, 3, &inbox);
+        release.send(()).unwrap();
+        notified.recv_timeout(WAIT).unwrap();
+        assert_eq!(entered.recv_timeout(WAIT).unwrap(), "b.dev", "the worker reads again");
+        release.send(()).unwrap();
+        notified.recv_timeout(WAIT).unwrap();
         let answers = inbox.lock().unwrap();
-        assert!(answers.len() <= 3);
+        let seqs: Vec<u64> = answers.iter().map(|a| a.seq).collect();
+        assert_eq!(seqs, [1, 3], "ask 2, queued behind 1, is skipped for 3");
         let last = answers.last().unwrap();
         assert_eq!((last.pid, last.name.as_str(), &last.url), (4, "B", &TabUrl::Url("https://b.dev/".into())));
     }

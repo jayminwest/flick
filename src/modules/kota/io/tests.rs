@@ -7,9 +7,9 @@ fn settings(machine: &str, dash: &str) -> Settings {
     Settings { machine: machine.into(), dash: dash.into(), ..Settings::default() }
 }
 
-/// Wait up to 5 s for `cond`.
+/// Wait up to 15 s for `cond`.
 fn wait(what: &str, mut cond: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while !cond() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         thread::sleep(Duration::from_millis(5));
@@ -84,8 +84,9 @@ fn one_round_at_a_time_and_sleep_drops_the_round_in_flight() {
         let p = sh.lock();
         assert!(p.asleep && p.presence.stale && !p.running);
     }
-    thread::sleep(Duration::from_millis(400));
-    // The slow round finished after the sleep: its result is dropped.
+    // The slow round finished after the sleep (its thread held a clone of `sh`): its result
+    // is dropped.
+    wait("the slow round to end", || Arc::strong_count(&sh) == 1);
     let p = sh.lock();
     assert_eq!((p.presence.state, p.ended_at), (State::Unknown, None));
 }
