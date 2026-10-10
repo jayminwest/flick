@@ -18,10 +18,15 @@
 //! - A card's action buttons reach the one `on_press` handler with the card id, the action id
 //!   and the values JSON of its fields and choices at press time. A card redrawn by an update
 //!   keeps what the user typed or picked unless the update changed that input's initial value.
+//! - `focus_top` moves the keyboard into the newest card without activating Flick, `unfocus`
+//!   gives it back (`focus`, keys in `keys`). Esc on a card that holds the keyboard only
+//!   gives it back; a press gives it back too.
 
 mod card_layout;
 mod card_view;
 mod controls;
+mod focus;
+mod keys;
 mod stack;
 mod text;
 mod view;
@@ -31,14 +36,15 @@ use std::ptr::NonNull;
 use std::sync::OnceLock;
 
 use block2::RcBlock;
-use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
+use objc2::{ClassType, MainThreadMarker};
 use objc2_app_kit::{NSEvent, NSEventMask, NSScreen, NSSound};
-use objc2_foundation::{NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize};
 
 pub use card_layout::CANCEL;
 pub use card_layout::CardUi;
+pub use focus::{focus_top, unfocus};
 pub use stack::Corner;
 pub use text::TextCard;
 
@@ -428,6 +434,7 @@ fn pressed(window: usize, tag: isize) {
             if let Some(handler) = ON_PRESS.get() {
                 handler(&id, &action, values);
             }
+            focus::pressed(window);
         }
         Some((id, _, Err(why))) => refill_with_error(&id, &why),
         None => {}
@@ -468,7 +475,11 @@ fn escape_monitors() -> Vec<Retained<AnyObject>> {
     });
     let local = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
         // SAFETY: as above.
-        if unsafe { event.as_ref() }.keyCode() == ESCAPE {
+        let e = unsafe { event.as_ref() };
+        // Esc on a card holding the keyboard only gives it back (`focus`).
+        let on_card =
+            e.window(super::mtm()).is_some_and(|w| w.isKindOfClass(view::CardPanel::class()));
+        if e.keyCode() == ESCAPE && !on_card {
             timer::after(0.0, escape);
         }
         event.as_ptr()

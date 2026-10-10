@@ -60,17 +60,20 @@ pub fn render(
     {
         y = status_line(&pen, *tone, line, status.spinner, y + GAP);
     }
-    let actions = if let Some((_, cmd)) = confirm {
-        y = confirm_step(&pen, cmd, y + GAP);
-        vec![]
+    let (actions, pushes) = if let Some((_, cmd)) = confirm {
+        let (bottom, pushes) = confirm_step(&pen, cmd, y + GAP);
+        y = bottom;
+        (vec![], pushes)
     } else {
-        y = buttons(&pen, &card.actions, y + GAP);
-        card.actions.iter().map(|a| a.id.clone()).collect()
+        let (bottom, pushes) = buttons(&pen, &card.actions, y + GAP);
+        y = bottom;
+        (card.actions.iter().map(|a| a.id.clone()).collect(), pushes)
     };
     let controls = Controls {
         inputs,
         initial: card.inputs(),
         actions,
+        buttons: pushes,
         confirm: confirm.map(|(a, _)| a.id.clone()),
         card: card.clone(),
         pending: ui.pending,
@@ -334,8 +337,9 @@ fn status_line(pen: &Pen, tone: Tone, line: &str, spinner: bool, y: f64) -> f64 
     y + wrapped(pen, line, &font, &color, (x, y, pen.inner - (x - PAD)), MAX_VALUE_H).max(SMALL_H)
 }
 
-/// The confirm step: what will run, the exact command (never cut), Cancel and Run.
-fn confirm_step(pen: &Pen, cmd: &str, y: f64) -> f64 {
+/// The confirm step: what will run, the exact command (never cut), Cancel and Run. Returns
+/// the y under it and the two buttons.
+fn confirm_step(pen: &Pen, cmd: &str, y: f64) -> (f64, Vec<Retained<Button>>) {
     // SAFETY: NSFontWeightSemibold is an immutable framework constant, set at load time.
     let semibold = unsafe { NSFontWeightSemibold };
     let bold = NSFont::systemFontOfSize_weight(12.0, semibold);
@@ -353,11 +357,13 @@ fn confirm_step(pen: &Pen, cmd: &str, y: f64) -> f64 {
     let cancel = push(pen, "Cancel", CANCEL_TAG, true);
     let run = push(pen, "Run", RUN_TAG, true);
     style(&run, "Run", Style::Destructive);
-    place_buttons(pen, &[cancel, run], y + GAP)
+    let views = vec![cancel, run];
+    (place_buttons(pen, &views, y + GAP), views)
 }
 
-/// The action buttons at `y`, right-aligned and wrapping; returns the y under them.
-fn buttons(pen: &Pen, actions: &[Action], y: f64) -> f64 {
+/// The action buttons at `y`, right-aligned and wrapping; returns the y under them and the
+/// buttons, by action index.
+fn buttons(pen: &Pen, actions: &[Action], y: f64) -> (f64, Vec<Retained<Button>>) {
     let views: Vec<Retained<Button>> = actions
         .iter()
         .enumerate()
@@ -368,7 +374,8 @@ fn buttons(pen: &Pen, actions: &[Action], y: f64) -> f64 {
             b
         })
         .collect();
-    if views.is_empty() { y - GAP } else { place_buttons(pen, &views, y) }
+    let bottom = if views.is_empty() { y - GAP } else { place_buttons(pen, &views, y) };
+    (bottom, views)
 }
 
 /// Mark an enabled primary button (semibold accent title) or destructive one (red title).

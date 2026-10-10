@@ -22,18 +22,19 @@ max_cards = 4            # cards shown at once; older ones collapse into a "+N m
 max_history = 50         # messages kept
 sound = true             # a short sound when a message (not a pending one) arrives
 hotkey = "cmd+ctrl+alt+shift+KeyM"  # opens the list; unbound by default
+card_hotkey = "cmd+ctrl+alt+shift+KeyK"  # moves the keyboard into the newest card (again: back); unbound by default
 action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "jaymin@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
 pending_timeout_secs = 120  # a sent press waiting this long for KOTA shows "No update from KOTA"; 0 waits
 card_timeout_secs = 0       # how long an open card with actions stays; 0 until acted on or closed
 ```
 
-All keys are optional; the values above are the defaults except `name` (default `Messages`), `hotkey` and `action_command` (default empty: card presses that reply show an error naming the key).
+All keys are optional; the values above are the defaults except `name` (default `Messages`), `hotkey`, `card_hotkey` and `action_command` (default empty: card presses that reply show an error naming the key).
 
 ## The card
 
 - Each message is its own card, keyed by its id: posting (or `show`ing) an id that already shows redraws that card in place, without a sound; a new id stacks a new card nearest the `position` corner, older ones moving away from it. At most `max_cards` show; the rest wait in a `+N more` pill and come back as cards close. The stack sits on the screen under the pointer when its first card appeared, and stays there until it empties; it is above other windows and on every Space.
-- It never becomes the key window and never activates Flick, so typing stays in the app you are using.
-- **Click** opens the post's `--url` (http and https only) and dismisses the card; without a link, a click just dismisses it. The **x** in the top right corner just closes it. **Esc** dismisses every card from any app; that needs Accessibility for Flick (without it, use a click or the timeout). Each card hides after its own `timeout_secs`, later if the pointer rests on it.
+- It never activates Flick and takes the keyboard only when you click one of its text fields or use `card_hotkey` (see [Keyboard](#keyboard)), so typing stays in the app you are using.
+- **Click** opens the post's `--url` (http and https only) and dismisses the card; without a link, a click just dismisses it. The **x** in the top right corner just closes it. **Esc** dismisses every card from any app (except while a card has the keyboard: then Esc only gives it back); that needs Accessibility for Flick (without it, use a click or the timeout). Each card hides after its own `timeout_secs`, later if the pointer rests on it.
 - The body is plain text with light markdown cleanup: `**`, `__` and backticks dropped, `#` headings and `-`/`*` bullets as plain lines and `•`, `[text](url)` as `text (url)`. The card shows up to 18 lines; the list has the full text.
 - `style = "notification"` or `"both"` also posts a macOS notification (needs notification permission; clicking it does nothing yet).
 
@@ -69,8 +70,25 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
   - `shell` never runs on the first press: the card shows the exact command with Cancel and Run. Run executes it with `/bin/sh -c` in your home folder, killed (with what it started) after 60 s; the card shows the last output line or "command failed (exit n): <last stderr line>". Output is never stored.
   - With `"reply": true` the local part runs first; if it works, the press is sent to KOTA as above. If it fails, the card shows the error and nothing is sent.
 - Pending, error and confirm states live in memory only.
+- Any press (a click, Space on a focused button, ⌘1..⌘6, ⌘↵) gives the keyboard back to the app you were in, also after typing in one of the card's fields.
 - Invalid JSON, a card over 16 KiB, or a missing/invalid `id`, `title`, `v` or `state` is an error reply `invalid card: <reason>` (exit 1); nothing is shown or stored. Anything else is shown as well as it can be, with a warning.
 - Cards posted over the network are marked remote: a `flick` action naming a verb peers may not send is shown disabled.
+
+### Keyboard
+
+`card_hotkey` (or `flick message card focus`) moves the keyboard into the newest card without activating Flick: the app you are in stays active (its menu bar stays), only the typing goes to the card, its first field or button focused. Clicking a field in a card does the same for that card.
+
+| Key | In a card that has the keyboard |
+| --- | --- |
+| Tab / Shift-Tab | next / previous field, choice or button (wraps) |
+| Space | press the focused button, toggle the focused choice |
+| ⌘1 … ⌘6 | press action 1 … 6 (a disabled one does nothing) |
+| ⌘↵ | press the primary action (the first enabled `"style": "primary"`) |
+| ⌥↑ / ⌥↓ | move the keyboard to the card above / below |
+| Esc | give the keyboard back; the card stays (Esc never dismisses a card that has the keyboard, even one Esc would dismiss from another app) |
+| ⌘X ⌘C ⌘V ⌘A ⌘Z | edit the focused field |
+
+`card_hotkey` pressed again also gives the keyboard back, as does any press and closing the card. In a shell confirm step ⌘n and ⌘↵ do nothing: Tab to Run and press Space, or click it.
 
 ## Launcher
 
@@ -90,6 +108,7 @@ flick message card ls [--limit n]  # <id>\t<time>\t<state>\t<title>, newest firs
 flick message card show <id>     # show the card again
 flick message card dismiss <id>|--all  # remove the card (every card)
 flick message card press <id> <action> [values-json]  # press a button as a click does (this Mac only)
+flick message card focus         # move the keyboard into the newest card, as card_hotkey does (this Mac only)
 ```
 
 `card press` takes the same path as a click: values default to the card's initial field and choice values, and it answers what happened (`Sent go to KOTA…`, `Running script deploy…`, `Copied`, `Closed c1`) or the refusal. On a `shell` action the first `card press` shows the confirm on the card (and prints the command); a second `card press` of the same action is Run, and `card press <id> :cancel` is Cancel.
@@ -114,3 +133,5 @@ flick message card press <id> <action> [values-json]  # press a button as a clic
 10. Set `action_command = ["/bin/sh", "-c", "cat > /tmp/press.json; echo \"$@\" >> /tmp/press.json", "sh"]` and reload. Post a card with a field and a `Ship` action without `do`, type in the field and press Ship: the card shows "Sent to KOTA…", `/tmp/press.json` holds the values JSON and `--action --card <id> --action-id ship`. Re-post the card: it redraws with Ship enabled. With `pending_timeout_secs = 10`, press again and wait: "No update from KOTA" shows. With `exit 2` in the script (writing a line to stderr first), the card shows "KOTA rejected: <that line>".
 11. Post a local card with actions `{"do":{"open_url":"https://example.com"}}`, `{"do":{"open_app":"Calculator"}}`, `{"do":{"copy":"hello"}}`, `{"do":{"flick":["task","ls"]}}` and `{"do":{"shell":"echo hi; sleep 1; echo bye"}}`. Each press works and leaves a short line; the flick one shows the request's last reply line; the shell one shows the command, runs only on Run, shows "Running command…" for a second and then "bye". Typing in the front app keeps working throughout. A shell `sleep 90` shows "command took over 60 s; stopped" and leaves no `sleep` process.
 12. From a peer, post a card with `{"do":{"flick":["reload"]}}`: the button is disabled with "flick: reload: not allowed over the network"; `flick message card press <id> <action>` prints the same refusal.
+13. Set `card_hotkey`, reload, post a card with a field, a choice and two actions (one `"style":"primary"`) from a terminal, then click into another app (e.g. TextEdit) and type. Press `card_hotkey`: the menu bar still shows TextEdit, the card's field has the cursor. Tab/Shift-Tab walk the field, the choice and the buttons; ⌘2 presses the second action; ⌘↵ the primary. Press `card_hotkey` again (or Esc): typing goes to TextEdit again and the card stays. With two cards, ⌥↓ (top corner) moves the keyboard to the older card.
+14. Click into the card's field (TextEdit stays active in the menu bar), type, press Esc: the card stays (an action card, and also a card without actions) and typing goes back to TextEdit. Click the field again, type, then click a button: the press happens and typing goes back to TextEdit without another click.

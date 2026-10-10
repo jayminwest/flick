@@ -1,6 +1,9 @@
 //! The interactive pieces of a card: controls that take the first click in a panel that is
 //! not key, the one target their actions go to (and the delegate of its text fields), and the
 //! live controls of one drawn card, read back into `core::card` values at press time.
+//!
+//! Buttons and pop-ups take the keyboard focus (Tab, `focus.rs`) while enabled, whatever the
+//! system's keyboard navigation setting, yet never make their panel key on a click.
 
 use std::cell::OnceCell;
 
@@ -37,6 +40,16 @@ define_class!(
         fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
             true
         }
+
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            self.isEnabled()
+        }
+
+        #[unsafe(method(needsPanelToBecomeKey))]
+        fn needs_panel_to_become_key(&self) -> bool {
+            false
+        }
     }
 );
 
@@ -51,6 +64,16 @@ define_class!(
         #[unsafe(method(acceptsFirstMouse:))]
         fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
             true
+        }
+
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            self.isEnabled()
+        }
+
+        #[unsafe(method(needsPanelToBecomeKey))]
+        fn needs_panel_to_become_key(&self) -> bool {
+            false
         }
     }
 );
@@ -146,7 +169,24 @@ fn on(b: &NSButton) -> bool {
     b.state() == NSControlStateValueOn
 }
 
+/// A button as a plain control.
+fn button(b: &Retained<Button>) -> Retained<NSControl> {
+    Retained::into_super(Retained::into_super(b.clone()))
+}
+
 impl Ctl {
+    /// Its controls, in Tab order.
+    fn controls(&self) -> Vec<Retained<NSControl>> {
+        match self {
+            Ctl::Text(f) => vec![Retained::into_super(Retained::into_super(f.clone()))],
+            Ctl::Popup { view, .. } => {
+                let up = Retained::into_super(view.clone());
+                vec![Retained::into_super(Retained::into_super(up))]
+            }
+            Ctl::Radios(bs) | Ctl::Checks(bs) => bs.iter().map(|(_, b)| button(b)).collect(),
+        }
+    }
+
     fn value(&self) -> Input {
         match self {
             Ctl::Text(f) => Input::Text(f.stringValue().to_string()),
@@ -173,6 +213,8 @@ pub struct Controls {
     pub actions: Vec<String>,
     /// The shell action the confirm step's Run presses.
     pub confirm: Option<String>,
+    /// The push buttons: the actions by index, or Cancel and Run in the confirm step.
+    pub buttons: Vec<Retained<Button>>,
     /// The card and its module state as drawn, to redraw it with a local error.
     pub card: Card,
     pub pending: bool,
@@ -182,6 +224,12 @@ impl Controls {
     /// Every input's current value, in card order.
     pub fn values(&self) -> Vec<(String, Input)> {
         self.inputs.iter().map(|(id, c)| (id.clone(), c.value())).collect()
+    }
+
+    /// Every control Tab stops at, in card order: the inputs, then the push buttons.
+    pub fn stops(&self) -> Vec<Retained<NSControl>> {
+        let inputs = self.inputs.iter().flat_map(|(_, c)| c.controls());
+        inputs.chain(self.buttons.iter().map(button)).collect()
     }
 
     /// The action id a button with `tag` presses: an action, the confirmed shell action
