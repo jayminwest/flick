@@ -85,7 +85,7 @@ fn the_hotkey_opens_the_ask_view() {
     assert_eq!(view.placeholder, "Ask KOTA…");
     // The view polls fast while it shows.
     assert_eq!(k.shared.lock().fast_until, Some(1_000 + VIEW_FAST_SECS));
-    assert!(test_cx("", |cx| k.hotkey("inbox", cx)).is_none());
+    assert!(test_cx("", |cx| k.hotkey("nope", cx)).is_none());
     assert!(test_cx("", |cx| k.open("ask", cx)).is_some());
     assert!(test_cx("", |cx| k.open("nope", cx)).is_none());
 }

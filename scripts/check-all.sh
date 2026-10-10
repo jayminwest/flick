@@ -22,7 +22,7 @@ now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
 # The failure-relevant lines of a gate's output, else its last 25 lines.
 signatures() {
   local m
-  m=$(grep -E -i 'error|warning|FAILED|panicked|budget' "$1" | head -50 || true)
+  m=$(grep -v -E '\.\.\. ok$' "$1" | grep -E -i 'error|warning|FAILED|panicked|budget' | head -50 || true)
   if [ -n "$m" ]; then echo "$m"; else grep -v '^[[:space:]]*$' "$1" | tail -25 || true; fi
 }
 
