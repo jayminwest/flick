@@ -88,8 +88,8 @@ fn every_field_is_checked() {
     for (flag, value, why) in [
         ("--id", "", "needs 1 to 64 characters"),
         ("--id", long_id.as_str(), "needs 1 to 64 characters"),
-        ("--id", "a b", "only letters, digits and . _ - are allowed"),
-        ("--id", "é", "only letters, digits and . _ - are allowed"),
+        ("--id", "a b", "only letters, digits and . _ - : are allowed"),
+        ("--id", "é", "only letters, digits and . _ - : are allowed"),
         ("--device", "a:b", "only letters, digits and . _ - are allowed"),
         ("--app", "", "needs 1 to 128 characters"),
         ("--app", long_app.as_str(), "needs 1 to 128 characters"),
