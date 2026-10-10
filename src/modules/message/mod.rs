@@ -5,16 +5,22 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
-//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`). Table `messages` holds the
-//! history. Each message shows as its own card, keyed by its id. `message card <verb>`
-//! posts and manages structured cards (`card.rs`, `core::card`), stored in the same table.
+//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`), `action_command`,
+//! `pending_timeout_secs`, `card_timeout_secs`. Table `messages` holds the history. Each
+//! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
+//! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
+//! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`.
 
 mod card;
+mod dispatch;
+mod run;
 pub mod store;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_card;
+#[cfg(test)]
+mod tests_press;
 mod text;
 mod wire;
 
@@ -24,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
 use crate::core::card::State;
-use crate::core::{Action, Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use crate::core::{Action, Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use crate::platform::hud::{Content, Corner, Options, Placement, TextCard};
 use store::{Message, Messages};
 use wire::Env;
@@ -89,6 +95,13 @@ struct Settings {
     sound: bool,
     /// Opens the message list.
     hotkey: Option<String>,
+    /// What a reply press runs (argv), with `--action --card <id> --action-id <aid>` appended
+    /// and the values JSON on stdin. Empty: a press shows an error naming this key.
+    action_command: Vec<String>,
+    /// Seconds a sent press waits for KOTA's update before the card shows an error; 0 waits.
+    pending_timeout_secs: u64,
+    /// Seconds an open card with actions stays; 0 keeps it until acted on or closed.
+    card_timeout_secs: u64,
 }
 
 impl Default for Settings {
@@ -103,6 +116,9 @@ impl Default for Settings {
             max_history: 50,
             sound: true,
             hotkey: None,
+            action_command: vec![],
+            pending_timeout_secs: 120,
+            card_timeout_secs: 0,
         }
     }
 }
@@ -111,8 +127,14 @@ impl Default for Settings {
 pub struct Inbox {
     env: Env,
     settings: Settings,
-    /// Cards dismissed through `card dismiss`; a `done` update of one stays in history.
+    /// Cards dismissed (`card dismiss`, the x, Esc, a timeout); a `done` update of one stays
+    /// in history.
     dismissed: HashSet<String>,
+    /// Press state by card id (`dispatch.rs`).
+    ui: dispatch::Uis,
+    /// Presses sent so far; numbers each send.
+    presses: u64,
+    worker: run::Worker,
 }
 
 /// The JSON answer of `post`.
@@ -144,31 +166,41 @@ impl Inbox {
         m.title.as_deref().unwrap_or(&self.settings.name)
     }
 
-    /// Show `m` the configured way; `panel_only` skips the notification (a re-show). A
-    /// card shows as text: its title as the header, the rest of `plain(card)` as the body.
+    /// Show `m` the configured way; `panel_only` skips the notification (a re-show). A card
+    /// is drawn by the HUD's card renderer with its press state; its notification is its
+    /// title and the rest of `plain(card)`.
     fn display(&self, m: &Message, panel_only: bool) {
-        let c = card::stored(m);
-        let body = c.as_ref().map_or_else(|| text::plain(&m.body), card::body);
-        let header = c.as_ref().map_or_else(|| self.header(m), |c| c.title.as_str());
-        let opts = c.as_ref().map_or_else(|| self.options(m), |c| self.card_options(c));
-        let pending = m.pending || c.as_ref().is_some_and(|c| c.state == State::Pending);
-        let style = self.settings.style;
-        if matches!(style, Style::Panel | Style::Both) || panel_only {
-            let context = m.context.as_deref().map(|c| format!("Re: {}", text::preview(c, 80)));
-            let time = text::stamp(m.ts, (self.env.now)(), (self.env.utc_offset)(m.ts));
-            let card = TextCard {
-                header,
-                time: &time,
-                context: context.as_deref().unwrap_or(""),
-                body: &text::clip(&body),
-                link: m.url.as_deref(),
-                pending,
-            };
-            (self.env.show)(&m.id, &Content::Text(card), &self.placement(), &opts);
+        (self.env.subscribe)();
+        let panel = matches!(self.settings.style, Style::Panel | Style::Both) || panel_only;
+        let (header, body, pending) = if let Some(c) = card::stored(m) {
+            if panel {
+                self.show_card(&c);
+            }
+            (c.title.clone(), card::body(&c), c.state == State::Pending)
+        } else {
+            let body = text::plain(&m.body);
+            if panel {
+                self.show_text(m, &body);
+            }
+            (self.header(m).to_string(), body, m.pending)
+        };
+        if matches!(self.settings.style, Style::Notification | Style::Both) && !panel_only && !pending {
+            (self.env.notify)(&m.id, &header, &body);
         }
-        if matches!(style, Style::Notification | Style::Both) && !panel_only && !pending {
-            (self.env.notify)(&m.id, header, &body);
-        }
+    }
+
+    fn show_text(&self, m: &Message, body: &str) {
+        let context = m.context.as_deref().map(|c| format!("Re: {}", text::preview(c, 80)));
+        let time = text::stamp(m.ts, (self.env.now)(), (self.env.utc_offset)(m.ts));
+        let card = TextCard {
+            header: self.header(m),
+            time: &time,
+            context: context.as_deref().unwrap_or(""),
+            body: &text::clip(body),
+            link: m.url.as_deref(),
+            pending: m.pending,
+        };
+        (self.env.show)(&m.id, &Content::Text(card), &self.placement(), &self.options(m));
     }
 
     /// Save `m`; `took` (its `reply_to` was a pending message, now gone) also removes that
@@ -301,6 +333,14 @@ impl Module for Inbox {
         store::MIGRATIONS
     }
 
+    /// `ModuleChanged` for this module: card presses, dismissals and finished sends.
+    fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
+        if event == (Event::ModuleChanged { module: "message" }) {
+            self.drain(cx);
+        }
+        false
+    }
+
     fn configure(&mut self, table: &Section) -> Result<(), String> {
         let s = table.get::<Settings>()?;
         if s.name.trim().is_empty() {
@@ -314,6 +354,9 @@ impl Module for Inbox {
         }
         if s.max_history == 0 {
             return Err("[message]: max_history must be at least 1".into());
+        }
+        if s.action_command.first().is_some_and(|p| p.trim().is_empty()) {
+            return Err("[message]: action_command needs a program first".into());
         }
         self.settings = s;
         Ok(())
