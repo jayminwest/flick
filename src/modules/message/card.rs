@@ -19,8 +19,12 @@
 //!   card's initial inputs. A `shell` action shows its confirm on the first press; a second
 //!   `card press` of the same action is Run. `press <id> :cancel` is Cancel.
 //!
-//! A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
-//! update of it goes to history without showing (plan risk 10).
+//! A card in the thread the chat window shows draws in its transcript instead of the corner
+//! (`chat::model::alert`, as text posts); a corner card of it that already shows redraws in
+//! place. A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
+//! update of it goes to history without showing (plan risk 10). A card that only timed out
+//! is not dismissed for this: any update of it shows (flick-9bdb). A `pending` card has no
+//! timeout, so KOTA's final update of a long job finds it still up.
 
 use serde::Serialize;
 
@@ -81,7 +85,7 @@ fn card_row(id: &str, cx: &Cx) -> Result<Message, String> {
     cx.store.message(id).filter(|m| m.card.is_some()).ok_or_else(|| format!("No card {id}"))
 }
 
-fn state_name(state: State) -> &'static str {
+pub fn state_name(state: State) -> &'static str {
     match state {
         State::Open => "open",
         State::Pending => "pending",
@@ -92,11 +96,12 @@ fn state_name(state: State) -> &'static str {
 
 impl Inbox {
     /// How a card behaves in the HUD: one that waits on the user (open, an enabled action)
-    /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA after a
-    /// press stays until KOTA or the watchdog changes it; others time out like a message.
+    /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA (after a
+    /// press, or posted `pending`) stays until KOTA or the watchdog changes it, so its final
+    /// update shows (flick-9bdb); others time out like a message.
     pub(super) fn card_options(&self, c: &Card, ui: &Ui) -> Options {
         let sticky = c.waits_on_user();
-        let secs = if ui.busy() {
+        let secs = if ui.busy() || c.state == State::Pending {
             0
         } else if sticky {
             self.settings.card_timeout_secs
@@ -167,7 +172,9 @@ impl Inbox {
     }
 
     fn post_card(&mut self, json: &str, cx: &Cx) -> Result<String, String> {
-        let parsed = card::parse(json, origin(cx.remote)).map_err(|e| format!("invalid card: {e}"))?;
+        let mut parsed = card::parse(json, origin(cx.remote)).map_err(|e| format!("invalid card: {e}"))?;
+        let own = parsed.card.thread.take();
+        parsed.card.thread = super::thread::inherit(own, &parsed.card.id, parsed.card.reply_to.as_deref(), cx);
         let c = &parsed.card;
         let existed = cx.store.message(&c.id).is_some();
         let (context, took) = super::quote(c.reply_to.as_deref(), cx);
@@ -184,11 +191,19 @@ impl Inbox {
         };
         self.save(&m, took, cx)?;
         self.ui.remove(&m.id);
-        let silent = matches!(c.state, State::Done | State::Pending) && self.dismissed.contains(&m.id);
+        // Only the user's dismissal silences an update; a card that timed out shows it.
+        let closed = self.dismissed.contains(&m.id) && !self.expired.contains(&m.id);
+        let silent = matches!(c.state, State::Done | State::Pending) && closed;
         if !silent {
             self.dismissed.remove(&m.id);
             self.expired.remove(&m.id);
-            self.display(&m, false);
+            if super::chat::model::alert(&m, !existed, self.chat_showing()).hud {
+                self.display(&m, false);
+            } else {
+                // The chat window shows its thread: the card is there, not in the corner, and
+                // a corner card of it from before only redraws in place.
+                self.redraw(&m.id, cx);
+            }
         }
         let replaced = existed || took;
         if cx.json {
