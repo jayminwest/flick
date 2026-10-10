@@ -652,6 +652,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   subscriber that falls 256 lines behind is dropped and its socket shut down. One that hangs
   up (or closes its write side) is dropped at once, not at the next event. Publishing costs
   nothing when there are no subscribers.
+- Writes: every write to a client, reply or event line, times out after 10 s
+  (`server::Limits::write`, on both transports). A client that stops reading is dropped
+  then, so it cannot pin its connection thread or event writer forever (flick-646d).
 - Threads: one accept thread, one thread per connection, plus a writer thread per event
   subscriber while its connection thread blocks in `read`. A request runs on the main thread
   through `events::on_main`; the socket thread waits for the reply.
@@ -660,7 +663,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   background thread (the latest overlapping apply wins); `status` reads cached state and
   never blocks, so both are safe on the main thread. Both transports share `server::connection`
   through the `server::Stream` trait; `server::Limits` holds what differs (line cap, idle
-  timeout, whether `["events"]` is allowed). It binds one listener per address `tailscale ip`
+  timeout, write timeout, whether `["events"]` is allowed). It binds one listener per address `tailscale ip`
   reports that `core::control::is_tailnet` accepts, never a wildcard; loopback is admitted
   only by the test constructor `Net::loopback`. Before reading a request it requires a
   Tailscale peer address and a `tailscale whois` name in `peers`; any failure closes the
