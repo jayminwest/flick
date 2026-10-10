@@ -152,10 +152,18 @@ impl Inbox {
     /// Remember that the user's side dismissed card `id`, and drop its press state.
     pub(super) fn forget(&mut self, id: String) {
         self.ui.remove(&id);
+        self.expired.remove(&id);
         if self.dismissed.len() >= DISMISSED_MAX {
             self.dismissed.clear();
+            self.expired.clear();
         }
         self.dismissed.insert(id);
+    }
+
+    /// Card `id` timed out: dismissed as `forget` has it, but it still waits on the user.
+    pub(super) fn expire(&mut self, id: String) {
+        self.forget(id.clone());
+        self.expired.insert(id);
     }
 
     fn post_card(&mut self, json: &str, cx: &Cx) -> Result<String, String> {
@@ -178,6 +186,7 @@ impl Inbox {
         let silent = matches!(c.state, State::Done | State::Pending) && self.dismissed.contains(&m.id);
         if !silent {
             self.dismissed.remove(&m.id);
+            self.expired.remove(&m.id);
             self.display(&m, false);
         }
         let replaced = existed || took;
