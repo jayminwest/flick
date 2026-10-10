@@ -11,9 +11,11 @@
 //! Spans carry the running task's id, learned from `Event::TaskChanged` (activity never
 //! reads the task module's tables); a task change splits the open span.
 //! Agent sessions (`Cx::remote`) read reports only with the user's grant (`remote`).
+//! A phone (flick-ios) adds its app opens over the network (`phone`); reports list them.
 //! Ids are `activity:record`, `activity:today`, `activity:remote` and
 //! `activity:row/<kind>/<name>` (view rows).
 
+mod phone;
 mod remote;
 mod report;
 mod rules;
@@ -29,7 +31,7 @@ use crate::core::{Binding, Cx, Event, Icon, Item, ItemId, ListView, Module, Outc
 use crate::core::store::Store;
 use report::{TaskReport, Report, parse_since, span_list, span_text};
 use rules::Config;
-use store::{MIGRATIONS, Spans};
+use store::{MIGRATIONS, PhoneOpens, Spans};
 use wire::Env;
 
 #[derive(Default)]
@@ -247,7 +249,9 @@ impl Activity {
 
     fn report(&self, range: &'static str, store: &Store) -> Report {
         let (from, now, offset, spans) = self.clipped(range, store);
-        Report::new(range, (from, now, offset), &spans, &self.config, store.recording())
+        let mut r = Report::new(range, (from, now, offset), &spans, &self.config, store.recording());
+        r.phone = phone::PhoneSummary::new(&store.phone_opens(from));
+        r
     }
 
     /// Spans of `range` ("today" or "week") cut to it, with its start, now and the UTC offset.
@@ -288,9 +292,11 @@ impl Activity {
         let from = parse_since(since, now, offset)
             .ok_or_else(|| format!("activity: bad date \"{since}\" (today, week or YYYY-MM-DD)"))?;
         self.touch(cx.store, now);
-        let spans = cx.store.spans(from, now + 1);
+        let (spans, opens) = (cx.store.spans(from, now + 1), cx.store.phone_opens(from));
         let mut list = span_list(&spans, &self.config);
         self.redact_spans(cx, &mut list);
+        list.extend(phone::span_outs(&opens, &self.config));
+        list.sort_by_key(|s| s.start);
         if cx.json {
             return serde_json::to_string(&list).map_err(|e| format!("activity: {e}"));
         }
@@ -303,10 +309,10 @@ impl Activity {
             what => (what, false),
         };
         let now = (self.env.now)();
+        let today = parse_since("today", now, (self.env.utc_offset)(now)).unwrap_or(now);
+        let opens = if yes { phone::forget(what, store, today) } else { 0 };
         let n = match what {
-            [w] if w == "today" && yes => {
-                store.forget_since(parse_since("today", now, (self.env.utc_offset)(now)).unwrap_or(now))
-            }
+            [w] if w == "today" && yes => store.forget_since(today),
             [w] if w == "all" && yes => store.forget_all(),
             [w, app] if w == "app" && yes => store.forget_app(app),
             [w] | [w, _] if ["today", "all", "app"].contains(&w.as_str()) => {
@@ -321,7 +327,7 @@ impl Activity {
             self.begin(store, now);
         }
         self.sync(store);
-        Ok(format!("Deleted {n} span{}", if n == 1 { "" } else { "s" }))
+        Ok(format!("Deleted {n} span{}{}", if n == 1 { "" } else { "s" }, phone::forgotten(opens)))
     }
 
     fn today_items(&self, store: &Store) -> Vec<Item> {
@@ -452,7 +458,7 @@ impl Module for Activity {
     }
 
     fn verbs(&self) -> &'static str {
-        "activity on|off|status | activity today|week [--by task] | activity spans [--since <date>] | activity forget today|all|app <id> --yes | activity remote allow [<min>|always]|deny|status"
+        "activity on|off|status | activity today|week [--by task] | activity spans [--since <date>] | activity forget today|all|app <id> --yes | activity phone add --id <id> --device <name> --app <app> --at <secs> | activity remote allow [<min>|always]|deny|status"
     }
 
     /// `--json` (`cx.json`) makes `today`, `week` and `spans` answer with JSON; spans carry
@@ -468,6 +474,7 @@ impl Module for Activity {
             }
             [v, rest @ ..] if v == "spans" => self.spans(rest, cx),
             [v, rest @ ..] if v == "forget" => self.forget(rest, cx.store),
+            [v, rest @ ..] if v == "phone" => self.phone(rest, cx),
             [v, rest @ ..] if v == "remote" => self.remote(rest, cx),
             _ => Err(unknown_verb("activity", args)),
         };
