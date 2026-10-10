@@ -9,7 +9,8 @@ use std::path::Path;
 use std::sync::Once;
 
 use crate::core::Event;
-use crate::platform::{app, ax, axwatch, clock, events, status_item, workspace};
+use crate::platform::status_item::{self, Entry};
+use crate::platform::{app, ax, axwatch, clock, events, workspace};
 use crate::core::store::{self, Store};
 
 use super::store::Spans;
@@ -76,15 +77,16 @@ pub fn take_stop() -> bool {
 
 fn indicator(on: bool) {
     if on {
-        status_item::show("●", "Flick is recording activity", &[("Stop Recording", request_stop)]);
+        let menu = [Entry::Pick { title: "Stop Recording", key: "stop" }];
+        status_item::show("activity", "●", "Flick is recording activity", &menu, request_stop);
     } else {
-        status_item::hide();
+        status_item::hide("activity");
     }
 }
 
 /// Menu handler: `AppKit` is mid-event, so ask the module through an event instead of
 /// borrowing app state (mulch mx-fcbc43).
-fn request_stop() {
+fn request_stop(_key: &str) {
     STOP.set(true);
     events::post(Event::ModuleChanged { module: "activity" });
 }
