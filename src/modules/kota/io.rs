@@ -8,6 +8,9 @@
 //! - `kota-timer`: sleeps until the next round is due, then posts `ModuleChanged`; the
 //!   main thread (`tick`) starts the round and arms the next timer. One timer at a time:
 //!   arming bumps `Poll::timer`, and an older timer that wakes sees it and exits.
+//! - `kota-clock`: while the menu bar item shows, posts `ModuleChanged` every
+//!   `CLOCK_SECS` (not while asleep), so the item's age text (`KOTA: idle · 4m`) moves
+//!   between rounds (flick-c3eb). `Poll::clock` names the live one; another value retires it.
 //!
 //! Sleep and lock (`suspend`) bump `Poll::epoch`: a round in flight drops its result, the
 //! timer retires, the presence is marked stale. Wake and unlock (`resume`) wait
@@ -32,6 +35,8 @@ pub const CURL_BUDGET: Duration = Duration::from_secs(CURL_MAX_TIME + 2);
 pub const WAKE_DELAY: u64 = 5;
 /// `kota refresh` (and menu opens) start at most one round per this many seconds.
 pub const REFRESH_EVERY: u64 = 10;
+/// The menu bar item's age text changes at most once a minute.
+pub const CLOCK_SECS: u64 = 60;
 
 /// What the threads need from the outside world; tests swap in fakes (`testkit`).
 #[derive(Clone, Copy)]
@@ -81,6 +86,10 @@ pub struct Poll {
     pub transitions: Vec<Transition>,
     /// The last asks, newest first (`ask.rs`).
     pub asks: Vec<Ask>,
+    /// The live `kota-clock`, by number; `None`: none runs.
+    pub clock: Option<u64>,
+    /// Clocks started so far: numbers each one.
+    pub clocks: u64,
 }
 
 #[derive(Default)]
@@ -99,7 +108,9 @@ impl Shared {
     pub fn reset(&self) {
         let mut p = self.lock();
         let (epoch, timer, asks) = (p.epoch + 1, p.timer + 1, std::mem::take(&mut p.asks));
-        *p = Poll { epoch, timer, asks, ..Poll::default() };
+        // The clock is the item's, not the target's: it keeps running.
+        let (clock, clocks) = (p.clock, p.clocks);
+        *p = Poll { epoch, timer, asks, clock, clocks, ..Poll::default() };
     }
 
     /// Retire the timer and every thread at its next check (module dropped or disabled).
@@ -109,6 +120,7 @@ impl Shared {
         p.timer += 1;
         p.running = false;
         p.timer_due = None;
+        p.clock = None;
     }
 }
 
@@ -185,6 +197,42 @@ pub fn arm(shared: &Arc<Shared>, secs: u64, hooks: Hooks) {
         drop(p);
         (hooks.post)();
     });
+}
+
+/// Start the minute clock unless one runs (the menu bar item shows).
+pub fn clock(shared: &Arc<Shared>, hooks: Hooks) {
+    let id = {
+        let mut p = shared.lock();
+        if p.clock.is_some() {
+            return;
+        }
+        p.clocks += 1;
+        p.clock = Some(p.clocks);
+        p.clocks
+    };
+    let sh = Arc::clone(shared);
+    let spawned = thread::Builder::new().name("kota-clock".into()).spawn(move || {
+        loop {
+            (hooks.sleep)(Duration::from_secs(CLOCK_SECS));
+            let p = sh.lock();
+            if p.clock != Some(id) {
+                return;
+            }
+            let asleep = p.asleep;
+            drop(p);
+            if !asleep {
+                (hooks.post)();
+            }
+        }
+    });
+    if spawned.is_err() {
+        stop_clock(shared);
+    }
+}
+
+/// Retire the minute clock (the item is hidden).
+pub fn stop_clock(shared: &Shared) {
+    shared.lock().clock = None;
 }
 
 /// The main thread's step on `ModuleChanged` (and at start): start a round when one is

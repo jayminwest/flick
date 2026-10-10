@@ -51,12 +51,12 @@ The cards waiting on you and the posts you have not read follow the glyph, for e
 
 ## Menu bar item
 
-The item shows only after Flick starts, while `[kota]` sets a key and `status_item` is true. Its tooltip is the state line and KOTA's current task (the pane's terminal title). The menu, top to bottom:
+The item shows only after Flick starts, while `[kota]` sets a key and `status_item` is true. Its tooltip is the state line and KOTA's current task (the pane's terminal title). While it shows, the age in the state line (`· 4m`) updates every minute, also between checks. The menu, top to bottom:
 
 - The state line (`KOTA: thinking · 4m`), KOTA's task, `Checks: <names> failing` (`herdr` or `dash` when that source failed), and `Checked 12:03`. The last row says `stale` while the state is stale.
 - **Ask KOTA…** opens the Ask KOTA view.
 - **Open Chat** opens the [KOTA chat window](message.md#chat), the one `[message] chat_hotkey` toggles, on the thread it showed last. Unlike the hotkey, it never hides the window.
-- **Inbox** (`Inbox (2 waiting)`) opens the `message` module's history of messages and cards.
+- **Inbox** (`Inbox (2 waiting)`) opens the `message` module's cards view: its cards and the posts you have not read, newest first. Opening it reads those posts. The full history is the `message` module's message list.
 - **Open Dashboard** opens `dash` in the browser.
 - **Refresh Now** checks now.
 
@@ -105,7 +105,8 @@ Unit tests cover the presence model, the menu model and the ask argv with fake c
 - [ ] **Off without a key.** With no `[kota]` table (or an empty one), there is no K item in the menu bar, and `flick kota status` ends with `polling: off (set a key in [kota] to poll)`.
 - [ ] **On with a key.** Add `hotkey = "cmd+ctrl+alt+shift+KeyO"` under `[kota]` and reload. Within a few seconds the menu bar shows `K` (or `K…` while KOTA works). `flick kota status` shows `KOTA: idle · <age>`, `Checked HH:MM` and `polling: every 60 s`.
 - [ ] **Thinking and blocked.** Give KOTA a task. Within 60 s the glyph turns `K…` and the tooltip shows its task. When KOTA asks for an approval, the glyph turns `K!` within 15 s.
-- [ ] **Pending count.** Have KOTA post a card that waits on you. The title shows `K 1` (or the current glyph plus 1), and the menu row reads `Inbox (1 waiting)`. **Inbox** opens the messages history.
+- [ ] **Pending count.** Have KOTA post a card that waits on you. The title shows `K 1` (or the current glyph plus 1), and the menu row reads `Inbox (1 waiting)`. **Inbox** opens the cards view, which lists that card.
+- [ ] **Age.** Leave the menu bar alone for 2 minutes with `poll_secs = 0`. The tooltip's age (`· 2m`) moves without a check.
 - [ ] **Menu.** Open the menu: it lists the state line, KOTA's task, `Checked HH:MM`, then **Ask KOTA…**, **Open Chat**, **Inbox**, **Open Dashboard** and **Refresh Now**. Opening it updates `Checked`. **Open Dashboard** opens kota-dash in the browser. **Open Chat** shows the chat window on its last thread; choose it again while the window shows, and the window stays.
 - [ ] **Open Chat from the hotkey.** Press the hotkey: the first row is **Open Chat** and the footer says `↵ opens chat`. Press ↵: the launcher hides and the chat window shows on its last thread. Press the hotkey, type `hi`: the rows are **Ask KOTA: hi** then **Open Chat**, and the footer says `↵ sends`.
 - [ ] **Ask from the hotkey.** Press the hotkey, type `smoke test: reply ok`, press ↵. A pending KOTA card appears at once. KOTA's reply replaces it. `flick kota status` polls fast (the glyph tracks KOTA within 15 s) for 3 minutes.

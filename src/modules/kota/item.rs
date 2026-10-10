@@ -9,7 +9,9 @@
 //! `inbox` (`platform::status_item` opener), Open Chat like the `message` module's hotkey
 //! `chat:open` (`CHAT`); Open Dashboard and Refresh Now are picks.
 //! Opening the menu starts a round (at most one per `io::REFRESH_EVERY` seconds); an open
-//! menu takes the new rows in place.
+//! menu takes the new rows in place. While the item shows, `io::clock` posts
+//! `ModuleChanged` every minute, so the age in its title row and tooltip stays current
+//! between rounds (flick-c3eb).
 //!
 //! Picks and menu opens run while `AppKit` is mid-event, so `wire.rs` only queues their
 //! key and posts `ModuleChanged`; `requests` handles them on the module's turn
@@ -28,8 +30,9 @@ pub const DASH: &str = "dash";
 pub const REFRESH: &str = "refresh";
 /// The Inbox row's hotkey key.
 pub const INBOX: &str = "inbox";
-/// The cards view the Inbox row opens: the `message` module's recent list, by name.
-pub const INBOX_VIEW: (&str, &str) = ("message", "recent");
+/// The cards view the Inbox row opens: the `message` module's `cards` list (its cards and
+/// unread posts, what the badge counts), by name (flick-c3eb).
+pub const INBOX_VIEW: (&str, &str) = ("message", "cards");
 /// The KOTA chat window (the one `[message] chat_hotkey` toggles), by name: the `message`
 /// module's item key and hotkey key that show it on its current thread. The menu's Open
 /// Chat routes to that hotkey; the ask view's Open Chat row is that item (flick-ed63).
@@ -66,10 +69,12 @@ impl Kota {
     pub(super) fn sync_item(&mut self) {
         if !self.wants_item() {
             if self.shown.take().is_some() {
+                io::stop_clock(&self.shared);
                 (self.ui.hide)();
             }
             return;
         }
+        io::clock(&self.shared, self.hooks);
         let now = (self.hooks.now)();
         let offset = (self.hooks.utc_offset)(i64::try_from(now).unwrap_or(0));
         let p = self.shared.lock();

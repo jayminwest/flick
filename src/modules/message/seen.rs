@@ -6,7 +6,7 @@
 //!   its card stays `unprompted_timeout_secs` (default 0: until the user closes it). Replies,
 //!   placeholders, chat posts and cards keep their own timeouts.
 //! - Unread clears when the user closes its card (x, a click, Esc) or opens the message list
-//!   (view `recent`: the launcher item, `hotkey`, the KOTA menu's Inbox). Opening the list
+//!   (view `recent`: the launcher item, `hotkey`; view `cards`: the KOTA menu's Inbox). Opening the list
 //!   marks the rows it read `Unread` in that view and closes their corner cards. A timeout,
 //!   `message hide` or a restart leave it unread.
 //! - How a card left the corner is stored: 'user' (x, Esc, a click, `card dismiss`, a
