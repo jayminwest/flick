@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::dispatch::{NO_COMMAND, NO_UPDATE, Note, Phase};
-use super::tests::{Fixture, TS, inbox, queue, take_log};
+use super::tests::{Fixture, TS, inbox, queue, hold_sends, take_log};
 use super::*;
 use crate::platform::hud::CANCEL;
 
@@ -24,7 +24,7 @@ pub(super) fn press(action: &str) {
 
 /// Handle queued notes and finished sends until no send runs.
 pub(super) fn settle(f: &mut Fixture, m: &mut Inbox) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         f.cx("", false, |cx| m.on_event(Event::ModuleChanged { module: "message" }, cx));
         let sending = m.ui.values().any(|u| matches!(u.phase, Phase::Sending { .. } | Phase::Running { .. }));
@@ -120,15 +120,18 @@ fn rejections_and_failures_show_on_the_card_with_actions_on() {
 
 #[test]
 fn a_result_for_a_reposted_or_dismissed_card_is_ignored() {
-    let (mut f, mut m) = posted("[message]\naction_command = [\"sent\"]");
+    let (mut f, mut m) = posted("[message]\naction_command = [\"held\"]");
+    hold_sends(true);
     press("go");
-    // Re-posted before the worker's result is handled.
+    // Re-posted before the worker's result is handled: the send is held until then (a fast
+    // worker could otherwise finish inside the drain that started it).
     f.cx("", false, |cx| m.drain(cx));
     f.run(&mut m, false, &["card", "post", ASK]).unwrap();
     settle(&mut f, &mut m);
+    hold_sends(false);
     // Wait for the stale result itself (a fixed sleep missed it on loaded machines, and
     // it then landed in the second half of this test).
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while m.worker.running() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(5));
     }
@@ -136,10 +139,12 @@ fn a_result_for_a_reposted_or_dismissed_card_is_ignored() {
     assert!(m.ui.is_empty(), "{:?}", m.ui);
     assert!(!take_log().iter().any(|l| l.starts_with("wake")));
     // A result for an older press of a card that was pressed again is ignored too.
+    hold_sends(true);
     press("go");
     f.cx("", false, |cx| m.drain(cx));
     m.ui.get_mut("c1").unwrap().phase = Phase::Sending { press: 99 };
-    let deadline = Instant::now() + Duration::from_secs(5);
+    hold_sends(false);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while m.worker.len() == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(5));
     }

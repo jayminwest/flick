@@ -32,7 +32,8 @@ mod tests {
     #[test]
     fn moves_a_file_to_the_trash_and_reports_where() {
         let dir = scratch("file");
-        let file = dir.join("flick-trash-test.txt");
+        // One name per process: concurrent test runs share the user's Trash.
+        let file = dir.join(format!("flick-trash-test-{}.txt", std::process::id()));
         std::fs::write(&file, b"flick").unwrap();
 
         let moved = trash(&file).unwrap();

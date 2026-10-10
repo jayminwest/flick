@@ -60,10 +60,23 @@ fn closed_unanswered(stream: &mut BufReader<TcpStream>) -> bool {
     stream.read_to_end(&mut rest).map_or(true, |_| rest.is_empty())
 }
 
+/// Whether no listener of `net` answers at `addr`. A stopped listener's port is free, so on a
+/// busy machine another listener (another test, or another test process) can take it at
+/// once: then the connection succeeds, but `net` never tracks it.
+fn not_listening(net: &Net, addr: SocketAddr) -> bool {
+    let Ok(stream) = TcpStream::connect(addr) else { return true };
+    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let mut stream = BufReader::new(stream);
+    // A listener of `net` tracks a connection before it answers on it.
+    let _ = writeln!(stream.get_mut(), r#"["x"]"#);
+    let _ = stream.read_line(&mut String::new());
+    lock(&net.conns).is_empty()
+}
+
 fn wait_for(what: &str, f: impl Fn() -> bool) {
     let start = Instant::now();
     while !f() {
-        assert!(start.elapsed() < Duration::from_secs(5), "timed out waiting for {what}");
+        assert!(start.elapsed() < Duration::from_secs(15), "timed out waiting for {what}");
         thread::sleep(Duration::from_millis(5));
     }
 }
@@ -245,16 +258,14 @@ fn stopping_closes_the_listener_and_open_connections_and_it_can_restart() {
     assert!(stopped.last.is_some(), "the last connection outlives a stop");
     let mut rest = String::new();
     assert_eq!(c.read_to_string(&mut rest).unwrap_or(0), 0);
-    assert!(TcpStream::connect(status.listening[0]).is_err());
     assert!(lock(&net.conns).is_empty());
+    assert!(not_listening(net, status.listening[0]));
 
     let again = net.sync(Some(settings(&["a"], false))).unwrap();
     assert!(ask(&mut connect(&again), r#"["y"]"#).contains("y remote=true"));
     // Applying new settings replaces the running listener.
     let replaced = net.sync(Some(settings(&["b", "a"], false))).unwrap();
-    assert!(
-        TcpStream::connect(again.listening[0]).is_err() || again.listening == replaced.listening
-    );
+    assert!(again.listening == replaced.listening || not_listening(net, again.listening[0]));
     assert_eq!(net.status().peers, ["b", "a"]);
     net.sync(None).unwrap();
 }

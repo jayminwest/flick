@@ -77,7 +77,7 @@ fn event(f: &mut Fixture, m: &mut Inbox) {
 }
 
 fn settle(f: &mut Fixture, m: &mut Inbox) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         event(f, m);
         if (m.chat.busy.is_none() && m.chat.queue.is_empty()) || Instant::now() > deadline {

@@ -9,11 +9,16 @@ fn server(host: &str) -> Server {
 }
 
 fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
     while !cond() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Wait until every fetch, stream and watchdog thread has ended: each holds a clone of `shared`.
+fn threads_done(shared: &Arc<Shared>) {
+    wait_until("the threads to end", || Arc::strong_count(shared) == 1);
 }
 
 /// Fetch `host`'s list and wait for it.
@@ -67,7 +72,7 @@ fn stop_drops_a_fetch_in_flight() {
     shared.stop();
     assert!(!shared.lock().models["hang"].fetching);
     // The watchdog kills it; its late result is dropped.
-    thread::sleep(Duration::from_millis(250));
+    threads_done(&shared);
     assert_eq!(shared.lock().models["hang"].seq, 0);
 }
 
@@ -157,7 +162,7 @@ fn a_reply_past_its_budget_times_out() {
     // A watchdog that wakes after its stream ended (and was taken) leaves it be.
     let done = chat(&shared, &server("mlx"), body("x"), 1, HOOKS);
     wait_until("reply", || shared.take(done).is_some_and(|(_, s)| s == Status::Done));
-    thread::sleep(Duration::from_millis(100));
+    threads_done(&shared);
     assert!(shared.lock().streams.is_empty());
 }
 
