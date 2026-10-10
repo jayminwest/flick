@@ -144,7 +144,9 @@ fn enter_and_actions_jump_and_show_output() {
         h.refresh(&mut view, cx);
         let titles: Vec<&str> = view.items.iter().map(|i| i.title.as_str()).collect();
         assert_eq!(titles, ["Jump to n-w1:p1", "Copy Reply"]);
-        assert_eq!(view.text, "one\ntwo");
+        // A read-only output view: no search field, the vim keys scroll the reply from its end.
+        let output = (view.text.as_str(), view.title.as_deref(), view.text_tail);
+        assert_eq!(output, ("one\ntwo", Some("Agent Output"), true));
         assert!(view.footer.starts_with("n-w1:p1 · local"), "{}", view.footer);
         let copied = h.activate(&view.items[1].id, cx);
         assert!(matches!(copied, Outcome::Stay(Some(s)) if s == "Copied the reply"));

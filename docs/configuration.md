@@ -140,5 +140,6 @@ Flick appends the links as `[[quicklink.links]]` entries to the file that holds 
 | ⎋ | Go back, or close |
 | ⌫ in an empty field | Go back |
 | J K, ⌃D ⌃U, G ⇧G on a confirmation | Scroll its rows: one, half a page, top or bottom |
+| J K, ⌃D ⌃U, G ⇧G on an output view (herdr Show Output) | Scroll the text: one line, half a page, top or bottom. ↑ ↓ still move the selection |
 
 The launcher keys are fixed. ⌃K moves up, so it does not delete to the end of the search text.

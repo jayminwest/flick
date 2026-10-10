@@ -17,7 +17,7 @@ use crate::platform::panel::Key;
 use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
-use screen::{Back, Screen};
+use screen::{Back, ListNav, Screen};
 
 const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
 
@@ -209,6 +209,11 @@ impl State {
             self.enter(None);
         } else if key == Key::CmdK {
             return self.open_actions();
+        } else if let Some(nav) = screen::list_nav(list.is_some_and(|v| !v.text.is_empty()), key) {
+            match nav {
+                ListNav::Select(rows) => self.move_selection(rows),
+                ListNav::Text(by) => _ = ui::scroll_text(by),
+            }
         } else {
             return false;
         }
@@ -378,7 +383,7 @@ impl State {
                 (None, footer, "No Results", screen::list_hint(item, has_actions))
             }
             Screen::List(view) => (
-                None,
+                view.title.as_deref(),
                 view.footer.as_str(),
                 view.empty.as_str(),
                 screen::list_hint(item, has_actions),
@@ -391,7 +396,10 @@ impl State {
             }
         };
         let rows = !matches!(self.screen, Screen::Confirm { .. });
-        let text = if let Screen::List(view) = &self.screen { view.text.as_str() } else { "" };
+        let (text, text_tail) = match &self.screen {
+            Screen::List(view) => (view.text.as_str(), view.text_tail),
+            _ => ("", false),
+        };
         ui::render(&View {
             title,
             items: &self.results,
@@ -401,6 +409,7 @@ impl State {
             empty,
             action: &action,
             text,
+            text_tail,
         });
     }
 

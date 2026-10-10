@@ -15,8 +15,6 @@
 /// Chars per row of the reply block. The panel draws it in a 12 pt fixed-width font in a
 /// 710 pt wide field, about 98 chars.
 pub const WIDTH: usize = 94;
-/// Rows of the reply block that fit under two list rows.
-pub const ROWS: usize = 17;
 
 const PROMPTS: [&str; 3] = ["❯ ", "> ", "› "];
 const BULLETS: [char; 3] = ['⏺', '●', '•'];
@@ -153,17 +151,9 @@ fn wrap(line: &str, width: usize) -> Vec<String> {
     rows
 }
 
-/// `reply` wrapped to `width` and cut to its last `rows` rows, with `…` as the first row
-/// when cut.
-pub fn tail(reply: &str, width: usize, rows: usize) -> String {
-    let all: Vec<String> = reply.lines().flat_map(|l| wrap(l, width)).collect();
-    if all.len() <= rows {
-        return all.join("\n");
-    }
-    let keep = rows.saturating_sub(1);
-    let mut out = vec!["…".to_string()];
-    out.extend_from_slice(&all[all.len() - keep..]);
-    out.join("\n")
+/// `reply` wrapped to `width`, whole: the panel scrolls it (flick-0b6a).
+pub fn wrapped(reply: &str, width: usize) -> String {
+    reply.lines().flat_map(|l| wrap(l, width)).collect::<Vec<_>>().join("\n")
 }
 
 #[cfg(test)]
