@@ -398,8 +398,12 @@
 #timeout_secs = 20
 # Cards shown at once; older ones collapse into a "+N more" pill.
 #max_cards = 4
-# Messages kept in history.
+# Messages kept in history outside chat threads.
 #max_history = 50
+# Messages kept per chat thread ("message post --thread", a card's "thread").
+#chat_history = 200
+# Chat threads kept; the one with the oldest last message is dropped first, all of it.
+#chat_threads = 20
 # Play a short sound when a reply arrives (never for pending posts).
 #sound = true
 # Opens the message list; unset by default.

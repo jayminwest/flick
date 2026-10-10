@@ -19,7 +19,9 @@ position = "top-right"   # top-right | top-left | bottom-right | bottom-left | t
 width = 380              # points, 240 to 900
 timeout_secs = 20        # 0 keeps the card until dismissed
 max_cards = 4            # cards shown at once; older ones collapse into a "+N more" pill
-max_history = 50         # messages kept
+max_history = 50         # messages kept outside chat threads
+chat_history = 200       # messages kept per chat thread
+chat_threads = 20        # chat threads kept (the one with the oldest last message goes first)
 sound = true             # a short sound when a message (not a pending one) arrives
 hotkey = "cmd+ctrl+alt+shift+KeyM"  # opens the list; unbound by default
 card_hotkey = "cmd+ctrl+alt+shift+KeyK"  # moves the keyboard into the newest card (again: back); unbound by default
@@ -98,8 +100,10 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
 ## Commands
 
 ```bash
-flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--pending] [--] <body...>
-flick message ls [--limit n]     # <id>\t<time>\t<title: >body, newest first (--json: the records)
+flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--thread t] [--pending|--partial] [--] <body...>
+flick message ls [--limit n]     # <id>\t<time>\t<title: >body[ (pending|partial|failed)], newest first (--json: the records)
+flick message threads [--limit n]  # <thread>\t<time of last>\t<n> messages\t<first body>, newest first (--json: [{id,messages,first_ts,last_ts,first_body}])
+flick message thread <t> [--limit n]  # the thread's newest n messages, oldest first, as ls prints them (--json: the records)
 flick message show [id]          # show a message (default the latest) in the card again
 flick message hide               # dismiss every card
 flick message card post <json>|--stdin   # the card id, then one "warning: …" line per warning
@@ -118,7 +122,9 @@ flick message card focus         # move the keyboard into the newest card, as ca
 
 `post` prints the message id (generated unless `--id`; ids are 1-64 of `A-Z a-z 0-9 . _ -`); with `--json` it answers `{"id":"…","replaced":true|false}`. The body is the words after the flags joined by spaces, at most 16 KiB; put `--` before a body that starts with `--`.
 
-**Network.** Peers in `[remote] peers` may send every `message` verb (including `card spec`) except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
+**Threads and streaming** (for the chat window, plan pl-75d3). `--thread <t>` (an id as above) files the post in conversation `t`; a card's `thread` does the same. `--partial` marks a reply that is still streaming: post the same `--id` again with the text so far, and once more without `--partial` when it is complete. A partial post redraws its card in place with no sound and no notification; the final one plays the sound and notifies as any post. `--partial` and `--pending` together are an error. Re-posting an id that is in a thread or partial keeps its original time and place (and its thread, if the re-post has no `--thread`); re-posting any other id makes it new, as before. Unthreaded history keeps `max_history` messages, each thread `chat_history`, and `chat_threads` threads; chat never evicts unthreaded history. `--json` messages carry `thread`, `role` (`"me"` for what you typed in the chat) and `state` (`"partial"` or `"failed"`) only when set. `thread <t>` for a thread with no messages is the error `No thread <t>` (exit 1).
+
+**Network.** Peers in `[remote] peers` may send every `message` verb (including `card spec`, `threads` and `thread`) except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
 
 ## Manual tests
 
