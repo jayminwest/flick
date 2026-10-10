@@ -2,7 +2,7 @@
 
 | Path | Role |
 |---|---|
-| [`modules/`](../src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, keys, activity, tasks, herdr, capture, feedback, remote, help. Registered in [`modules/mod.rs`](../src/modules/mod.rs) |
+| [`modules/`](../src/modules) | One directory per feature: apps, quicklinks, clipboard, windows, switcher, desktop, flick, rebuild, keys, dictation, activity, tasks, herdr, kota, llm, sys, capture, feedback, message, remote, help. Registered in [`modules/mod.rs`](../src/modules/mod.rs) |
 | [`core/`](../src/core) | Items and their ids, the `Module` trait and registry, events, the control protocol, fuzzy ranking ([nucleo](https://github.com/helix-editor/nucleo)) and frecency |
 | [`platform/`](../src/platform) | All `unsafe` and macOS API calls, behind safe functions |
 | [`app.rs`](../src/app.rs) | Controller: the view stack, routing keys and hotkeys to modules |
