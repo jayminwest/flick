@@ -58,7 +58,7 @@ impl Apps {
                 let status = self.quit(path, key == FORCE_QUIT);
                 Outcome::Stay(Some(status.unwrap_or_else(|e| e)))
             }
-            UNINSTALL => self.ask_uninstall(path),
+            UNINSTALL => self.ask_uninstall(path, super::SIZED),
             _ => Outcome::Stay(None),
         }
     }
