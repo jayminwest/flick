@@ -1,5 +1,5 @@
 //! The command line: `flick` with no arguments runs the launcher; anything else is a
-//! subcommand. `snapshot`, `import-raycast` and `config example` run in this process; every other command is
+//! subcommand. `snapshot`, `import-raycast`, `config example` and `config path` run in this process; every other command is
 //! a request to the running Flick over its control socket, or with `--host` (or
 //! `$FLICK_HOST`) to another Mac's Flick over TCP.
 
@@ -10,6 +10,7 @@ pub use client::PEER;
 
 use std::ffi::OsStr;
 use std::io::{self, IsTerminal};
+use std::path::Path;
 
 use client::{Host, Target};
 
@@ -27,6 +28,7 @@ const USAGE: &str = "usage: flick                              run the launcher
                                           (at most once, up to 16 KiB)
        flick reload                       reload config.toml
        flick config example               print every config.toml option, commented
+       flick config path                  print config.toml's path and this Mac's overlay
        flick events                       stream events as JSON lines
        flick snapshot <out.png> [query]
        flick import-raycast <Quicklinks.json>";
@@ -48,6 +50,8 @@ pub enum Command {
     Help,
     /// Print `config.example.toml`.
     ConfigExample,
+    /// Print the config file and this Mac's overlay file.
+    ConfigPath,
     /// No command after `--json`, or a bad or misplaced `--host`.
     Usage,
     /// Stream events from the local Flick, or from the one at the host.
@@ -116,6 +120,7 @@ fn parse_local(args: &[String], flick_remote: Option<&OsStr>) -> Command {
         "import-raycast" => Command::ImportRaycast(args.get(1).cloned()),
         "help" | "--help" | "-h" => Command::Help,
         "config" if args[1..] == ["example"] => Command::ConfigExample,
+        "config" if args[1..] == ["path"] => Command::ConfigPath,
         _ => {
             let mut words = args.to_vec();
             let json = if first == "--json" {
@@ -144,6 +149,14 @@ pub fn run(command: Command) -> i32 {
         Command::ImportRaycast(path) => import_raycast(path.as_deref()),
         Command::ConfigExample => {
             print!("{}", config::example::EXAMPLE);
+            0
+        }
+        Command::ConfigPath => {
+            let host = config::host_name();
+            println!(
+                "{}",
+                config::overlay::report(&config::config_path(), host.as_deref(), &Path::exists)
+            );
             0
         }
         Command::Help => {
@@ -262,6 +275,7 @@ mod tests {
         assert_eq!(parsed(&["--help"]), Command::Help);
         assert_eq!(parsed(&["help"]), Command::Help);
         assert_eq!(parsed(&["config", "example"]), Command::ConfigExample);
+        assert_eq!(parsed(&["config", "path"]), Command::ConfigPath);
         assert_eq!(parsed(&["config"]), request(&["config"], false));
     }
 
@@ -323,6 +337,7 @@ mod tests {
             &["--host", "mbp", "snapshot", "a.png"],
             &["--host", "mbp", "help"],
             &["--host", "mbp", "config", "example"],
+            &["--host", "mbp", "config", "path"],
         ] {
             assert_eq!(parsed(args), Command::Usage, "{args:?}");
         }

@@ -10,6 +10,10 @@ use toml::{Table, Value};
 
 pub mod edit;
 pub mod example;
+mod host;
+pub mod overlay;
+
+pub use host::host_name;
 
 const DEFAULT_CONFIG: &str = r##"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 # Every option, with its default: run "flick config example".
@@ -206,6 +210,8 @@ pub struct Config {
     pub hotkey: String,
     /// Every other top-level key, with legacy keys moved into their module's table.
     tables: Table,
+    /// The per-host overlay merged in, if any (`overlay::load`).
+    overlay: Option<PathBuf>,
 }
 
 /// One module's `[<module>]` table, without its `enabled` key.
@@ -275,18 +281,19 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
-/// Load the config, writing the default file on first run.
+/// Load the config and this Mac's overlay, writing the default file on first run.
 pub fn load() -> Result<Config, String> {
-    load_from(&config_path())
+    load_from(&config_path(), host_name().as_deref())
 }
 
-/// Load the config at `path`, writing the default file there when it is missing.
-fn load_from(path: &Path) -> Result<Config, String> {
+/// Load the config at `path` and `host`'s overlay next to it, writing the default file there
+/// when it is missing.
+fn load_from(path: &Path, host: Option<&str>) -> Result<Config, String> {
     if !path.exists() {
         write_default(path);
     }
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    parse(&text).map_err(|e| format!("{}: {e}", path.display()))
+    overlay::load(path, &text, host, &Path::exists, &|p| std::fs::read_to_string(p))
 }
 
 /// Write the commented default config to `path`. Errors surface when it is read.
@@ -301,7 +308,11 @@ fn write_default(path: &Path) {
 /// are checked when the modules read them. Existing files must keep parsing; see
 /// `crate::characterization`.
 pub fn parse(text: &str) -> Result<Config, String> {
-    let mut tables: Table = toml::from_str(text).map_err(|e| e.to_string())?;
+    from_table(toml::from_str(text).map_err(|e| e.to_string())?)
+}
+
+/// `parse` for an already parsed file.
+fn from_table(mut tables: Table) -> Result<Config, String> {
     let Top { hotkey } = Value::Table(tables.clone()).try_into().map_err(|e| e.to_string())?;
     tables.remove("hotkey");
     for (old, module, key) in LEGACY {
@@ -309,7 +320,7 @@ pub fn parse(text: &str) -> Result<Config, String> {
             map_legacy(&mut tables, old, module, key, value)?;
         }
     }
-    Ok(Config { hotkey, tables })
+    Ok(Config { hotkey, tables, overlay: None })
 }
 
 /// Put legacy top-level `old = value` at `[module] key`. When both are set, arrays join

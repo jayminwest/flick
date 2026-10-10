@@ -16,6 +16,7 @@ flick feedback add "Tab should complete paths"  # append to feedback.jsonl
 flick message post --title KOTA "Done"  # show a message card (docs/message.md)
 flick reload                   # reload config.toml
 flick config example           # every config option, commented (no running Flick needed)
+flick config path              # config.toml and this Mac's config.<host>.toml overlay
 flick --json clip list         # the raw reply: {"ok":"..."} or {"error":"..."}
 flick events | jq .            # app_activated, wake, idle, cards_pending, ... as JSON lines
 ```
