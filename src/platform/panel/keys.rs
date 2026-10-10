@@ -2,8 +2,9 @@
 //!
 //! - ⌃J / ⌃N move down and ⌃K / ⌃P move up, also while the search field has the keyboard.
 //!   A key the screen does not take (a form) keeps its text-editing default.
-//! - With a read-only title (no text input): J / K move, G / ⇧G jump to the top / bottom,
-//!   ⌃D / ⌃U move half a page.
+//! - With a read-only title (no text input): J / K move a line, G / ⇧G jump to the top /
+//!   bottom, ⌃D / ⌃U move half a page. The screen decides whether they scroll read-only text
+//!   or move the selection.
 
 use super::Key;
 
@@ -26,8 +27,8 @@ pub fn nav(chars: &str, held: Held, read_only: bool) -> Option<Key> {
         (Held::Control, "k" | "p") => Some(Key::Up),
         (Held::Control, "d") if read_only => Some(Key::PageDown),
         (Held::Control, "u") if read_only => Some(Key::PageUp),
-        (Held::Plain, "j") if read_only => Some(Key::Down),
-        (Held::Plain, "k") if read_only => Some(Key::Up),
+        (Held::Plain, "j") if read_only => Some(Key::LineDown),
+        (Held::Plain, "k") if read_only => Some(Key::LineUp),
         (Held::Plain, "g") if read_only => Some(Key::Top),
         (Held::Plain, "G") if read_only => Some(Key::Bottom),
         _ => None,
@@ -52,8 +53,8 @@ mod tests {
 
     #[test]
     fn plain_letters_and_half_pages_only_without_a_text_input() {
-        assert_eq!(nav("j", Held::Plain, true), Some(Key::Down));
-        assert_eq!(nav("k", Held::Plain, true), Some(Key::Up));
+        assert_eq!(nav("j", Held::Plain, true), Some(Key::LineDown));
+        assert_eq!(nav("k", Held::Plain, true), Some(Key::LineUp));
         assert_eq!(nav("g", Held::Plain, true), Some(Key::Top));
         assert_eq!(nav("G", Held::Plain, true), Some(Key::Bottom));
         assert_eq!(nav("d", Held::Control, true), Some(Key::PageDown));

@@ -2,7 +2,7 @@
 //! confirmation screens. No `AppKit` calls, so it unit-tests.
 
 use crate::core::{Action, Confirm, ConfirmRow, Form, Icon, Item, ItemId, ListView, Ranker};
-use crate::platform::panel::Key;
+use crate::platform::panel::{Key, TextScroll};
 
 /// The screen on the panel.
 pub enum Screen {
@@ -130,14 +130,39 @@ pub fn confirm_step(destructive: bool, key: Key) -> ConfirmStep {
         Key::Enter if destructive => ConfirmStep::Hint,
         Key::Enter | Key::CmdEnter => ConfirmStep::Confirm,
         Key::Escape => ConfirmStep::Cancel,
-        Key::Up => ConfirmStep::Scroll(-1),
-        Key::Down => ConfirmStep::Scroll(1),
+        Key::Up | Key::LineUp => ConfirmStep::Scroll(-1),
+        Key::Down | Key::LineDown => ConfirmStep::Scroll(1),
         Key::PageUp => ConfirmStep::Scroll(-HALF_PAGE),
         Key::PageDown => ConfirmStep::Scroll(HALF_PAGE),
         Key::Top => ConfirmStep::Scroll(isize::MIN),
         Key::Bottom => ConfirmStep::Scroll(isize::MAX),
         _ => ConfirmStep::Ignore,
     }
+}
+
+/// What a vim key (J/K, ⌃D/⌃U, G/⇧G; only a view with a read-only title gets them) does
+/// on a list.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ListNav {
+    /// Move the selection by this many rows.
+    Select(isize),
+    /// Scroll the view's read-only text.
+    Text(TextScroll),
+}
+
+/// The vim key `key` on a list: it scrolls the read-only text when the list has `text`, else
+/// it moves the selection. `None` for any other key.
+pub fn list_nav(text: bool, key: Key) -> Option<ListNav> {
+    let (rows, scroll) = match key {
+        Key::LineUp => (-1, TextScroll::Lines(-1)),
+        Key::LineDown => (1, TextScroll::Lines(1)),
+        Key::PageUp => (-HALF_PAGE, TextScroll::HalfPages(-1)),
+        Key::PageDown => (HALF_PAGE, TextScroll::HalfPages(1)),
+        Key::Top => (isize::MIN, TextScroll::Top),
+        Key::Bottom => (isize::MAX, TextScroll::Bottom),
+        _ => return None,
+    };
+    Some(if text { ListNav::Text(scroll) } else { ListNav::Select(rows) })
 }
 
 /// The first visible row after scrolling `scroll` by `delta` through `rows` rows, `visible`
@@ -229,12 +254,36 @@ mod tests {
         assert_eq!(confirm_step(true, Key::Escape), ConfirmStep::Cancel);
         assert_eq!(confirm_step(true, Key::Up), ConfirmStep::Scroll(-1));
         assert_eq!(confirm_step(true, Key::Down), ConfirmStep::Scroll(1));
+        let lines = (confirm_step(true, Key::LineUp), confirm_step(true, Key::LineDown));
+        assert_eq!(lines, (ConfirmStep::Scroll(-1), ConfirmStep::Scroll(1)));
         assert_eq!(confirm_step(false, Key::PageUp), ConfirmStep::Scroll(-4));
         assert_eq!(confirm_step(false, Key::PageDown), ConfirmStep::Scroll(4));
         assert_eq!(confirm_step(false, Key::Top), ConfirmStep::Scroll(isize::MIN));
         assert_eq!(confirm_step(false, Key::Bottom), ConfirmStep::Scroll(isize::MAX));
         for key in [Key::Tab, Key::BackTab, Key::Backspace, Key::CmdK] {
             assert_eq!(confirm_step(false, key), ConfirmStep::Ignore);
+        }
+    }
+
+    #[test]
+    fn vim_keys_scroll_text_or_move_the_selection() {
+        let text = |key| list_nav(true, key);
+        assert_eq!(text(Key::LineDown), Some(ListNav::Text(TextScroll::Lines(1))));
+        assert_eq!(text(Key::LineUp), Some(ListNav::Text(TextScroll::Lines(-1))));
+        assert_eq!(text(Key::PageDown), Some(ListNav::Text(TextScroll::HalfPages(1))));
+        assert_eq!(text(Key::PageUp), Some(ListNav::Text(TextScroll::HalfPages(-1))));
+        assert_eq!(text(Key::Top), Some(ListNav::Text(TextScroll::Top)));
+        assert_eq!(text(Key::Bottom), Some(ListNav::Text(TextScroll::Bottom)));
+        let rows = |key| list_nav(false, key);
+        assert_eq!(rows(Key::LineDown), Some(ListNav::Select(1)));
+        assert_eq!(rows(Key::LineUp), Some(ListNav::Select(-1)));
+        assert_eq!(rows(Key::PageDown), Some(ListNav::Select(4)));
+        assert_eq!(rows(Key::PageUp), Some(ListNav::Select(-4)));
+        assert_eq!(rows(Key::Top), Some(ListNav::Select(isize::MIN)));
+        assert_eq!(rows(Key::Bottom), Some(ListNav::Select(isize::MAX)));
+        // Arrows and ⌃J/⌃K always move the selection; the list handles them itself.
+        for key in [Key::Up, Key::Down, Key::Enter, Key::Tab, Key::CmdK] {
+            assert_eq!(list_nav(true, key), None);
         }
     }
 

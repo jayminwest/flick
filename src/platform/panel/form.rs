@@ -217,7 +217,7 @@ pub fn render_form(frame: &FormFrame) {
         for row in &ui.rows {
             row.view.setHidden(true);
         }
-        ui.text.setHidden(true);
+        ui.text.scroll.setHidden(true);
         ui.form.title.setStringValue(&ns(frame.title));
         let (tops, rows) = layout(frame.fields.iter().map(|f| f.multiline));
         let shown = tops.len();

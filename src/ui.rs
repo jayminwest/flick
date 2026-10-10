@@ -5,8 +5,8 @@ use crate::core::{Field, Form, Icon, Item, Tone};
 use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
 pub use crate::platform::panel::{
-    VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, set_opacity,
-    set_query, show, snapshot,
+    VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, scroll_text,
+    set_opacity, set_query, show, snapshot,
 };
 
 pub fn init() {
@@ -30,6 +30,8 @@ pub struct View<'a> {
     pub action: &'a str,
     /// Read-only text under the rows (`ListView::text`).
     pub text: &'a str,
+    /// `ListView::text_tail`.
+    pub text_tail: bool,
 }
 
 pub fn render(view: &View) {
@@ -62,6 +64,7 @@ pub fn render(view: &View) {
         footer: view.footer,
         action: view.action,
         text: view.text,
+        text_tail: view.text_tail,
     });
 }
 

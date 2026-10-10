@@ -302,7 +302,12 @@ impl Module for Herdr {
                 let (machine, pane_id) = self.detail.clone()?;
                 let lines = self.settings.preview_lines;
                 io::fetch_preview(&self.shared, &self.transport, &machine, &pane_id, lines, self.hooks);
-                Some(ListView { placeholder: "Agent output".into(), ..ListView::new(ID, view) })
+                // Read-only: J/K, ⌃D/⌃U and G/⇧G scroll the reply, which starts at its end.
+                Some(ListView {
+                    title: Some("Agent Output".into()),
+                    text_tail: true,
+                    ..ListView::new(ID, view)
+                })
             }
             _ => None,
         }
@@ -313,7 +318,7 @@ impl Module for Herdr {
         let fleet = lock(&self.shared.fleet);
         let items = if view.name == "agent" {
             let agent = self.detail.as_ref().and_then(|(m, p)| fleet.agent(m, p));
-            view.footer = agent.map_or("Agent gone".into(), |a| format!("{} · {}  ·  esc to go back", a.label(), a.machine));
+            view.footer = agent.map_or("Agent gone".into(), |a| format!("{} · {}  ·  j/k scroll  ·  esc to go back", a.label(), a.machine));
             let (items, text) = views::detail(agent, lock(&self.shared.preview).as_ref(), now);
             view.text = text;
             items

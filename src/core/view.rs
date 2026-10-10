@@ -30,14 +30,22 @@ pub struct ListView {
     /// The module's name for the view.
     pub name: String,
     pub placeholder: String,
+    /// A read-only title in place of the search field. The view then takes no typing, so the
+    /// vim keys work: J/K, ⌃D/⌃U and G/⇧G scroll `text` (or move the selection when there is
+    /// no text); Up/Down and ⌃J/⌃K still move the selection.
+    pub title: Option<String>,
     /// Footer text when no status is showing.
     pub footer: String,
     /// Shown when `items` is empty.
     pub empty: String,
     pub items: Vec<Item>,
     /// Read-only text under the items, wrapped, in a fixed-width font (e.g. an agent's
-    /// reply). Empty: none. The panel shows what fits; keep it short or keep its tail.
+    /// reply). Empty: none. It scrolls (mouse, and the vim keys with a `title`); new text
+    /// starts at its top.
     pub text: String,
+    /// New `text` starts at its end, and stays there as it grows while the user is at the end
+    /// (output, a log).
+    pub text_tail: bool,
     /// Activating an item counts toward its frecency.
     pub record_use: bool,
     /// Escape hides the launcher instead of going back to root search.
@@ -45,16 +53,19 @@ pub struct ListView {
 }
 
 impl ListView {
-    /// An empty view: no items, "No Results" when empty, no frecency, Escape goes back.
+    /// An empty view: a search field, no items, "No Results" when empty, no frecency, Escape
+    /// goes back.
     pub fn new(module: &'static str, name: impl Into<String>) -> ListView {
         ListView {
             module,
             name: name.into(),
             placeholder: String::new(),
+            title: None,
             footer: String::new(),
             empty: "No Results".into(),
             items: vec![],
             text: String::new(),
+            text_tail: false,
             record_use: false,
             escape_hides: false,
         }
@@ -77,5 +88,6 @@ mod tests {
         assert!(!v.is("clip", "other") && !v.is("switcher", "history"));
         assert_eq!(v.empty, "No Results");
         assert!(v.items.is_empty() && v.text.is_empty() && !v.record_use && !v.escape_hides);
+        assert!(v.title.is_none() && !v.text_tail);
     }
 }
