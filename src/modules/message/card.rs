@@ -11,20 +11,24 @@
 //!   or with `--json` `{"id","replaced","warnings"}`.
 //! - `get <id>`: the stored normalized JSON. `ls [--limit n]`: `id  time  state  title`.
 //! - `show <id>`: show it again. `dismiss <id>|--all`: remove its card (every card's).
+//! - `press <id> <action> [values-json]`: press a button as the HUD does, through the same
+//!   `dispatch::press` (local testing; denied over the network). Values default to the
+//!   card's initial inputs. A `shell` action shows its confirm on the first press; a second
+//!   `card press` of the same action is Run. `press <id> :cancel` is Cancel.
 //!
 //! A card the user dismissed comes back only as `open` or `error`: a `done` or `pending`
 //! update of it goes to history without showing (plan risk 10).
 
 use serde::Serialize;
 
-use super::dispatch::Ui;
+use super::dispatch::{Pressed, Ui};
 use super::store::{Message, Messages};
 use super::{Inbox, text};
 use crate::core::Cx;
-use crate::core::card::{self, Card, Origin, State};
+use crate::core::card::{self, Card, Origin, State, VALUES_MAX};
 use crate::platform::hud::Options;
 
-const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all";
+const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all | press <id> <action> [values-json]";
 
 /// Most dismissed ids remembered; past it the set starts over (a forgotten id only means a
 /// `done` update of it shows again).
@@ -48,7 +52,8 @@ struct Listed {
     card: serde_json::Value,
 }
 
-fn origin(remote: bool) -> Origin {
+/// The origin of a card stored with this `remote` column.
+pub fn origin(remote: bool) -> Origin {
     if remote { Origin::Remote } else { Origin::Local }
 }
 
@@ -121,6 +126,9 @@ impl Inbox {
                 }
                 Ok(format!("Dismissed {shown} card{}", if shown == 1 { "" } else { "s" }))
             }
+            ["press", id, action, values @ ..] if values.len() <= 1 => {
+                self.press_verb(id, action, values.first().copied(), cx)
+            }
             ["dismiss", id] => {
                 let m = card_row(id, cx)?;
                 (self.env.dismiss)(&m.id);
@@ -169,6 +177,27 @@ impl Inbox {
         }
         let warnings = parsed.warnings.iter().map(|w| format!("\nwarning: {w}"));
         Ok(std::iter::once(m.id.clone()).chain(warnings).collect())
+    }
+
+    /// `card press`: what the press did, in words.
+    fn press_verb(&mut self, id: &str, action: &str, values: Option<&str>, cx: &Cx) -> Result<String, String> {
+        let c = stored(&card_row(id, cx)?).ok_or(format!("No card {id}"))?;
+        let values = match values {
+            None => card::action::values_json(&c.inputs())?,
+            Some(v) if !serde_json::from_str::<serde_json::Value>(v).is_ok_and(|v| v.is_object()) => {
+                return Err("values must be a JSON object".into());
+            }
+            Some(v) if v.chars().count() > VALUES_MAX => return Err(format!("values over {VALUES_MAX} chars")),
+            Some(v) => v.to_string(),
+        };
+        Ok(match self.press(id, action, values, cx)? {
+            Pressed::Sent => format!("Sent {action} to KOTA; the card waits for its update"),
+            Pressed::Confirm(cmd) => format!("Confirm on the card: {cmd}\nPress {action} again to run it"),
+            Pressed::Cancelled => "Cancelled".into(),
+            Pressed::Running(label) => format!("Running {label}; the result shows on the card"),
+            Pressed::Did(line) => line,
+            Pressed::Closed => format!("Closed {id}"),
+        })
     }
 
     fn list_cards(&self, limit: usize, cx: &Cx) -> Result<String, String> {

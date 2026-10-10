@@ -6,7 +6,7 @@
 //! | `do` | runs |
 //! |---|---|
 //! | `{"open_url":"https://…"}` | opens an http(s) link |
-//! | `{"open_app":"Safari"}` | opens an app by name or bundle id |
+//! | `{"open_app":"Safari"}` | opens an app by name or bundle id (not a path) |
 //! | `{"copy":"text"}` | copies the literal text |
 //! | `{"script":{"name":"deploy","query":"prod"}}` | runs the `[[script.commands]]` entry `name` (`query` optional) |
 //! | `{"flick":["task","start","x"]}` | runs one flick request (module, verb, args) |
@@ -34,6 +34,11 @@ pub const SHELL_MAX: usize = 2000;
 /// Client flags a `flick` action may not carry: they would retarget the request (another
 /// host, the remote marker) or change its reply format.
 const CLIENT_FLAGS: &[&str] = &["--host", JSON, REMOTE, "--stdin"];
+/// First words the `flick` command line runs in its own process instead of sending to the
+/// running Flick (`cli::parse`). A `flick` action runs by re-executing the Flick binary, so
+/// these would run outside the control path and its policy (`snapshot` writes any file,
+/// `import-raycast` edits the config).
+const IN_PROCESS: &[&str] = &["snapshot", "import-raycast", "help", "config"];
 
 /// A local action, from an action's `do`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,7 +110,14 @@ impl Do {
                 let ok = !app.trim().is_empty()
                     && app.chars().count() <= APP_MAX
                     && !app.chars().any(char::is_control);
-                ok.then_some(()).ok_or_else(|| "open_app: empty or invalid app name".into())
+                if !ok {
+                    return Err("open_app: empty or invalid app name".into());
+                }
+                // `workspace::find_app` also takes a path; a card may only name an app.
+                let path = app.contains('/') || app.trim_start().starts_with('~');
+                (!path)
+                    .then_some(())
+                    .ok_or_else(|| "open_app: a name or bundle id, not a path".into())
             }
             Do::Script { name, .. } if name.trim().is_empty() => Err("script: empty name".into()),
             Do::Flick(words) => flick(words, origin),
@@ -140,8 +152,8 @@ impl Do {
     }
 }
 
-/// The policy for `flick` words: a module first, no client flags, no `events` stream, and
-/// for a remote card, nothing `control::net_policy` refuses (so a card cannot launder a verb
+/// The policy for `flick` words: a module first (not a command the CLI runs itself), no
+/// client flags, no `events` stream, and for a remote card, nothing `control::net_policy` refuses (so a card cannot launder a verb
 /// denied over the network).
 fn flick(words: &[String], origin: Origin) -> Result<(), String> {
     let first = words.first().map_or("", String::as_str);
@@ -150,6 +162,9 @@ fn flick(words: &[String], origin: Origin) -> Result<(), String> {
     }
     if first == EVENTS {
         return Err("flick: events is a stream, not an action".into());
+    }
+    if IN_PROCESS.contains(&first) {
+        return Err(format!("flick: {first} is not a module"));
     }
     if let Some(flag) =
         words.iter().find(|w| CLIENT_FLAGS.contains(&w.as_str()) || w.starts_with("--host="))
