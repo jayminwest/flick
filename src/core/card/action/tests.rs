@@ -129,6 +129,15 @@ fn flick_words_are_checked_and_net_policy_applies_to_remote_cards() {
         refused(&["remote", "on"], Origin::Remote),
         "flick: remote on: not allowed over the network"
     );
+    for (w, what) in [
+        (["script", "run", "x"], "script run"),
+        (["message", "card", "press"], "message card press"),
+    ] {
+        assert_eq!(
+            refused(&w, Origin::Remote),
+            format!("flick: {what}: not allowed over the network")
+        );
+    }
     assert_eq!(words(&["reload"]).check(Origin::Local), Ok(()));
     assert_eq!(words(&["task", "start", "x"]).check(Origin::Remote), Ok(()));
 }
