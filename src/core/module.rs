@@ -78,6 +78,14 @@ pub trait Module {
         None
     }
 
+    /// This module's view `view` left the launcher: the screen now holds another view, root
+    /// search or a form (an action menu or confirmation over it still holds it). Called after
+    /// the next view's `open`, so a module moving between two of its own views hears `open`
+    /// of the new one, then `closed` of the old: compare the name. Hiding the launcher does
+    /// not close the view (the panel's visibility says whether it shows); the next screen
+    /// change does. After a reload it may name a view this instance never opened.
+    fn closed(&mut self, _view: &str, _cx: &mut Cx) {}
+
     /// Fill `view` (one this module opened) for `cx.query`.
     fn refresh(&mut self, _view: &mut ListView, _cx: &mut Cx) {}
 

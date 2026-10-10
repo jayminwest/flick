@@ -47,6 +47,7 @@ the main thread.
 | `items(&mut Cx) -> Vec<Item>` | each root refresh | Root search items. Ranked by fuzzy score plus frecency. |
 | `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink and script `<keyword> <text>`). |
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
+| `closed(view, &mut Cx)` | the screen stops holding the module's view `view` | The view left the launcher: another view, root search or a form replaced it (an action menu or a confirmation over it still holds it). It comes after the next view's `open`, so a module moving between its own views hears `open` of the new one, then `closed` of the old: compare the name. Hiding the launcher does not close a view (ask the panel's visibility); the next screen change does. After a reload it may name a view the instance never opened. Use it to stop work that runs only while a view shows (`sys`'s fleet cadence), instead of inferring it from `items` or `LauncherOpened` (flick-7638). |
 | `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font (it shows what fits, so keep the tail). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab` is `Tab::Activate`) | Run an item this module created. |
 | `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
@@ -153,7 +154,10 @@ A form takes none of them, so they keep their text-editing defaults there.
   shows `⌘↵` (`Form::submit_hint`). Escape goes back to root search. A blank required field is an inline
   `<Label> is required` error, and `submit` is not called.
 
-`Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it. Module
+`Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it.
+`State::show` (every screen change) tracks the module view the screen holds, directly or in
+`back` (`screen::hold`), and calls the owner's `closed` when a new screen no longer holds it.
+A restore from `back` does not call `open` again, which is why `back` still counts as holding. Module
 contract for a confirmable action (e.g. Delete, Uninstall): return
 `Outcome::Confirm(Confirm { token: "<verb>/<key>", label: "<Verb>", destructive, rows, .. })`
 from `act`, then do the work in `confirmed(token)` and return `Stay(Some(status))` (back to
@@ -304,9 +308,9 @@ and every hotkey.
   15 s only while its view shows (each poll leaves one tick thread pending that sleeps and
   posts once, so a fleet of only `via = "local"` machines refreshes too), and on its own
   timer only with `[sys] refresh_secs`; `Sleep` stops the timer. With no
-  machines it starts nothing and the root item `sys:fleet` is hidden. No event says a view
-  closed, so the module tracks it: `open` of `fleet` or `machine` sets the flag; root
-  search asking `items`, `LauncherOpened`, and pushing another module's view clear it.
+  machines it starts nothing and the root item `sys:fleet` is hidden. `open` of `fleet` or
+  `machine` records which one shows; `closed` of that view clears it (a failed push, such
+  as Herdr Agents with herdr disabled, changes no screen and so keeps the cadence).
   The fleet window (`sys window`, surface "fleet", `src/modules/sys/window.rs`) counts as
   a visible view while `surface::is_visible` says it shows, so it keeps the 15 s cadence;
   hidden, it adds nothing. Its handlers only queue notes and post `ModuleChanged`.
