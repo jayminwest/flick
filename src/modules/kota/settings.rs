@@ -6,7 +6,6 @@ use serde::Deserialize;
 use super::presence::FAST_SECS;
 
 /// The `machine` that means this Mac's own herdr server (no `--machine`).
-#[cfg_attr(not(test), expect(dead_code, reason = "flick-4f39 builds the argvs"))]
 pub const LOCAL: &str = "local";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -76,13 +75,11 @@ impl Settings {
         Ok(self)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "flick-4f39 builds the argvs"))]
     /// Whether `machine` is this Mac's server, given this Mac's short host name.
     pub fn is_local(&self, host: Option<&str>) -> bool {
         self.machine == LOCAL || host.is_some_and(|h| self.machine.eq_ignore_ascii_case(h))
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "flick-4f39 builds the argvs"))]
     /// kota-dash's `/ok` URL.
     pub fn ok_url(&self) -> String {
         format!("{}/ok", self.dash.trim_end_matches('/'))

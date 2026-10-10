@@ -188,7 +188,7 @@ Sources:
   threads and notification clicks), `capture` (its shutter thread, and the annotation
   editor's `on_done` when it closes), `sys` (its probe and service-check threads),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
-  modifier-release poll).
+  modifier-release poll), `kota` (its poll round and its timer).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -252,6 +252,15 @@ follows an external server.
   real notification.
 - State changes that need the main thread (notifications) queue in the shared state and are
   drained in `on_event(ModuleChanged)`.
+
+Timed polls (`src/modules/kota/io.rs`): one round (two children in parallel, each with a
+budget) at a time; its result goes through a pure reducer under the lock, then it posts
+`ModuleChanged`. On that event the main thread either starts the next round, if due, or
+arms one timer thread that sleeps until it is due and posts. Arming bumps a counter, so an
+older timer that wakes exits; `Sleep`/`Locked` bump the round epoch too (a round in flight
+drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module polls only when
+its `[kota]` table sets a key: config.toml is shared across Macs, and `Section` cannot tell
+an empty table from a missing one.
 
 Dictation (`src/modules/dictation/`): two child processes and the main-thread steps around
 them; every program and macOS call goes through `dictation::Hooks` (`wire::REAL`; scripted
@@ -447,7 +456,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
   a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
   Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
-  `kota status` (cached presence, no I/O) is allowed on purpose too.
+  `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
+  round, at most one per 10 s) are allowed on purpose too.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
   reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
   refusals are pinned in `src/characterization/control_replies.rs`.
