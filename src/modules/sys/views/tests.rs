@@ -219,3 +219,34 @@ fn log_view_shows_the_last_tail() {
     assert_eq!(subtitle(Ok("\n".into())), ("empty · ssh pro tail -n 100 /x".into(), String::new()));
     assert_eq!(subtitle(Err("ssh: refused".into())), ("ssh: refused · ssh pro tail -n 100 /x".into(), String::new()));
 }
+
+#[test]
+fn tones_follow_state_then_the_worst_service() {
+    let svc = |status| Svc { name: "s", kind: "tcp", status, reason: "" };
+    assert_eq!(status_tone("ok"), Tone::Ok);
+    assert_eq!(status_tone("warn"), Tone::Warn);
+    assert_eq!(status_tone("fail"), Tone::Error);
+    assert_eq!(status_tone("unknown"), Tone::Neutral);
+    assert_eq!(machine_tone("pending", &[svc("fail")]), Tone::Neutral);
+    assert_eq!(machine_tone("down", &[]), Tone::Error);
+    assert_eq!(machine_tone("stale", &[svc("ok")]), Tone::Warn);
+    assert_eq!(machine_tone("fresh", &[]), Tone::Ok);
+    assert_eq!(machine_tone("fresh", &[svc("ok"), svc("warn")]), Tone::Warn);
+}
+
+#[test]
+fn rows_carry_their_tone_and_the_root_item_only_problems() {
+    let f = mixed();
+    let local = no_local();
+    let seen = seen(&f, &local, 110, 45);
+    let tones: Vec<Tone> = fleet_items(&seen).iter().map(|i| i.tone).collect();
+    // laptop pending, server (1 fail), web ok, agent fail, pro down, Herdr Agents.
+    let want = [Tone::Neutral, Tone::Error, Tone::Ok, Tone::Error, Tone::Error, Tone::Neutral];
+    assert_eq!(tones, want);
+    assert_eq!(root_item(&seen).unwrap().tone, Tone::Error);
+    let one = fleet("[[sys.machine]]\nname = \"a\"\nvia = \"local\"\n");
+    let ok = Local { snapshot: Some(json!({ "services": [{ "status": "ok" }] })), at: Some(100), error: None };
+    assert_eq!(root_item(&super::seen(&one, &ok, 100, 45)).unwrap().tone, Tone::Neutral);
+    let stale = Local { at: Some(0), ..ok };
+    assert_eq!(root_item(&super::seen(&one, &stale, 100, 45)).unwrap().tone, Tone::Warn);
+}

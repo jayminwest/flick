@@ -86,6 +86,7 @@ fn modules_for(
 pub fn init(config: Config, store: Store) -> String {
     let (config, registry) = modules_for(config, registry);
     let launcher = config.hotkey.clone();
+    ui::set_opacity(config.launcher().opacity);
     let mut state = State {
         screen: Screen::Root,
         registry,
@@ -270,6 +271,7 @@ impl State {
         let config = config::load()?;
         let started = modules::reload(&mut self.registry, &config)
             .map_err(|e| format!("{}: {e}", config.files(&config::config_path())))?;
+        ui::set_opacity(config.launcher().opacity);
         self.env.config = config;
         if let Err(e) = self.registry.migrate(&self.env.store) {
             eprintln!("flick: store migration failed: {e}");

@@ -226,3 +226,13 @@ fn load_merges_the_hosts_overlay_from_disk() {
     assert_eq!(host(&load_from(&path, None).unwrap()), Value::from("a"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_launcher_table_is_checked_and_read() {
+    let near = |c: &Config, want: f64| (c.launcher().opacity - want).abs() < 1e-9;
+    assert!(near(&Config::default(), launcher::DEFAULT_OPACITY));
+    assert!(near(&parse("[launcher]\nopacity = 0.75").unwrap(), 0.75));
+    assert!(near(&parse("[launcher]\nopacity = 0.2").unwrap(), launcher::MIN_OPACITY));
+    let err = parse("[launcher]\nopacity = \"clear\"").unwrap_err();
+    assert!(err.starts_with("[launcher]: "), "{err}");
+}

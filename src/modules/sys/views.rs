@@ -14,7 +14,7 @@ use super::fleet::{Fleet, Local, Row, Slot, metrics};
 use super::jobs::Tail;
 use super::probe::Snapshot;
 use super::report::{self, ago};
-use crate::core::{Icon, Item, ItemId};
+use crate::core::{Icon, Item, ItemId, Tone};
 
 /// What an item key names.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,6 +92,26 @@ pub fn status_icon(status: &str) -> Icon {
     })
 }
 
+/// A service status's tint: green ok, orange warn, red fail.
+pub fn status_tone(status: &str) -> Tone {
+    match status {
+        "ok" => Tone::Ok,
+        "warn" => Tone::Warn,
+        "fail" => Tone::Error,
+        _ => Tone::Neutral,
+    }
+}
+
+/// A machine's tint, like `machine_icon`: red down, orange stale, else its worst service.
+pub fn machine_tone(state: &str, services: &[Svc]) -> Tone {
+    match state {
+        "pending" => Tone::Neutral,
+        "down" => Tone::Error,
+        "stale" => Tone::Warn,
+        _ => status_tone(worst(services)),
+    }
+}
+
 /// The worst status of `services`: fail, warn, unknown, then ok (also for none).
 fn worst(services: &[Svc]) -> &'static str {
     let has = |st: &str| services.iter().any(|s| s.status == st);
@@ -160,6 +180,7 @@ impl<'a> Seen<'a> {
             subtitle: self.subtitle(),
             accessory: self.accessory(),
             keywords: vec![via.into(), self.state.into(), "machine".into()],
+            tone: machine_tone(self.state, &self.services),
             ..Item::new(
                 ItemId::new(ID, format!("machine/{}", self.name())),
                 self.name(),
@@ -175,6 +196,7 @@ impl<'a> Seen<'a> {
             subtitle: format!("{} · {}", s.status, s.reason),
             accessory: s.kind.into(),
             keywords: vec![s.status.into(), s.kind.into(), s.reason.into()],
+            tone: status_tone(s.status),
             ..Item::new(
                 ItemId::new(ID, format!("service/{}/{}", self.name(), s.name)),
                 format!("{} · {}", s.name, self.name()),
@@ -212,6 +234,13 @@ pub fn summary_line(seen: &[Seen]) -> String {
     parts.join(" · ")
 }
 
+/// The root item's tint: red or orange while a machine or service is, else none (all well
+/// stays quiet in root search).
+fn fleet_tone(seen: &[Seen]) -> Tone {
+    let tones: Vec<Tone> = seen.iter().map(|s| machine_tone(s.state, &s.services)).collect();
+    [Tone::Error, Tone::Warn].into_iter().find(|t| tones.contains(t)).unwrap_or(Tone::Neutral)
+}
+
 /// The root item, `Fleet`: shown only while `[[sys.machine]]` tables are configured.
 pub fn root_item(seen: &[Seen]) -> Option<Item> {
     if seen.is_empty() {
@@ -219,6 +248,7 @@ pub fn root_item(seen: &[Seen]) -> Option<Item> {
     }
     Some(Item {
         subtitle: summary_line(seen),
+        tone: fleet_tone(seen),
         accessory: "sys".into(),
         keywords: vec!["fleet machines servers services health status dashboard".into()],
         ..Item::new(ItemId::new(ID, "fleet"), "Fleet", "Show Fleet", Icon::Symbol("server.rack"))

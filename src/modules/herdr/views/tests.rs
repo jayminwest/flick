@@ -116,6 +116,14 @@ fn icons_follow_the_status() {
 }
 
 #[test]
+fn tones_flag_done_and_blocked_agents() {
+    let all = [Status::Done, Status::Blocked, Status::Idle, Status::Working, Status::Unknown];
+    let tones: Vec<Tone> = all.into_iter().map(status_tone).collect();
+    assert_eq!(tones, [Tone::Ok, Tone::Warn, Tone::Neutral, Tone::Neutral, Tone::Neutral]);
+    assert_eq!(agent_item(&agent("local", "p", Status::Blocked), 5).tone, Tone::Warn);
+}
+
+#[test]
 fn the_detail_view_puts_jump_first_then_the_reply() {
     let fleet = fleet();
     let a = fleet.agent("hub", "w1:p1");

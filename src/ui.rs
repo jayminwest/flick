@@ -1,12 +1,12 @@
 //! The launcher view: turns results and forms into what the platform panel draws, and wires
 //! the panel's typing and keys to the controller.
 
-use crate::core::{Field, Form, Icon, Item};
+use crate::core::{Field, Form, Icon, Item, Tone};
 use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
 pub use crate::platform::panel::{
-    VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, set_query, show,
-    snapshot,
+    VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, set_opacity,
+    set_query, show, snapshot,
 };
 
 pub fn init() {
@@ -45,6 +45,12 @@ pub fn render(view: &View) {
             icon: match &item.icon {
                 Icon::File(p) => panel::Icon::File(p),
                 Icon::Symbol(s) => panel::Icon::Symbol(s),
+            },
+            tone: match item.tone {
+                Tone::Neutral => panel::Tone::Neutral,
+                Tone::Ok => panel::Tone::Ok,
+                Tone::Warn => panel::Tone::Warn,
+                Tone::Error => panel::Tone::Error,
             },
         })
         .collect();

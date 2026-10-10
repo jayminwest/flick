@@ -181,6 +181,7 @@ impl Rebuild {
         let p = self.runner.progress();
         let status = Item {
             subtitle: p.last_line.clone(),
+            tone: p.tone(),
             ..Item::new(ItemId::new("flick", "build-status"), p.title(Instant::now()), "Open Log", Icon::Symbol("hammer"))
         };
         let mut items = vec![status];
