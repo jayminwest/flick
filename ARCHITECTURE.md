@@ -16,7 +16,7 @@ this file in the same commit.
 | controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
 | shared services | `src/config.rs`, `src/core/store.rs` | Config loading and per-module tables; the SQLite store and migrations. |
 | control | `src/control/` | The Unix socket server and the network transport over Tailscale (`control::net`). Runs requests on the main thread. Streams events. |
-| cli | `src/cli/` | Argument parsing and the socket client. `snapshot`, `import-raycast` and `config example` run in-process. |
+| cli | `src/cli/` | Argument parsing and the socket client. `snapshot`, `import-raycast`, `config example` and `config path` run in-process. |
 
 There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code that uses
 `crate::modules::quicklinks` directly.
@@ -296,8 +296,8 @@ budget) at a time; its result goes through a pure reducer under the lock, then i
 arms one timer thread that sleeps until it is due and posts. Arming bumps a counter, so an
 older timer that wakes exits; `Sleep`/`Locked` bump the round epoch too (a round in flight
 drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module polls only when
-its `[kota]` table sets a key: config.toml is shared across Macs, and `Section` cannot tell
-an empty table from a missing one.
+its `[kota]` table sets a key: `Section` cannot tell an empty table from a missing one. When
+config.toml is shared across Macs, `[kota]` belongs in the KOTA Mac's per-host overlay.
 
 Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (started, a
 `[kota]` key set) and `status_item` is true, so a Mac without `[kota]` has none. Title: the
@@ -538,6 +538,19 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 `src/config.rs`. File: `$FLICK_CONFIG`, else `~/.config/flick/config.toml`. The first run
 writes a commented default (`DEFAULT_CONFIG`).
 
+- Per-host overlay (`src/config/overlay.rs`, pure): `config.<host>.toml` in the same
+  directory, `<host>` = `config::host_name()`: `$FLICK_HOST_NAME` (empty: no overlay), else
+  `platform::host::local_host_name()` (`scutil --get LocalHostName`, else `hostname -s`),
+  normalized by `overlay::normalize` (lowercase, no `.local`, only `[a-z0-9._-]`). Each file
+  goes through `parse` on its own (legacy keys map per file), then `overlay::merge` deep-merges
+  the overlay's tables over the base's: tables merge recursively, every other value (arrays
+  and arrays of tables included) replaces; nothing is deleted. The overlay's `hotkey`
+  replaces the base's only when the overlay sets it. No overlay file: the result is exactly
+  `parse(config.toml)`. Overlay errors name the overlay path; module-table errors name
+  `Config::files` (`config.toml + config.<host>.toml`). No file watching: reload re-reads
+  both. `config::edit` and the Raycast import write config.toml only. `flick config path`
+  (in-process) prints both paths (`overlay::report`).
+
 - `config.example.toml` (repo root, embedded by `src/config/example.rs`, printed by `flick
   config example`) lists every table and key, commented out, with its default. A setting line
   is `#` then a letter or `[`; a note is `# `. Tests keep it exact: each module with settings
@@ -689,13 +702,15 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   events` ignores it). Exit 0 for `ok`, 1 for
   an error reply, 3 (`cli::client::UNREACHABLE`) when no reply came (no connection, host
   unreachable, connection dropped), 2 for usage errors. `flick events` prints the stream.
-  `flick snapshot`, `flick import-raycast` and `flick config example` do not use the socket.
+  `flick snapshot`, `flick import-raycast`, `flick config example` and `flick config path` do
+  not use the socket.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
   to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
-  runs in this process (launcher, help, snapshot, import-raycast, config example) is a usage error;
+  runs in this process (launcher, help, snapshot, import-raycast, config example, config path)
+  is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 - `--stdin` (`src/cli/stdin.rs`): before a request is sent, locally or to a host, a request
   word equal to `--stdin` is replaced by stdin's contents, verbatim. At most one such word;

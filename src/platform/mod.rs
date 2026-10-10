@@ -3,7 +3,8 @@
 //! callers never see Objective-C objects, CF types or selectors.
 //!
 //! `AppKit` runs on the main thread, and so does every function here except
-//! `browser::front_tab_url`, which blocks on another app and runs on a worker thread.
+//! `browser::front_tab_url`, which blocks on another app and runs on a worker thread, and
+//! `host::local_host_name`, which runs anywhere.
 
 pub mod app;
 pub mod ax;
@@ -16,6 +17,7 @@ mod edit;
 pub mod events;
 pub mod files;
 pub mod hid;
+pub mod host;
 pub mod hotkeys;
 pub mod hud;
 pub mod ink;

@@ -96,7 +96,7 @@ flick sys restart [<machine>] <service> --yes    # restarts it
 
 The laptop shows the fleet. mbp-server runs Flick and checks its own KOTA services, many of them on loopback. The Mac Pro has no Flick and is read over ssh. Tailscale names: `jaymins-macbook-pro`, `mbp-server`, and the Mac Pro at `100.118.223.57`.
 
-`[[sys.machine]]` and `[[sys.service]]` belong to one Mac. Flick reads one `config.toml` and has no per-host include. If home-manager links one file to every Mac, give each Mac its own file (or its own `FLICK_CONFIG`). Otherwise mbp-server would show the laptop's fleet with itself as `via = "local"`, and the laptop would check mbp-server's loopback ports. `[remote] peers` can be shared: list both Macs.
+`[[sys.machine]]` and `[[sys.service]]` belong to one Mac. If home-manager links one `config.toml` to every Mac, put them in each Mac's [per-host overlay](configuration.md#per-host-overlay) (`config.<host>.toml`), not in the shared file. Otherwise mbp-server would show the laptop's fleet with itself as `via = "local"`, and the laptop would check mbp-server's loopback ports. `[remote] peers` can be shared (list both Macs) or go in the overlays.
 
 **Laptop** (`jaymins-macbook-pro`): the fleet.
 

@@ -3,6 +3,11 @@
 # Print this file with "flick config example". Flick reads ~/.config/flick/config.toml
 # (or $FLICK_CONFIG); run "Reload Flick Config" or "flick reload" after an edit.
 #
+# Per-host overlay: config.<host>.toml next to config.toml (host: this Mac's LocalHostName,
+# lowercase; "flick config path" shows it) is merged over this file. Tables merge key by key;
+# any other value, arrays and [[...]] lists included, replaces this file's. It cannot remove
+# a key, so put host-only tables such as [kota] or [[sys.machine]] only in the host's file.
+#
 # Lines that start with "#" and a letter or "[" are settings: delete the "#" to use one.
 # Lines that start with "# " are notes. Every value below is the default, except where a
 # note says "unset by default" or "example": then it is a sample value.
