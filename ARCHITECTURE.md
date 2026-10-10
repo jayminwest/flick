@@ -105,6 +105,10 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
 
 ## Screens
 
+In every list, ⌃J/⌃N and ⌃K/⌃P move the selection like Down and Up, even while the search
+field has the keyboard (`platform::panel::keys`; ⌃K no longer kills to the end of the query).
+A form takes none of them, so they keep their text-editing defaults there.
+
 `app::State::screen` (`src/app/screen.rs`) is one of:
 
 - `Root`: root search.
@@ -121,7 +125,7 @@ An `Outcome` from `act` or `confirmed` applies to the list the menu or question 
   Escape, ⌘K or Backspace in an empty field go back to `back`: the same screen, search text
   and selection. The action keybinding hints (`Action::shortcut_hint`) are display only.
 - `Confirm { confirm, back }`: from `Outcome::Confirm`. `Confirm::title` replaces the search
-  field (read-only); `Confirm::rows` are read-only rows (Up/Down scroll). Non-destructive:
+  field (read-only); `Confirm::rows` are read-only rows (Up/Down, ⌃J/⌃K, J/K scroll; ⌃D/⌃U half a page; G/⇧G top/bottom). Non-destructive:
   Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
   `Press ⌘↵ to <label>`. Escape cancels back to `back` and the module hears nothing.
 - `Form(Form)`: from `Outcome::Form`. Up to 6 labelled field rows (`FORM_FIELDS` in the
