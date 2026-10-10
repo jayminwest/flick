@@ -210,7 +210,9 @@ pub fn fetch_models(shared: &Arc<Shared>, server: &Server, hooks: Hooks) -> u64 
             Err(e) => Err(e),
             Ok(end) => match (end.failure(), openai::models(&body)) {
                 (None, list) => list,
-                (Some(fail), list) => Err(list.err().filter(|_| end.code == Some(22)).unwrap_or(fail)),
+                // An HTTP error: the server's JSON error message if it sent one, else curl's
+                // line with the status (a proxy's empty 502 is not "not a model list").
+                (Some(fail), _) => Err(openai::error_body(&body).filter(|_| end.code == Some(22)).unwrap_or(fail)),
             },
         };
         let mut st = sh.lock();

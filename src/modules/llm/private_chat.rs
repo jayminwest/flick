@@ -61,6 +61,9 @@ pub struct Ui {
 pub struct Open {
     pub session: PrivateSession,
     waiting: Option<String>,
+    /// The `Models::seq` the waiting prompt needs: a list fetched after it was sent, so an
+    /// error from before (the server was down, then started) does not refuse it.
+    asked: u64,
 }
 
 impl Drop for Open {
@@ -132,7 +135,7 @@ fn enter<'a>(room: &'a Room, settings: &Settings, shared: &Arc<Shared>, hooks: H
     if r.is_none() {
         let session = PrivateSession::open(settings, None)?;
         io::fetch_models(shared, session.server(), hooks);
-        *r = Some(Open { session, waiting: None });
+        *r = Some(Open { session, waiting: None, asked: 0 });
     }
     Ok(r)
 }
@@ -263,6 +266,13 @@ impl Llm {
             self.private.notice = Some(BUSY.into());
             return;
         }
+        if open.session.model().is_empty() {
+            let server = open.session.server();
+            let listed = self.shared.lock().models.get(&server.name).is_some_and(|m| matches!(m.result, Some(Ok(_))));
+            if !listed {
+                open.asked = io::fetch_models(&self.shared, server, self.hooks);
+            }
+        }
         open.waiting = Some(text);
         drop(room);
         self.private_resolve();
@@ -275,14 +285,17 @@ impl Llm {
         if open.session.model().is_empty() {
             let name = open.session.server().name.clone();
             let listed = self.shared.lock().models.get(&name).cloned().unwrap_or_default();
-            let why = match listed.result {
-                _ if listed.fetching => return,
-                None => {
-                    io::fetch_models(&self.shared, open.session.server(), self.hooks);
-                    return;
-                }
-                Some(Err(e)) => format!("llm: {name}: {e}"),
-                Some(Ok(list)) => match list.iter().find(|m| m.id == self.settings.default_model).or(list.first()) {
+            if listed.fetching {
+                return;
+            }
+            if listed.result.is_none() || listed.seq < open.asked {
+                // Never fetched, or the fetch was stopped before it landed: ask again.
+                open.asked = io::fetch_models(&self.shared, open.session.server(), self.hooks);
+                return;
+            }
+            let why = match listed.result.unwrap_or(Err(String::new())) {
+                Err(e) => format!("llm: {name}: {e}"),
+                Ok(list) => match list.iter().find(|m| m.id == self.settings.default_model).or(list.first()) {
                     Some(m) => {
                         open.session.set_model(&m.id);
                         String::new()
@@ -291,12 +304,11 @@ impl Llm {
                 },
             };
             if !why.is_empty() {
-                // Put the prompt back and ask again, so the next one may find the list.
+                // Put the prompt back; sending it again fetches the list again.
                 if let Some(mut w) = open.waiting.take() {
                     (self.private.ui.win.set_input)(&w);
                     wipe_string(&mut w);
                     self.private.notice = Some(why);
-                    io::fetch_models(&self.shared, open.session.server(), self.hooks);
                 }
                 return;
             }

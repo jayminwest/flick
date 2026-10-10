@@ -48,7 +48,9 @@ fn a_model_list_lands_under_its_server() {
 
 #[test]
 fn failed_lists_say_why() {
-    assert_eq!(list_error("down"), "(7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server");
+    assert_eq!(list_error("down"), "(7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server (is the server running, and its port published (tailscale serve)?)");
+    let gateway = "(22) The requested URL returned error: 502 (the proxy reached no model server behind it: is the server running?)";
+    assert_eq!(list_error("gateway"), gateway);
     assert_eq!(list_error("err"), "model not found");
     assert_eq!(list_error("junk"), "not a model list: <html>hi</html>");
     assert_eq!(list_error("nospawn"), "/usr/bin/curl: No such file or directory");
@@ -121,7 +123,8 @@ fn reasoning_arrives_before_the_answer() {
 fn failed_replies_say_why() {
     let failed = |host: &str| reply(host, "x").1;
     assert_eq!(failed("err"), Status::Failed("model not found".into()));
-    assert_eq!(failed("down"), Status::Failed("(7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server".into()));
+    assert_eq!(failed("down"), Status::Failed("(7) Failed to connect to down port 80 after 1 ms: Couldn't connect to server (is the server running, and its port published (tailscale serve)?)".into()));
+    assert!(matches!(failed("gateway"), Status::Failed(e) if e.contains("error: 502 (the proxy reached no model server")));
     assert_eq!(failed("empty"), Status::Failed("the server sent no reply".into()));
     assert_eq!(failed("junk"), Status::Failed("the server sent no reply".into()));
     assert_eq!(failed("nospawn"), Status::Failed("/usr/bin/curl: No such file or directory".into()));

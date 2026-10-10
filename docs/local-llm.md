@@ -77,7 +77,7 @@ private = true
 ```
 
 - It talks only to a server with `private = true` (the first one listed). With none, the launcher item and the hotkey say "no private server" and nothing is sent; it never falls back to a normal server. `private = true` is your word that the server keeps no logs or caches; Flick cannot check it.
-- The model is `default_model` if the private server lists it, else the first model it lists. The first reply after a while may wait while the server loads the model ("Waiting for the model…").
+- The model is `default_model` if the private server lists it, else the first model it lists. Each prompt sent before a model is known fetches the list again, so a prompt sent after the server starts works. If the list fails, the prompt goes back into the input and the notice says why (see [Troubleshooting](local-llm/private-server.md#troubleshooting)). The first reply after a while may wait while the server loads the model ("Waiting for the model…").
 - The window says **Private - nothing is saved** in a banner and has its own outline. It is left out of screenshots, screen recording and screen sharing. Spell check, autocorrect, text completion, predictions, Writing Tools and undo are off in its input, and its bubbles cannot be selected.
 - Keys: Return sends, ⌘. stops the reply, ⌘N clears the chat, ⌘W or Esc hides and clears it. The hotkey hides (and clears) it while it has the keyboard.
 - ⌘C copies the input's selection, or, with nothing selected, the last reply. Either copy is marked concealed and transient, so Flick's clip history and other clipboard managers skip it. Pasting it elsewhere is up to you.
