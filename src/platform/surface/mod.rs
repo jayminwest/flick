@@ -25,6 +25,17 @@
 //!   stays active, and once the surface hides that app's window is key again. `show` makes
 //!   the input first responder only when it is not already (mx-b73c04), so a redraw never
 //!   moves the caret.
+//! - Private (`Spec::private`, flick-f218): the window is left out of screenshots, screen
+//!   recording and window sharing (`sharingType` none), is not restorable and not in the
+//!   Windows menu, and keeps the spec's title as its window title. A banner strip with the
+//!   spec's text and an accent outline mark it. The input has spell check, grammar,
+//!   autocorrect, completion, inline predictions, Writing Tools, math results, link and data
+//!   detection and undo off (`privacy::ALL`) and no context menu; bubbles cannot be selected
+//!   (and their links do not open). ⌘C/⌘X copy the input's selection only through
+//!   `pasteboard::set_text_concealed` (Concealed + Transient, so clip history skips it); with
+//!   nothing selected they reach `Handlers::key`, never the pasteboard. `snapshot` refuses.
+//!   What `AppKit` keeps in its views after `set_rows`/`set_input` replace them is outside
+//!   Flick's reach.
 //! - Threading: main thread only. Handlers run on the main thread with no surface state
 //!   borrowed; `submit`, `chip_removed`, `closed` and `card_action` run on a later run loop
 //!   turn (deferred with `timer::after`), `key` runs synchronously because its answer decides
@@ -34,13 +45,14 @@
 mod geometry;
 mod input;
 mod keys;
+mod privacy;
 pub(super) mod render;
 pub mod rows;
 mod style;
 mod transcript;
 mod window;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -87,9 +99,8 @@ pub struct Spec<'a> {
     pub input: Input,
     /// Hide (and call `closed`) when another window becomes key.
     pub hide_on_blur: bool,
-    /// Hook for private mode (flick-f218): it will keep the window out of screen capture and
-    /// shares. Not implemented yet; a private spec opens a normal window and logs that.
-    pub private: bool,
+    /// `Some(banner text)`: a private surface (see the module docs); `None`: a normal one.
+    pub private: Option<&'a str>,
 }
 
 /// What the header shows.
@@ -139,6 +150,7 @@ struct Surface {
     handlers: Handlers,
     multi: bool,
     hide_on_blur: bool,
+    private: bool,
     v: Views,
     chips: RefCell<Vec<Retained<NSButton>>>,
 }
@@ -188,7 +200,13 @@ fn submit(s: &Surface) {
     }
     s.v.field.set_text("");
     let (id, h) = (s.id, s.handlers);
-    timer::after(0.0, move || (h.submit)(id, text.clone()));
+    // Moved out once, not cloned: no stray copy of the text is left behind.
+    let text = Cell::new(Some(text));
+    timer::after(0.0, move || {
+        if let Some(text) = text.take() {
+            (h.submit)(id, text);
+        }
+    });
 }
 
 /// Hide on the user's behalf and tell `closed`.
@@ -203,12 +221,17 @@ fn relayout(s: &Surface) {
     let b = s.v.root.bounds().size;
     let chips = s.chips.borrow();
     let widths: Vec<f64> = chips.iter().map(|c| c.fittingSize().width.ceil()).collect();
-    let parts = Parts { chips: &widths, notice: !s.v.notice.isHidden(), multi: s.multi };
+    let notice = !s.v.notice.isHidden();
+    let parts = Parts { chips: &widths, notice, multi: s.multi, banner: s.v.banner.is_some() };
     let l = geometry::layout(Size { w: b.width, h: b.height }, parts);
     s.v.title.setFrame(ns_rect(l.title));
     s.v.subtitle.setFrame(ns_rect(l.subtitle));
     s.v.dot.setFrame(ns_rect(l.dot));
     s.v.rule.setFrame(ns_rect(l.rule));
+    if let (Some((back, label)), Some(b)) = (&s.v.banner, l.banner) {
+        back.setFrame(ns_rect(b));
+        label.setFrame(ns_rect(Rect::new(b.x, b.y + 4.0, b.w, b.h - 8.0)));
+    }
     s.v.rows.set_frame(l.body);
     if let Some(n) = l.notice {
         s.v.notice.setFrame(ns_rect(n));
@@ -222,24 +245,17 @@ fn relayout(s: &Surface) {
     s.v.field.set_frame(l.input);
 }
 
-/// Hook point for flick-f218 (private mode). Today a private surface is a normal window.
-fn privacy(private: bool) {
-    if private {
-        eprintln!("flick: private surfaces arrive with flick-f218; opening a normal window");
-    }
-}
-
 /// Build surface `id` from `spec`, hidden. A second `open` of the same id does nothing.
 pub fn open(id: SurfaceId, spec: &Spec, handlers: Handlers) {
     if get(id).is_some() {
         return;
     }
-    privacy(spec.private);
     super::hud::embed::on_press(card_pressed);
     let v = window::build(mtm(), spec, geometry::min_size(spec.min_size));
     let multi = spec.input == Input::Multi;
-    let hide_on_blur = spec.hide_on_blur;
-    let s = Rc::new(Surface { id, handlers, multi, hide_on_blur, v, chips: RefCell::default() });
+    let (hide_on_blur, private) = (spec.hide_on_blur, spec.private.is_some());
+    let chips = RefCell::default();
+    let s = Rc::new(Surface { id, handlers, multi, hide_on_blur, private, v, chips });
     relayout(&s);
     SURFACES.with(|m| m.borrow_mut().insert(id.0, s));
 }
@@ -287,9 +303,13 @@ pub fn is_key(id: SurfaceId) -> bool {
     get(id).is_some_and(|s| s.v.panel.isKeyWindow())
 }
 
-/// Draw `id`'s content into a PNG at `path`, shown or not.
+/// Draw `id`'s content into a PNG at `path`, shown or not. A private surface refuses: its
+/// content never goes to disk.
 pub fn snapshot(id: SurfaceId, path: &str) -> Result<(), String> {
     let s = get(id).ok_or("no such surface")?;
+    if s.private {
+        return Err("private surface".into());
+    }
     s.v.rows.flush();
     let bounds = s.v.root.bounds();
     let rep =

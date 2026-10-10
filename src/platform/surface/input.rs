@@ -1,17 +1,20 @@
 //! A surface's input: a plain-text `NSTextView` in a borderless scroll view on a rounded
 //! fill, with a placeholder label that shows while it is empty. One line or about four
-//! (`Input`); Return and the other keys are routed by the shared delegate in `mod.rs`.
+//! (`Input`); Return and the other keys are routed by the shared delegate in `mod.rs`. A
+//! private surface's input turns off every text service in `privacy::ALL` and wears the
+//! private accent.
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::{MainThreadMarker, MainThreadOnly, msg_send};
+use objc2::{MainThreadMarker, MainThreadOnly, msg_send, sel};
 use objc2_app_kit::{
     NSBorderType, NSBox, NSBoxType, NSColor, NSFont, NSLineBreakMode, NSResponder, NSScrollView,
-    NSTextField, NSTextView, NSTitlePosition, NSView,
+    NSTextField, NSTextInputTraitType, NSTextView, NSTitlePosition, NSView, NSWritingToolsBehavior,
 };
-use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
 
 use super::geometry::Rect;
+use super::privacy::{self, Service};
 use super::window::Delegate;
 
 const FONT: f64 = 14.0;
@@ -35,6 +38,40 @@ pub(super) fn filled(mtm: MainThreadMarker, color: &NSColor, radius: f64) -> Ret
     b
 }
 
+/// The private accent: the banner's fill and the input's outline.
+pub(super) fn accent() -> objc2::rc::Retained<NSColor> {
+    NSColor::systemPurpleColor()
+}
+
+/// Turn `service` off in `text`. Services newer than the oldest supported macOS are set only
+/// where the text view knows them.
+fn turn_off(text: &NSTextView, service: Service) {
+    match service {
+        Service::SpellCheck => text.setContinuousSpellCheckingEnabled(false),
+        Service::Grammar => text.setGrammarCheckingEnabled(false),
+        Service::Autocorrect => text.setAutomaticSpellingCorrectionEnabled(false),
+        Service::Completion => text.setAutomaticTextCompletionEnabled(false),
+        Service::Prediction => {
+            if text.respondsToSelector(sel!(setInlinePredictionType:)) {
+                text.setInlinePredictionType(NSTextInputTraitType::No);
+            }
+        }
+        Service::WritingTools => {
+            if text.respondsToSelector(sel!(setWritingToolsBehavior:)) {
+                text.setWritingToolsBehavior(NSWritingToolsBehavior::None);
+            }
+        }
+        Service::Math => {
+            if text.respondsToSelector(sel!(setMathExpressionCompletionType:)) {
+                text.setMathExpressionCompletionType(NSTextInputTraitType::No);
+            }
+        }
+        Service::LinkDetection => text.setAutomaticLinkDetectionEnabled(false),
+        Service::DataDetection => text.setAutomaticDataDetectionEnabled(false),
+        Service::Undo => text.setAllowsUndo(false),
+    }
+}
+
 pub(super) struct Field {
     back: Retained<NSBox>,
     scroll: Retained<NSScrollView>,
@@ -50,8 +87,13 @@ impl Field {
         delegate: &Delegate,
         placeholder: &str,
         multi: bool,
+        private: bool,
     ) -> Field {
         let back = filled(mtm, &NSColor::quaternaryLabelColor(), 8.0);
+        if private {
+            back.setBorderWidth(1.5);
+            back.setBorderColor(&accent());
+        }
         let scroll = NSTextView::scrollableTextView(mtm);
         scroll.setDrawsBackground(false);
         scroll.setBorderType(NSBorderType::NoBorder);
@@ -74,6 +116,9 @@ impl Field {
         text.setAutomaticQuoteSubstitutionEnabled(false);
         text.setAutomaticDashSubstitutionEnabled(false);
         text.setAutomaticTextReplacementEnabled(false);
+        for &service in privacy::off(private) {
+            turn_off(&text, service);
+        }
         // The text view holds its delegate weakly; the surface module keeps it for the process.
         text.setDelegate(Some(ProtocolObject::from_ref(delegate)));
 

@@ -6,6 +6,8 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use super::transport::wipe_string;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[cfg_attr(not(test), expect(dead_code, reason = "the chat window sends them (flick-6a0d)"))]
@@ -90,6 +92,22 @@ pub enum Piece {
     Done,
     /// The server reported an error inside the stream.
     Error(String),
+}
+
+impl Piece {
+    /// Zero the text this piece holds (best effort, `transport::wipe_string`).
+    pub fn wipe(&mut self) {
+        match self {
+            Piece::Text(s) | Piece::Reasoning(s) | Piece::Finish(s) | Piece::Error(s) => wipe_string(s),
+            Piece::Usage(_) | Piece::Done => {}
+        }
+    }
+}
+
+/// Wipe every piece, then empty the list.
+pub fn wipe_pieces(pieces: &mut Vec<Piece>) {
+    pieces.iter_mut().for_each(Piece::wipe);
+    pieces.clear();
 }
 
 /// One line of a reply.
@@ -308,6 +326,29 @@ mod tests {
         assert_eq!(error_body("<html>502</html>"), None);
         let long = format!(r#"{{"error":"{}"}}"#, "é".repeat(300));
         assert_eq!(error_body(&long).unwrap().chars().count(), 203);
+    }
+
+    #[test]
+    fn wiping_pieces_empties_their_text_and_the_list() {
+        let mut p = vec![
+            Piece::Text("secret".into()),
+            Piece::Reasoning("think".into()),
+            Piece::Finish("stop".into()),
+            Piece::Error("e".into()),
+            Piece::Usage(Usage::default()),
+            Piece::Done,
+        ];
+        let mut one = p[0].clone();
+        one.wipe();
+        assert_eq!(one, Piece::Text(String::new()));
+        for piece in &mut p {
+            piece.wipe();
+        }
+        let empty = |p: &Piece| matches!(p, Piece::Text(s) | Piece::Reasoning(s) | Piece::Finish(s) | Piece::Error(s) if s.is_empty());
+        assert!(p[..4].iter().all(empty));
+        assert_eq!(p[4..], [Piece::Usage(Usage::default()), Piece::Done]);
+        wipe_pieces(&mut p);
+        assert!(p.is_empty());
     }
 
     #[test]

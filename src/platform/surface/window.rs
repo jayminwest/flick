@@ -2,28 +2,35 @@
 //! blurred content view, the one shared delegate (window, text view and chip target), and
 //! building a surface's views. Callbacks find their surface by window or text view and go
 //! through `super::handle` and friends.
+//!
+//! A private surface (`Spec::private`): `sharingType` none (left out of screenshots, screen
+//! recording and window sharing), not restorable, out of the Windows menu, its window title
+//! fixed to the spec's title, a banner strip and accent, an input with every text service
+//! off (`privacy::ALL`) and no context menu, bubbles that cannot be selected, and ⌘C/⌘X
+//! that copy only through `pasteboard::set_text_concealed` (`privacy::edit`).
 
 use std::cell::OnceCell;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2::{MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSApplication, NSBackingStoreType, NSBezelStyle, NSBox, NSBoxType, NSButton,
     NSCellImagePosition, NSColor, NSControlSize, NSEvent, NSEventModifierFlags, NSFont,
-    NSFontWeightSemibold, NSImage, NSLineBreakMode, NSPanel, NSResponder, NSScreen, NSTextDelegate,
-    NSTextField, NSTextView, NSTextViewDelegate, NSView, NSVisualEffectBlendingMode,
-    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
-    NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
+    NSFontWeightSemibold, NSImage, NSLineBreakMode, NSMenu, NSPanel, NSResponder, NSScreen,
+    NSTextAlignment, NSTextDelegate, NSTextField, NSTextView, NSTextViewDelegate, NSView,
+    NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView,
+    NSWindow, NSWindowCollectionBehavior, NSWindowDelegate, NSWindowSharingType, NSWindowStyleMask,
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSRect, NSSize, NSString};
 
 use super::geometry::{Rect, Screen, Size};
-use super::input::{Field, filled, ns_rect};
+use super::input::{Field, accent, filled, ns_rect};
 use super::keys::{self, Mods};
+use super::privacy::{self, Edit};
 use super::transcript::Transcript;
 use super::{Chip, Input, Key, Keystroke, Spec, by_text, by_window, close, handle, relayout};
-use crate::platform::{edit, timer};
+use crate::platform::{edit, pasteboard, timer};
 
 /// Floating, like the launcher panel.
 const LEVEL: isize = 25;
@@ -41,12 +48,14 @@ define_class!(
             true
         }
 
-        // Edit keys first (Flick has no Edit menu, mx-43d850), then the module's ⌘ keys.
-        // Tail expression only (mx-43d3f4).
+        // Edit keys first (Flick has no Edit menu, mx-43d850; a private surface takes ⌘C/⌘X
+        // itself), then the module's ⌘ keys. Tail expression only (mx-43d3f4).
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             self.isKeyWindow()
-                && (edit::send(event, self) || key_equivalent(self.as_ref(), event))
+                && (private_edit(self, event)
+                    || edit::send(event, self)
+                    || key_equivalent(self.as_ref(), event))
                 // SAFETY: the superclass method, with the argument it was called with.
                 || unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
@@ -130,6 +139,20 @@ define_class!(
             }
         }
 
+        // A private surface's input has no context menu: its Copy, Services, Look Up and
+        // Writing Tools items would carry the text out. Tail expression only (mx-43d3f4).
+        #[unsafe(method_id(textView:menu:forEvent:atIndex:))]
+        fn text_menu(
+            &self,
+            view: &NSTextView,
+            menu: &NSMenu,
+            _event: &NSEvent,
+            _index: usize,
+        ) -> Option<Retained<NSMenu>> {
+            let private = view.window().and_then(|w| by_window(&w)).is_some_and(|s| s.private);
+            if private { None } else { Some(menu.retain()) }
+        }
+
         // Deferred: the module redraws the chips, removing the sender mid-action.
         #[unsafe(method(chipPressed:))]
         fn chip_pressed(&self, sender: &NSButton) {
@@ -170,6 +193,41 @@ fn current_mods(mtm: MainThreadMarker) -> Mods {
     event.map(|e| mods(e.modifierFlags())).unwrap_or_default()
 }
 
+/// ⌘C/⌘X in a private surface: copy the selection concealed (and delete it for ⌘X), or,
+/// with nothing selected, offer the key to the module. False for every other key and for
+/// normal surfaces (`edit::send` handles those).
+fn private_edit(panel: &SurfacePanel, event: &NSEvent) -> bool {
+    let Some(s) = by_window(panel.as_ref()).filter(|s| s.private) else { return false };
+    let flags = event.modifierFlags();
+    let chars = event.charactersIgnoringModifiers().map(|c| c.to_string()).unwrap_or_default();
+    let action = edit::edit_action(edit::command_only(flags), edit::command_shift(flags), &chars);
+    let text = panel.firstResponder().and_then(|r| r.downcast::<NSTextView>().ok());
+    let range = text.as_ref().map(|t| t.selectedRange());
+    let name = action.map_or("", |a| a.name().to_str().unwrap_or(""));
+    match (privacy::edit(name, range.map_or(0, |r| r.length)), text, range) {
+        (Edit::Pass, ..) => false,
+        (Edit::Conceal { cut }, Some(text), Some(range)) => {
+            let selected = text.string().substringWithRange(range).to_string();
+            pasteboard::set_text_concealed(&selected);
+            // Best effort: zero this copy before it is freed.
+            let mut bytes = selected.into_bytes();
+            bytes.fill(0);
+            std::hint::black_box(&bytes);
+            if cut && text.isEditable() {
+                // SAFETY: `delete:` with no sender, on the main thread.
+                unsafe { text.delete(None) };
+            }
+            true
+        }
+        _ => {
+            if let Some(k) = keys::equivalent(&chars, event.keyCode(), mods(flags)) {
+                handle(&s, k);
+            }
+            true
+        }
+    }
+}
+
 fn key_equivalent(window: &AnyObject, event: &NSEvent) -> bool {
     let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
     let k = keys::equivalent(
@@ -207,6 +265,31 @@ pub(super) struct Views {
     pub(super) rows: Transcript,
     pub(super) notice: Retained<NSTextField>,
     pub(super) field: Field,
+    /// A private surface's banner: its fill and its label.
+    pub(super) banner: Option<(Retained<NSBox>, Retained<NSTextField>)>,
+}
+
+/// A private surface's banner strip: `text` in white on the accent.
+fn banner(mtm: MainThreadMarker, text: &str) -> (Retained<NSBox>, Retained<NSTextField>) {
+    let back = filled(mtm, &accent(), 0.0);
+    let small = NSFont::systemFontOfSize_weight(
+        11.0,
+        // SAFETY: NSFontWeightSemibold is an immutable framework constant, set at load time.
+        unsafe { NSFontWeightSemibold },
+    );
+    let l = label(mtm, &small, &NSColor::whiteColor());
+    l.setAlignment(NSTextAlignment::Center);
+    l.setStringValue(&ns(text));
+    (back, l)
+}
+
+/// Keep a private panel out of captures, shares, restoration and the Windows menu, under a
+/// fixed title.
+fn seal(panel: &SurfacePanel, title: &str) {
+    panel.setSharingType(NSWindowSharingType::None);
+    panel.setRestorable(false);
+    panel.setExcludedFromWindowsMenu(true);
+    panel.setTitle(&ns(title));
 }
 
 /// The hidden panel and views for `spec`, at its autosaved frame if there is one.
@@ -236,6 +319,10 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
     // SAFETY: the surface map holds the panel for the life of the process; it is never freed.
     unsafe { panel.setReleasedWhenClosed(false) };
     panel.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+    let private = spec.private.is_some();
+    if private {
+        seal(&panel, spec.title);
+    }
 
     // SAFETY: `initWithFrame:` is NSView's designated initializer; it returns a +1 object.
     let root: Retained<RootView> = unsafe { msg_send![RootView::alloc(mtm), initWithFrame: frame] };
@@ -262,11 +349,17 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
     let rule: Retained<NSBox> =
         unsafe { msg_send![NSBox::alloc(mtm), initWithFrame: NSRect::ZERO] };
     rule.setBoxType(NSBoxType::Separator);
-    let rows = Transcript::new(mtm);
+    let rows = Transcript::new(mtm, !private);
     for v in [&*title as &NSView, &subtitle, &dot, &rule, rows.view(), &notice] {
         root.addSubview(v);
     }
-    let field = Field::new(mtm, &root, &delegate, spec.placeholder, spec.input == Input::Multi);
+    let banner = spec.private.map(|text| banner(mtm, text));
+    if let Some((back, l)) = &banner {
+        root.addSubview(back);
+        root.addSubview(l);
+    }
+    let multi = spec.input == Input::Multi;
+    let field = Field::new(mtm, &root, &delegate, spec.placeholder, multi, private);
     panel.setContentView(Some(&root));
 
     if !spec.autosave.is_empty() {
@@ -276,7 +369,7 @@ pub(super) fn build(mtm: MainThreadMarker, spec: &Spec, min: Size) -> Views {
         }
         panel.setFrameAutosaveName(&name);
     }
-    Views { panel, root, title, subtitle, dot, rule, rows, notice, field }
+    Views { panel, root, title, subtitle, dot, rule, rows, notice, field, banner }
 }
 
 /// Every display, in `AppKit` screen coordinates.

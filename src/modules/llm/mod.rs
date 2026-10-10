@@ -1,13 +1,17 @@
 //! Module `llm`: chat with OpenAI-compatible model servers (mlx-serve, ollama) on the
 //! tailnet, with a private mode that stores nothing (plan pl-0696, parent flick-6519). Steps
 //! so far: settings and the pure wire (flick-9f17), the curl transport and `llm ping|models`
-//! (flick-633e). No items, views or windows yet. Never imports the `message` module's chat.
+//! (flick-633e), the private session core (flick-56dc). No items, views or windows yet.
+//! Never imports the `message` module's chat.
 //!
 //! - `settings.rs`: `[llm]` and `[[llm.servers]]` (`name`, `url`, `private`). With no
 //!   server the module runs nothing.
 //! - `openai.rs`: the chat request body, the SSE line parser, error bodies, `/v1/models`.
 //! - `transport.rs`: one curl per call, body on stdin, never prompt text in argv.
 //! - `io.rs`: the threads: model lists, streamed replies into an inbox, cancel, watchdog.
+//! - `private.rs`: `PrivateSession`, the private chat's in-memory transcript (no store, no
+//!   `Serialize`, redacted `Debug`, wiped on clear and drop), its `private = true` server gate
+//!   and when it is wiped (`Wipe`, `wipe_on`).
 //!
 //! `flick llm ping [server]` and `flick llm models [server] [--json]` fetch a normal (not
 //! private) server's `/v1/models`, waiting at most `ASK_WAIT`. Every `llm` verb is denied
@@ -18,6 +22,7 @@
 
 mod io;
 mod openai;
+mod private;
 mod report;
 mod settings;
 #[cfg(test)]
