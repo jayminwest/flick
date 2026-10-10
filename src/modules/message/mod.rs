@@ -472,6 +472,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card press <id> <action> [values-json] | message card focus"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
     }
 }

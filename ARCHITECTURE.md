@@ -451,8 +451,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
-  `message` (every verb but `card press|focus`, notably `post`) is allowed on purpose: peers post messages to this
-  Mac's card, which shows text and offers an http(s) link only on a click.
+  `message` (every verb but `card press|focus`, notably `post`, `card post` and `card spec`) is allowed on purpose: peers post messages to this
+  Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
+  (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
   `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
   a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
   Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
