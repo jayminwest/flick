@@ -160,10 +160,15 @@
 
 # --- sys: this Mac's health (CPU load, memory, disks, battery, thermal, uptime) and the
 # services it checks: "flick sys snapshot" and "flick sys services" (add --json for the
-# fields). Both are read-only, so peers may ask them over the network. Nothing runs until
-# one is asked: no timers, no checks in the background.
+# fields), and the fleet of [[sys.machine]] below: "flick sys fleet". All are read-only, so
+# peers may ask them over the network. Nothing runs until one is asked or the launcher
+# opens: no timers, no checks in the background unless refresh_secs is set.
 #[sys]
 #enabled = true
+# Also poll the fleet in the background every this many seconds (0 = off, else >= 30).
+# Without it the fleet polls when the launcher opens, on wake, and every 15 s while the
+# fleet view shows.
+#refresh_secs = 0
 
 # A service check; none by default. Repeat the table for each. kind and target:
 #   "http"     a URL fetched with curl (3 s); 2xx and 3xx pass
@@ -182,6 +187,33 @@
 #warn = 10
 #fail = 50
 #log = "~/Library/Logs/kota-mailwatch.log"
+#restart = false
+
+# A machine of the fleet; none by default. via:
+#   "local"  this Mac: its own snapshot and [[sys.service]] checks
+#   "flick"  the Mac's Flick over Tailscale ("flick --host"; its [remote] peers must name
+#            this Mac and its network access be on); it reports its own services. A Flick
+#            too old for "sys snapshot", or unreachable, falls back to ssh if set
+#   "ssh"    the same probe over "ssh -o BatchMode=yes <ssh> /bin/sh -s": no Flick needed
+#            there, only key-based ssh. Its checks are the [[sys.machine.service]] below
+# host: the Flick's name[:port] (default: name). vnc: a vnc:// URL for Screen Sharing.
+# dash: an http(s) dashboard URL. Example:
+#[[sys.machine]]
+#name = "mac-pro"
+#via = "ssh"
+#host = "mac-pro"
+#ssh = "jaymin@mac-pro"
+#vnc = "vnc://mac-pro"
+#dash = "http://mac-pro:8080/"
+# A check of an ssh machine, keys as in [[sys.service]] but no "command": launchd and
+# process run inside the ssh call, http and tcp from this Mac.
+#[[sys.machine.service]]
+#name = "ollama"
+#kind = "tcp"
+#target = "mac-pro:11434"
+#warn = 200
+#fail = 1000
+#log = "~/.ollama/logs/server.log"
 #restart = false
 
 # --- task: a task list and a timer for the one running task, in flick.db. "Start Task"

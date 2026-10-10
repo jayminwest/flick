@@ -92,27 +92,15 @@ pub fn request(target: &Target, words: &[String], flags: Flags) -> i32 {
 }
 
 /// How long a peer question (`PEER`) waits for its reply line once connected.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
-)]
 const PEER_REPLY: Duration = Duration::from_secs(10);
 
 /// The client side of `core::control::PeerHooks`, passed to modules on their `modules!`
 /// line so they can ask another Mac's Flick without importing this module.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
-)]
 pub const PEER: PeerHooks =
     PeerHooks { ask: |host, words, flags| ask(host, words, flags, PEER_REPLY) };
 
 /// Send `words` (plus `--remote`, and `--json` with `flags.json`) to the Flick at `host`
 /// (`name[:port]`) and read its reply, waiting at most `reply` for it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
-)]
 fn ask(host: &str, words: &[String], flags: Flags, reply: Duration) -> Result<Reply, String> {
     let host = Host::parse(host)?;
     let unreachable =

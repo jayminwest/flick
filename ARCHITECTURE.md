@@ -187,7 +187,8 @@ Sources:
 - `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
   `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
   threads and notification clicks), `capture` (its shutter thread, and the annotation
-  editor's `on_done` when it closes), `sys` (its probe and service-check threads),
+  editor's `on_done` when it closes), `sys` (its probe, service-check and fleet threads,
+  and its fleet timer),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
   modifier-release poll), `kota` (its poll round, its timer and its ask thread).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
@@ -252,6 +253,13 @@ and every hotkey.
   cache and starts a refresh on a thread, at most once per 5 s. Only the first call with an
   empty cache waits for that thread on a `Condvar`, bounded (2.25 s for the 2 s probe); the
   child itself never runs on the main thread. Nothing refreshes unless a verb asks.
+- A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): one round thread,
+  one thread per due machine (a peer's Flick through `core::control::PeerHooks`, or
+  `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5 <target> /bin/sh -s` with the probe on
+  stdin, 10 s budget). The round captures an epoch; a reload or `Sleep` bumps it, so late
+  results are dropped. It polls on `LauncherOpened`, `Wake` and `sys fleet`, then every 15 s
+  only while its view shows (the round sleeps and posts once more), and on its own timer
+  only with `[sys] refresh_secs`; `Sleep` stops the timer. With no machines it starts nothing.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
 follows an external server.
@@ -479,9 +487,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `message` (every verb but `card press|focus`, notably `post`, `card post` and `card spec`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
   (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
-  `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
-  a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
-  Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
+  `sys snapshot`, `sys services` and `sys fleet` are allowed on purpose too: they are read-only;
+  the first two are how a peer's fleet view reads this Mac (their JSON is the peer contract,
+  `src/modules/sys/report.rs`), and `sys fleet` only reads what this Mac's own `[[sys.machine]]`
+  polling found: for a remote caller (`Cx::remote`) it starts no round, so a peer never makes
+  this Mac ssh or ask its peers.
+  Service checks, including `command` argvs, and ssh targets come only from this Mac's config.
   `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
   round, at most one per 10 s) are allowed on purpose too.
   **Adding a verb that changes config, runs code, reads the screen or writes files means

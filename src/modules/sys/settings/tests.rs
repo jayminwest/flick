@@ -14,6 +14,8 @@ fn one(fields: &str) -> Result<Settings, String> {
 fn the_example_documents_every_key() {
     assert_documents::<Settings>("sys");
     assert_documents::<Service>("sys.service");
+    assert_documents::<Machine>("sys.machine");
+    assert_documents::<Service>("sys.machine.service");
 }
 
 #[test]
@@ -110,4 +112,75 @@ fn names_are_present_and_unique() {
     let twice = format!("{}{}", svc("a"), svc("a"));
     assert_eq!(settings(&twice).unwrap_err(), "[sys]: service \"a\" is named twice");
     assert_eq!(settings(&format!("{}{}", svc("a"), svc("b"))).unwrap().service.len(), 2);
+}
+
+fn machine(fields: &str) -> Result<Settings, String> {
+    settings(&format!("[[sys.machine]]\nname = \"m\"\n{fields}"))
+}
+
+#[test]
+fn reads_machines_and_the_refresh() {
+    let text = r#"
+[sys]
+refresh_secs = 60
+[[sys.machine]]
+name = "laptop"
+via = "local"
+[[sys.machine]]
+name = "mbp-server"
+via = "flick"
+ssh = "jaymin@mbp-server"
+dash = "https://mbp-server.ts.net:8310/"
+[[sys.machine]]
+name = "mac-pro"
+via = "ssh"
+host = "pro:7419"
+ssh = "jaymin@100.118.223.57"
+vnc = "vnc://100.118.223.57"
+[[sys.machine.service]]
+name = "ollama"
+kind = "launchd"
+target = "com.ollama.ollama"
+[[sys.machine.service]]
+name = "mlx"
+kind = "tcp"
+target = "100.118.223.57:11234"
+"#;
+    let s = settings(text).unwrap();
+    assert_eq!(s.refresh_secs, 60);
+    let vias: Vec<&str> = s.machine.iter().map(|m| m.via.as_str()).collect();
+    assert_eq!(vias, ["local", "flick", "ssh"]);
+    assert_eq!((s.machine[1].flick_host(), s.machine[2].flick_host()), ("mbp-server", "pro:7419"));
+    let names: Vec<&str> = s.machine[2].service.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["ollama", "mlx"]);
+    assert!(settings("").unwrap().machine.is_empty() && settings("").unwrap().refresh_secs == 0);
+}
+
+#[test]
+fn rejects_bad_machines() {
+    let svc = |kind: &str, target: &str| format!("via = \"ssh\"\nssh = \"h\"\n[[sys.machine.service]]\nname = \"s\"\nkind = \"{kind}\"\ntarget = {target}");
+    let cases = [
+        ("via = \"ssh\"".to_string(), "via = \"ssh\" needs ssh = \"user@host\""),
+        ("via = \"ssh\"\nssh = \"-oProxyCommand=x\"".into(), "ssh is one word, e.g. \"user@host\", not an option"),
+        ("via = \"ssh\"\nssh = \"a b\"".into(), "ssh is one word, e.g. \"user@host\", not an option"),
+        ("via = \"flick\"\nhost = \" \"".into(), "host is one word, name[:port]"),
+        ("via = \"flick\"\nvnc = \"http://x\"".into(), "vnc must start with vnc://"),
+        ("via = \"flick\"\ndash = \"vnc://x\"".into(), "dash must start with http:// or https://"),
+        (svc("command", "[\"/bin/echo\"]"), "a command check runs on the machine's own Flick, not over ssh"),
+        (svc("tcp", "\"nohost\""), "service \"s\": tcp target is host:port"),
+        (format!("{}\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"y\"", svc("process", "\"x\"")), "service \"s\" is named twice"),
+        ("via = \"local\"\n[[sys.machine.service]]\nname = \"s\"\nkind = \"process\"\ntarget = \"x\"".into(), "services belong to via = \"ssh\" machines; others check their own"),
+    ];
+    for (fields, why) in cases {
+        assert_eq!(machine(&fields).unwrap_err(), format!("[sys]: machine \"m\": {why}"), "{fields}");
+    }
+    let named = |name: &str| format!("[[sys.machine]]\nname = \"{name}\"\nvia = \"local\"\n");
+    assert_eq!(settings(&named("")).unwrap_err(), "[sys]: machine 1 has no name");
+    assert_eq!(settings(&format!("{}{}", named("a"), named("a"))).unwrap_err(), "[sys]: machine \"a\" is named twice");
+    assert!(machine("via = \"telnet\"").unwrap_err().starts_with("[sys]: unknown variant `telnet`"));
+    for (secs, ok) in [(0, true), (29, false), (30, true), (3600, true)] {
+        let got = settings(&format!("[sys]\nrefresh_secs = {secs}"));
+        assert_eq!(got.is_ok(), ok, "{secs}");
+    }
+    assert_eq!(settings("[sys]\nrefresh_secs = 5").unwrap_err(), "[sys]: refresh_secs is 0 (off) or at least 30");
 }
