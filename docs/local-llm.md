@@ -1,8 +1,8 @@
 # Local model chat
 
-The `llm` module chats with OpenAI-compatible model servers on your tailnet, such as mlx-serve or ollama on the Mac Pro. You type in a floating chat window and the reply streams in. Normal chats are kept in flick.db unless you turn history off. A private mode that stores nothing is planned (flick-c325) and is not in this build.
+The `llm` module chats with OpenAI-compatible model servers on your tailnet, such as mlx-serve or ollama on the Mac Pro. You type in a floating chat window and the reply streams in. Normal chats are kept in flick.db unless you turn history off. The private chat keeps nothing: it lives in memory, talks only to a server you mark `private = true`, and is wiped when its window closes.
 
-Nothing runs until `[[llm.servers]]` lists a server. Without one there is no launcher item, the hotkey is not bound, and no request is made.
+Nothing runs until `[[llm.servers]]` lists a server. Without one there is no launcher item, the chat hotkey is not bound, and no request is made. (A set `private_hotkey` is still bound, only to say that there is no private server.)
 
 ## Set up
 
@@ -62,6 +62,30 @@ A reply still streaming when Flick quits is not kept.
 - Normal chats are stored in plain text in flick.db when `history` is on. The server may keep its own logs; mlx-serve logs the start of every prompt by default.
 - Every `flick llm` command is refused over the network: another Mac cannot make this one send requests.
 
+## Private chat
+
+The private chat is a separate window that keeps nothing. Open it with **Private Model Chat** in the launcher or with `private_hotkey`:
+
+```toml
+[llm]
+private_hotkey = "cmd+ctrl+alt+shift+KeyP" # shows or hides the private chat; unbound by default
+
+[[llm.servers]]
+name = "vault"
+url = "https://mac-pro.example.ts.net:11235"
+private = true
+```
+
+- It talks only to a server with `private = true` (the first one listed). With none, the launcher item and the hotkey say "no private server" and nothing is sent; it never falls back to a normal server. `private = true` is your word that the server keeps no logs or caches; Flick cannot check it.
+- The model is `default_model` if the private server lists it, else the first model it lists. The first reply after a while may wait while the server loads the model ("Waiting for the model…").
+- The window says **Private - nothing is saved** in a banner and has its own outline. It is left out of screenshots, screen recording and screen sharing. Spell check, autocorrect, text completion, predictions, Writing Tools and undo are off in its input, and its bubbles cannot be selected.
+- Keys: Return sends, ⌘. stops the reply, ⌘N clears the chat, ⌘W or Esc hides and clears it. The hotkey hides (and clears) it while it has the keyboard.
+- ⌘C copies the input's selection, or, with nothing selected, the last reply. Either copy is marked concealed and transient, so Flick's clip history and other clipboard managers skip it. Pasting it elsewhere is up to you.
+- It is cleared when the window hides, when the screen locks, when the Mac sleeps, when the config reloads, and when Flick quits. Reopening shows an empty window.
+- Nothing of it is written to flick.db, logs, notifications or feedback. No `flick` command reads it, and no event carries its text.
+
+What Flick cannot clear: copies that macOS keeps inside the window's text views until they are replaced, curl's and the kernel's buffers, and memory pages that macOS swapped out (swap is encrypted). "Nothing is saved" means Flick writes nothing, not that the memory is forensically clean. The server is the other half: see [Private server](#private-server) and [Verify private mode](#verify-private-mode) below.
+
 ## Commands
 
 ```bash
@@ -82,6 +106,16 @@ Run these in the app; unit tests cover the logic with a fake curl and a fake win
 7. Point a server at a dead port and send. With `default_model` empty, the notice line gives the error and the prompt returns to the input. With a `default_model`, the reply shows red with the error.
 8. Set `history = false`, reload, and chat. Check that `sqlite3 ~/Library/Application\ Support/Flick/flick.db 'select count(*) from llm_messages'` does not grow.
 9. Press Esc and ⌘W: the window hides, and the app you were in gets the keyboard back.
+
+Private chat:
+
+10. With no `private = true` server: **Private Model Chat** says "no private server" in the launcher, the private hotkey shows the same, and no request reaches the normal server.
+11. Add a private server and reload. The private hotkey shows a window titled "Private Chat" with the "Private - nothing is saved" banner and an outlined frame. Send a prompt: the reply streams in.
+12. Take a screenshot (⇧⌘3, ⇧⌘5 window capture) and start a screen recording: the private window is missing from both.
+13. Type a misspelled word in its input: no red underline, no autocorrect, no completion popup. Right-click: no context menu.
+14. ⌘C with nothing selected, then check Flick's clip history (and any clipboard manager): the reply is not listed, but it pastes into another app.
+15. Each of these leaves an empty window with a "Cleared when ..." notice: Esc then reopen, ⌘N, lock the screen (⌃⌘Q) and unlock, sleep and wake, **Reload Flick Config**. After quit and relaunch the window is empty too (with no notice).
+16. After a private exchange, `sqlite3 ~/Library/Application\ Support/Flick/flick.db .dump | grep <a word you sent>` finds nothing.
 
 ## Private server
 

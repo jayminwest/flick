@@ -183,7 +183,9 @@
 #max_tokens = 0
 # Seconds one reply may take (1 to 3600).
 #timeout_secs = 300
-# Open the chat window and the private chat window; unset by default.
+# Open the chat window and the private chat window; unset by default. The private chat
+# ("Private Model Chat" in the launcher) talks only to a private = true server and keeps
+# nothing; without one it says so.
 #hotkey = "cmd+ctrl+alt+shift+KeyL"
 #private_hotkey = "cmd+ctrl+alt+shift+KeyP"
 

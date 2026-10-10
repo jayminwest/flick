@@ -30,7 +30,7 @@ pub struct Settings {
     pub timeout_secs: u64,
     /// Shows or hides the chat window; unbound by default.
     pub hotkey: Option<String>,
-    /// Opens the private chat window (flick-c325); unbound by default.
+    /// Shows or hides the private chat window; unbound by default.
     pub private_hotkey: Option<String>,
 }
 
@@ -129,7 +129,6 @@ impl Settings {
 
     /// The private server called `name`, or the first private one for `None`. Never a normal
     /// server: with no private server the private chat refuses instead of falling back.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the private chat opens on it (flick-c325)"))]
     pub fn private(&self, name: Option<&str>) -> Result<&Server, String> {
         let mut private = self.servers.iter().filter(|s| s.private);
         let found = match name.filter(|n| !n.is_empty()) {
@@ -147,7 +146,6 @@ impl Settings {
 }
 
 /// Why the private chat cannot start with no private server.
-#[cfg_attr(not(test), expect(dead_code, reason = "the private chat shows it (flick-c325)"))]
 pub const NO_PRIVATE: &str = "llm: no private server, so private chat is off; add a [[llm.servers]] \
     table with private = true (it never falls back to a normal server)";
 
