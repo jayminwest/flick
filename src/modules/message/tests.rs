@@ -1,7 +1,7 @@
 //! Module tests over one in-memory store, a fake clock and recording fakes for the panel,
 //! notifications, the pasteboard and links. Nothing reaches `AppKit`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::*;
 use crate::config::parse;
@@ -17,6 +17,13 @@ thread_local! {
     static LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// What the fake HUD handlers queued.
     static NOTES: RefCell<Vec<dispatch::Note>> = const { RefCell::new(Vec::new()) };
+    /// The fake HUD's keyboard: 0 no card shows, 1 a card shows, 2 a card holds the keyboard.
+    static KEYBOARD: Cell<u8> = const { Cell::new(1) };
+}
+
+/// Set the fake HUD's keyboard state (see `KEYBOARD`).
+pub(super) fn set_keyboard(state: u8) {
+    KEYBOARD.set(state);
 }
 
 /// Queue `note` as the HUD handlers would.
@@ -101,6 +108,22 @@ pub(super) fn inbox(config: &str) -> Inbox {
             update_card: |c, ui, o| {
                 log(format!("update {} {:?}|{}|{}|{}", c.id, c.state, ui_line(ui), o.timeout_secs, o.sticky));
                 true
+            },
+            focus: || {
+                log("focus".into());
+                let shows = KEYBOARD.get() > 0;
+                if shows {
+                    KEYBOARD.set(2);
+                }
+                shows
+            },
+            unfocus: || {
+                log("unfocus".into());
+                let held = KEYBOARD.get() == 2;
+                if held {
+                    KEYBOARD.set(1);
+                }
+                held
             },
             subscribe: || {},
             take_notes: || NOTES.with(|n| std::mem::take(&mut *n.borrow_mut())),
@@ -295,6 +318,7 @@ fn the_launcher_lists_messages() {
     assert!(f.cx("", false, |cx| m.hotkey(RECENT, cx)).is_some());
     assert!(f.cx("", false, |cx| m.hotkey("x", cx)).is_none());
     assert_eq!(inbox("").hotkeys(), []);
+    assert_eq!(take_log(), Vec::<String>::new(), "the list hotkey leaves the cards alone");
     assert!(m.verbs().starts_with("message post"));
     assert_eq!(m.migrations(), store::MIGRATIONS);
 }
@@ -323,4 +347,22 @@ fn rows_copy_reshow_and_open() {
 #[test]
 fn the_config_example_documents_every_setting() {
     crate::config::example::assert_documents::<Settings>("message");
+}
+
+#[test]
+fn the_card_hotkey_toggles_the_keyboard() {
+    let (mut f, mut m) = (Fixture::new(), inbox("[message]\ncard_hotkey = \"cmd+alt+K\"\nhotkey = \" \""));
+    assert_eq!(m.hotkeys(), [Binding { spec: "cmd+alt+K".into(), key: Ok(CARD.into()) }]);
+    set_keyboard(1);
+    assert!(f.cx("", false, |cx| m.hotkey(CARD, cx)).is_none(), "the launcher stays as it is");
+    assert_eq!(take_log(), ["unfocus", "focus"]);
+    assert!(f.cx("", false, |cx| m.hotkey(CARD, cx)).is_none());
+    assert_eq!(take_log(), ["unfocus"], "a second press gives the keyboard back");
+    set_keyboard(0);
+    assert!(f.cx("", false, |cx| m.hotkey(CARD, cx)).is_none());
+    assert_eq!(take_log(), ["unfocus", "focus"]);
+    let both = inbox("[message]\ncard_hotkey = \"cmd+alt+K\"\nhotkey = \"cmd+alt+M\"");
+    let keys: Vec<_> = both.hotkeys().into_iter().map(|b| b.key).collect();
+    assert_eq!(keys, [Ok(RECENT.into()), Ok(CARD.into())]);
+    set_keyboard(1);
 }

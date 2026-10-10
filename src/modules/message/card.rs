@@ -11,6 +11,8 @@
 //!   or with `--json` `{"id","replaced","warnings"}`.
 //! - `get <id>`: the stored normalized JSON. `ls [--limit n]`: `id  time  state  title`.
 //! - `show <id>`: show it again. `dismiss <id>|--all`: remove its card (every card's).
+//! - `focus`: move the keyboard into the newest card, as `card_hotkey` does (denied over the
+//!   network: it takes the keyboard).
 //! - `press <id> <action> [values-json]`: press a button as the HUD does, through the same
 //!   `dispatch::press` (local testing; denied over the network). Values default to the
 //!   card's initial inputs. A `shell` action shows its confirm on the first press; a second
@@ -28,7 +30,7 @@ use crate::core::Cx;
 use crate::core::card::{self, Card, Origin, State, VALUES_MAX};
 use crate::platform::hud::Options;
 
-const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all | press <id> <action> [values-json]";
+const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all | press <id> <action> [values-json] | focus";
 
 /// Most dismissed ids remembered; past it the set starts over (a forgotten id only means a
 /// `done` update of it shows again).
@@ -126,6 +128,8 @@ impl Inbox {
                 }
                 Ok(format!("Dismissed {shown} card{}", if shown == 1 { "" } else { "s" }))
             }
+            ["focus"] if (self.env.focus)() => Ok("A card has the keyboard; Esc gives it back".into()),
+            ["focus"] => Err("No card shows".into()),
             ["press", id, action, values @ ..] if values.len() <= 1 => {
                 self.press_verb(id, action, values.first().copied(), cx)
             }
