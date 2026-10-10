@@ -37,7 +37,6 @@ use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSEvent, NSEventMask, NSScreen, NSSound};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-#[expect(unused_imports, reason = "the message module matches Cancel presses (flick-fd93)")]
 pub use card_layout::CANCEL;
 pub use card_layout::CardUi;
 pub use stack::Corner;
@@ -106,7 +105,6 @@ static ON_DISMISS: OnceLock<fn(&str, Dismissed)> = OnceLock::new();
 /// Send dismissals by the user or a timeout to `handler` (card id, why). The first handler
 /// wins; it must only queue work (post an event), never borrow app state. Tests must not
 /// call this.
-#[expect(dead_code, reason = "the message module subscribes when cards land (flick-fd93)")]
 pub fn on_dismiss(handler: fn(&str, Dismissed)) {
     let _ = ON_DISMISS.set(handler);
 }
@@ -121,7 +119,6 @@ static ON_PRESS: OnceLock<fn(&str, &str, String)> = OnceLock::new();
 /// same action id again and whose Cancel presses `CANCEL`. A press whose values are over the
 /// cap never reaches the handler; the card shows the error instead. The first handler wins;
 /// it must only queue work (post an event), never borrow app state. Tests must not call this.
-#[expect(dead_code, reason = "the message module subscribes when cards land (flick-fd93)")]
 pub fn on_press(handler: fn(&str, &str, String)) {
     let _ = ON_PRESS.set(handler);
 }
@@ -197,7 +194,6 @@ pub fn show(id: &str, content: &Content, placement: &Placement, opts: &Options) 
 
 /// Show `card` (its id is the card id) in state `ui`, or redraw it in place if it shows.
 /// Returns whether it is new.
-#[expect(dead_code, reason = "the message module shows cards through it (flick-fd93)")]
 pub fn show_card(card: &Card, ui: &CardUi, placement: &Placement, opts: &Options) -> bool {
     show_draw(&card.id, Draw::Card(card, ui), placement, opts)
 }
@@ -248,14 +244,13 @@ fn show_draw(id: &str, draw: Draw, placement: &Placement, opts: &Options) -> boo
 
 /// Redraw card `id` in place if it shows, at the width it was drawn at; returns whether it
 /// does. Never shows a dismissed card.
-#[expect(dead_code, reason = "card state updates call it (flick-fd93)")]
+#[expect(dead_code, reason = "no caller yet: text cards redraw through show")]
 pub fn update(id: &str, content: &Content, opts: &Options) -> bool {
     update_draw(id, Draw::Content(content), opts)
 }
 
 /// Redraw `card` in state `ui` in place if it shows, keeping what the user entered; returns
 /// whether it does. Never shows a dismissed card.
-#[expect(dead_code, reason = "card state updates call it (flick-fd93)")]
 pub fn update_card(card: &Card, ui: &CardUi, opts: &Options) -> bool {
     update_draw(&card.id, Draw::Card(card, ui), opts)
 }

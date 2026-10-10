@@ -13,11 +13,11 @@ fn deploy_in(state: &str) -> String {
 }
 
 #[test]
-fn a_card_shows_as_text_and_lands_in_history() {
+fn a_card_shows_through_the_renderer_and_lands_in_history() {
     let (mut f, mut m) = (Fixture::new(), inbox(""));
     assert_eq!(f.run(&mut m, false, &["card", "post", DEPLOY]), Ok("c1".into()));
-    // Open with an action: sticky, no timeout.
-    assert_eq!(take_log(), ["show c1 Deploy?|11:31||Ready to ship v2.\n[Ship]|None|false|TopRight|4|0|true|true"]);
+    // Open with an action: sticky, no timeout, no press state.
+    assert_eq!(take_log(), ["card c1 Deploy? Open|false|None|None|TopRight|4|0|true|true"]);
     assert_eq!(f.run(&mut m, false, &["ls"]).unwrap(), "c1\t11:31\tDeploy? Ready to ship v2. [Ship]");
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\topen\tDeploy?");
     let stored = f.run(&mut m, false, &["card", "get", "c1"]).unwrap();
@@ -36,17 +36,17 @@ fn replies_list_warnings_and_a_repost_replaces() {
     let (mut f, mut m) = (Fixture::new(), inbox("[message]\nstyle = \"both\""));
     let odd = r#"{"id":"c1","title":"T","x":1}"#;
     assert_eq!(f.run(&mut m, false, &["card", "post", odd]), Ok("c1\nwarning: unknown key \"x\" ignored".into()));
-    assert_eq!(take_log(), ["show c1 T|11:31|||None|false|TopRight|4|20|true|false", "notify c1|T|"]);
+    assert_eq!(take_log(), ["card c1 T Open|false|None|None|TopRight|4|20|true|false", "notify c1|T|"]);
     let done = deploy_in("done");
     assert_eq!(
         f.run(&mut m, true, &["card", "post", &done]),
         Ok(r#"{"id":"c1","replaced":true,"warnings":[]}"#.into())
     );
-    assert_eq!(take_log(), ["show c1 Deploy?|11:31||Shipped.|None|false|TopRight|4|20|true|false", "notify c1|Deploy?|Shipped."]);
+    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|20|true|false", "notify c1|Deploy?|Shipped."]);
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\tdone\tDeploy?");
-    // A pending card: hourglass, no sound, no notification.
+    // A pending card: no sound, no notification.
     f.run(&mut m, false, &["card", "post", &deploy_in("pending")]).unwrap();
-    assert_eq!(take_log(), ["show c1 Deploy?|11:31||Shipped.|None|true|TopRight|4|20|false|false"]);
+    assert_eq!(take_log(), ["card c1 Deploy? Pending|false|None|None|TopRight|4|20|false|false"]);
     assert_eq!(f.store.messages(10).len(), 1);
 }
 
@@ -57,7 +57,7 @@ fn a_card_replaces_the_pending_message_it_answers() {
     take_log();
     let card = r#"{"id":"c2","title":"Deploy?","reply_to":"k1","actions":[{"id":"go","label":"Ship"}]}"#;
     assert_eq!(f.run(&mut m, true, &["card", "post", card]), Ok(r#"{"id":"c2","replaced":true,"warnings":[]}"#.into()));
-    assert_eq!(take_log(), ["dismiss k1", "show c2 Deploy?|11:31|Re: deploy?|[Ship]|None|false|TopRight|4|0|true|true"]);
+    assert_eq!(take_log(), ["dismiss k1", "card c2 Deploy? Open|false|None|None|TopRight|4|0|true|true"]);
     assert!(f.store.message("k1").is_none());
     // A plain post may answer a card the same way it answers a message.
     f.run(&mut m, false, &["post", "--reply-to", "c2", "ok"]).unwrap();
@@ -76,7 +76,7 @@ fn a_dismissed_card_comes_back_only_when_open_or_error() {
     }
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\tpending\tDeploy?");
     f.run(&mut m, false, &["card", "post", &deploy_in("error")]).unwrap();
-    assert!(take_log()[0].starts_with("show c1 "));
+    assert!(take_log()[0].starts_with("card c1 "));
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\terror\tDeploy?");
     // Shown again, a done update shows too.
     f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
@@ -85,7 +85,7 @@ fn a_dismissed_card_comes_back_only_when_open_or_error() {
     f.run(&mut m, false, &["card", "dismiss", "c1"]).unwrap();
     assert_eq!(f.run(&mut m, false, &["card", "show", "c1"]), Ok("Showing c1".into()));
     f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
-    assert_eq!(take_log().iter().filter(|l| l.starts_with("show")).count(), 2);
+    assert_eq!(take_log().iter().filter(|l| l.starts_with("card")).count(), 2);
 }
 
 #[test]

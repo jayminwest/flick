@@ -1,11 +1,12 @@
 //! `flick message card <verb>`: cards are messages with structure (plan flick-7da1). A card
 //! is posted as JSON (`core::card`), stored in `messages.card` (normalized) with its plain
-//! text in `body`, so history, `ls` and search keep working, and shown in the corner HUD as
-//! that plain text until the card renderer lands (flick-aa43, flick-fd93).
+//! text in `body`, so history, `ls` and search keep working, and drawn in the corner HUD by
+//! its card renderer with the module's press state (`dispatch.rs`).
 //!
 //! - `post <json>` (usually `--stdin`): parse from the caller's origin (`Cx::remote`); a
 //!   structural error is the verb's error and nothing shows or is stored. The same id
-//!   replaces the card (`INSERT OR REPLACE`); `reply_to` takes a pending message as
+//!   replaces the card (`INSERT OR REPLACE`) and clears its press state (pending, error,
+//!   confirm); `reply_to` takes a pending message as
 //!   `message post --reply-to` does. Answers the id and one `warning: …` line per warning,
 //!   or with `--json` `{"id","replaced","warnings"}`.
 //! - `get <id>`: the stored normalized JSON. `ls [--limit n]`: `id  time  state  title`.
@@ -16,6 +17,7 @@
 
 use serde::Serialize;
 
+use super::dispatch::Ui;
 use super::store::{Message, Messages};
 use super::{Inbox, text};
 use crate::core::Cx;
@@ -78,11 +80,19 @@ fn state_name(state: State) -> &'static str {
 
 impl Inbox {
     /// How a card behaves in the HUD: one that waits on the user (open, an enabled action)
-    /// stays until acted on or closed; others time out like a message.
-    pub(super) fn card_options(&self, c: &Card) -> Options {
+    /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA after a
+    /// press stays until KOTA or the watchdog changes it; others time out like a message.
+    pub(super) fn card_options(&self, c: &Card, ui: &Ui) -> Options {
         let sticky = c.waits_on_user();
+        let secs = if ui.busy() {
+            0
+        } else if sticky {
+            self.settings.card_timeout_secs
+        } else {
+            self.settings.timeout_secs
+        };
         Options {
-            timeout_secs: if sticky { 0.0 } else { self.settings.timeout_secs as f64 },
+            timeout_secs: secs as f64,
             sound: self.settings.sound && c.state != State::Pending,
             sticky,
         }
@@ -121,8 +131,9 @@ impl Inbox {
         }
     }
 
-    /// Remember that the user's side dismissed card `id`.
-    fn forget(&mut self, id: String) {
+    /// Remember that the user's side dismissed card `id`, and drop its press state.
+    pub(super) fn forget(&mut self, id: String) {
+        self.ui.remove(&id);
         if self.dismissed.len() >= DISMISSED_MAX {
             self.dismissed.clear();
         }
@@ -145,6 +156,7 @@ impl Inbox {
             ..Message::default()
         };
         self.save(&m, took, cx)?;
+        self.ui.remove(&m.id);
         let silent = matches!(c.state, State::Done | State::Pending) && self.dismissed.contains(&m.id);
         if !silent {
             self.dismissed.remove(&m.id);
