@@ -24,6 +24,10 @@ Each page has the module's settings and commands, then a manual test checklist.
 - [`message.md`](message.md): messages from agents (KOTA) in a corner card, with history.
 - [`remote.md`](remote.md): network access over Tailscale; setup between two Macs.
 
+## Ideas
+
+- [`ios.md`](ios.md): Flick on the iPhone: Screen Time APIs, supervision, KOTA bridge, Rust core. Not built.
+
 ## Change Flick
 
 - [`how-it-works.md`](how-it-works.md): source map and macOS mechanics.
