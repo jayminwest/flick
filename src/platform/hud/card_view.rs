@@ -1,6 +1,7 @@
 //! The card renderer: draws a `core::card::Card` into a card's content view. A title with a
 //! state symbol, the blocks top to bottom (text, kv, list, progress, choice, field), a status
-//! line (pending spinner, error, done), and the action buttons, right-aligned; or, while a
+//! line (pending spinner, error, done), and the action buttons, right-aligned, with a muted
+//! line per disabled action saying why (tooltips never show on a card); or, while a
 //! shell action waits for confirmation, the exact command with Cancel and Run. Sizes, labels
 //! and rules come from the pure `card_layout`; this file only places `AppKit` views.
 
@@ -384,7 +385,15 @@ fn buttons(pen: &Pen, actions: &[Action], y: f64) -> (f64, Vec<Retained<Button>>
             b
         })
         .collect();
-    let bottom = if views.is_empty() { y - GAP } else { place_buttons(pen, &views, y) };
+    let mut bottom = if views.is_empty() { y - GAP } else { place_buttons(pen, &views, y) };
+    // Tooltips never show on a card (Flick is never active), so say why inline.
+    let font = NSFont::systemFontOfSize(11.0);
+    let color = NSColor::secondaryLabelColor();
+    for (i, line) in lay::disabled_reasons(actions).iter().enumerate() {
+        let gap = if i == 0 { 6.0 } else { 2.0 };
+        let at = (PAD, bottom + gap, pen.inner);
+        bottom += gap + wrapped(pen, line, &font, &color, at, MAX_VALUE_H).max(SMALL_H);
+    }
     (bottom, views)
 }
 
