@@ -77,7 +77,7 @@ pub struct Poll {
     pub not_before: Option<u64>,
     /// Poll fast until this (after an ask, flick-039d).
     pub fast_until: Option<u64>,
-    /// State changes not yet seen by the main thread (notify on down, flick-78b9).
+    /// State changes not yet seen by the main thread (`item.rs` notifies on down).
     pub transitions: Vec<Transition>,
     /// The last asks, newest first (`ask.rs`).
     pub asks: Vec<Ask>,

@@ -131,8 +131,9 @@
 # --- kota: KOTA (the always-on Claude Code session in a herdr pane) in the menu bar: is it
 # thinking, blocked on an approval, idle, degraded, down, or is this Mac offline.
 # "flick kota status [--json]" reports it; "flick kota refresh" checks now (at most once per
-# 10 s). It polls only when this table sets at least one key (Flick cannot tell an empty
-# [kota] from none), so other Macs that share this file run nothing for it.
+# 10 s). It polls, and shows its menu bar item, only when this table sets at least one key
+# (Flick cannot tell an empty [kota] from none), so other Macs that share this file run
+# and show nothing for it.
 #[kota]
 # herdr's saved machine that runs KOTA; "local" (or this Mac's host name) is this Mac.
 #machine = "mbp-server"
@@ -151,9 +152,12 @@
 #poll_secs = 60
 # Seconds of 15 s checks after an ask.
 #fast_secs = 180
-# Show the menu bar item.
+# Show the menu bar item while this table polls: the state glyph (K idle, K… thinking,
+# K! blocked, K~ degraded, K× down, K- offline, K? unknown or stale) plus the count of
+# cards waiting on you. Its menu: the state, KOTA's task, failing checks, Ask KOTA…,
+# Inbox, Open Dashboard, Refresh Now. Opening it checks now.
 #status_item = true
-# Post a notification when KOTA goes down.
+# Post a notification when KOTA goes down (the server answered, KOTA is not there).
 #notify_down = true
 # Opens the Ask KOTA view (kota/ask): type, then Enter sends; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyO"
