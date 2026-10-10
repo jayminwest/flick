@@ -1,6 +1,6 @@
 //! The card HUD: a stack of small borderless, non-activating `NSPanel`s in a screen corner,
-//! one per card id. Panels never become key and never activate Flick, so they do not take
-//! focus from the app in front.
+//! one per card id. Panels never activate Flick and become key only when the user clicks a
+//! text field in a card, so they do not take focus from the app in front.
 //!
 //! - `show` upserts a card by id: a new id goes nearest the corner (with the sound, if
 //!   asked); a showing id is redrawn in place, keeping its slot, without a sound. `update`
@@ -11,10 +11,17 @@
 //!   Every card has an x close button. A click elsewhere on a text card opens its link and
 //!   dismisses it. Escape (a global key monitor, which needs Accessibility, installed only
 //!   while cards show) dismisses every card that is not `Options::sticky`.
-//! - What a card shows is a `Content`, drawn by its renderer (`text` today) into the card's
-//!   content view. Dismissals by the user or the timeout reach the one `on_dismiss` handler;
+//! - What a card shows is a `Content` (`show`/`update`, drawn by `text`) or a
+//!   `core::card::Card` with the module's `CardUi` (`show_card`/`update_card`, drawn by
+//!   `card_view`). Dismissals by the user or the timeout reach the one `on_dismiss` handler;
 //!   `dismiss`/`dismiss_all` do not.
+//! - A card's action buttons reach the one `on_press` handler with the card id, the action id
+//!   and the values JSON of its fields and choices at press time. A card redrawn by an update
+//!   keeps what the user typed or picked unless the update changed that input's initial value.
 
+mod card_layout;
+mod card_view;
+mod controls;
 mod stack;
 mod text;
 mod view;
@@ -30,10 +37,15 @@ use objc2::runtime::AnyObject;
 use objc2_app_kit::{NSEvent, NSEventMask, NSScreen, NSSound};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
+#[expect(unused_imports, reason = "the message module matches Cancel presses (flick-fd93)")]
+pub use card_layout::CANCEL;
+pub use card_layout::CardUi;
 pub use stack::Corner;
 pub use text::TextCard;
 
 use super::{timer, workspace};
+use crate::core::card::Card;
+use crate::core::card::action::values_json;
 use view::{Pill, Views, ns};
 
 const ESCAPE: u16 = 53;
@@ -45,6 +57,13 @@ const HOVER_RECHECK: f64 = 2.0;
 pub enum Content<'a> {
     /// Header, time, context, body and hint; a click opens the link and dismisses.
     Text(TextCard<'a>),
+}
+
+/// What `fill` draws: a `Content`, or a card with its module state.
+#[derive(Clone, Copy)]
+enum Draw<'a> {
+    Content(&'a Content<'a>),
+    Card(&'a Card, &'a CardUi<'a>),
 }
 
 /// Where the stack goes; the latest `show` sets it for every card.
@@ -92,6 +111,21 @@ pub fn on_dismiss(handler: fn(&str, Dismissed)) {
     let _ = ON_DISMISS.set(handler);
 }
 
+/// Where action presses go: set once by `on_press`, called on the main thread outside any
+/// HUD state borrow, after `AppKit` has finished delivering the click.
+static ON_PRESS: OnceLock<fn(&str, &str, String)> = OnceLock::new();
+
+/// Send action presses on cards to `handler` (card id, action id, values JSON as
+/// `core::card::action::values_json` builds it). Pressing a `shell` action is just a press:
+/// the module answers it by redrawing the card with `CardUi::confirm`, whose Run presses the
+/// same action id again and whose Cancel presses `CANCEL`. A press whose values are over the
+/// cap never reaches the handler; the card shows the error instead. The first handler wins;
+/// it must only queue work (post an event), never borrow app state. Tests must not call this.
+#[expect(dead_code, reason = "the message module subscribes when cards land (flick-fd93)")]
+pub fn on_press(handler: fn(&str, &str, String)) {
+    let _ = ON_PRESS.set(handler);
+}
+
 struct Entry {
     id: String,
     views: Views,
@@ -103,6 +137,8 @@ struct Entry {
     link: Option<String>,
     /// A click anywhere but a button dismisses (text cards).
     click_dismisses: bool,
+    /// A card's live inputs and buttons; `None` for a `Content` card.
+    controls: Option<controls::Controls>,
 }
 
 #[derive(Default)]
@@ -127,21 +163,25 @@ fn next_epoch() -> u64 {
     EPOCH.get()
 }
 
-/// Draw `content` into `e` at `width`.
-fn fill(
-    mtm: MainThreadMarker,
-    e: &mut Entry,
-    content: &Content,
-    width: f64,
-    opts: Options,
-    epoch: u64,
-) {
+/// Draw `draw` into `e` at `width`. A card keeps its inputs' live values (`carry`).
+fn fill(mtm: MainThreadMarker, e: &mut Entry, draw: Draw, width: f64, opts: Options, epoch: u64) {
+    let before = e.controls.take().map(|c| (c.initial.clone(), c.values()));
     e.views.clear();
-    let height = match content {
-        Content::Text(card) => {
+    let height = match draw {
+        Draw::Content(Content::Text(card)) => {
             e.link = card.link.map(str::to_string);
             e.click_dismisses = true;
             text::render(mtm, &e.views.content, card, width)
+        }
+        Draw::Card(card, ui) => {
+            e.link = None;
+            e.click_dismisses = false;
+            let before = before.as_ref().map(|(i, l)| (i.as_slice(), l.as_slice()));
+            let values = card_layout::carry(before, card.inputs());
+            let (height, controls) =
+                card_view::render(mtm, &e.views.content, card, ui, &values, width);
+            e.controls = Some(controls);
+            height
         }
     };
     e.size = (width, height);
@@ -152,6 +192,17 @@ fn fill(
 
 /// Show card `id` with `content`, or redraw it in place if it shows. Returns whether it is new.
 pub fn show(id: &str, content: &Content, placement: &Placement, opts: &Options) -> bool {
+    show_draw(id, Draw::Content(content), placement, opts)
+}
+
+/// Show `card` (its id is the card id) in state `ui`, or redraw it in place if it shows.
+/// Returns whether it is new.
+#[expect(dead_code, reason = "the message module shows cards through it (flick-fd93)")]
+pub fn show_card(card: &Card, ui: &CardUi, placement: &Placement, opts: &Options) -> bool {
+    show_draw(&card.id, Draw::Card(card, ui), placement, opts)
+}
+
+fn show_draw(id: &str, draw: Draw, placement: &Placement, opts: &Options) -> bool {
     let mtm = super::mtm();
     let width = placement.width.clamp(240.0, 900.0);
     let epoch = next_epoch();
@@ -172,11 +223,12 @@ pub fn show(id: &str, content: &Content, placement: &Placement, opts: &Options) 
                 epoch,
                 link: None,
                 click_dismisses: false,
+                controls: None,
             };
             s.cards.insert(0, e);
         }
         if let Some(e) = s.cards.iter_mut().find(|e| e.id == id) {
-            fill(mtm, e, content, width, *opts, epoch);
+            fill(mtm, e, draw, width, *opts, epoch);
         }
         relayout(s, mtm);
         if s.monitors.is_empty() {
@@ -198,12 +250,23 @@ pub fn show(id: &str, content: &Content, placement: &Placement, opts: &Options) 
 /// does. Never shows a dismissed card.
 #[expect(dead_code, reason = "card state updates call it (flick-fd93)")]
 pub fn update(id: &str, content: &Content, opts: &Options) -> bool {
+    update_draw(id, Draw::Content(content), opts)
+}
+
+/// Redraw `card` in state `ui` in place if it shows, keeping what the user entered; returns
+/// whether it does. Never shows a dismissed card.
+#[expect(dead_code, reason = "card state updates call it (flick-fd93)")]
+pub fn update_card(card: &Card, ui: &CardUi, opts: &Options) -> bool {
+    update_draw(&card.id, Draw::Card(card, ui), opts)
+}
+
+fn update_draw(id: &str, draw: Draw, opts: &Options) -> bool {
     let mtm = super::mtm();
     let epoch = next_epoch();
     let shown = STATE.with_borrow_mut(|s| {
         let Some(e) = s.cards.iter_mut().find(|e| e.id == id) else { return false };
         let width = e.size.0;
-        fill(mtm, e, content, width, *opts, epoch);
+        fill(mtm, e, draw, width, *opts, epoch);
         relayout(s, mtm);
         true
     });
@@ -354,6 +417,40 @@ fn clicked(window: usize, on_close: bool) {
         }
         _ => {}
     }
+}
+
+/// A press of the button tagged `tag` on the card in panel `window`: hand the action and the
+/// values to the `on_press` handler, or redraw the card with the error if the values are over
+/// the cap.
+fn pressed(window: usize, tag: isize) {
+    let hit = STATE.with_borrow(|s| {
+        let e = s.cards.iter().find(|e| e.views.key() == window)?;
+        let c = e.controls.as_ref()?;
+        Some((e.id.clone(), c.action(tag)?, values_json(&c.values())))
+    });
+    match hit {
+        Some((id, action, Ok(values))) => {
+            if let Some(handler) = ON_PRESS.get() {
+                handler(&id, &action, values);
+            }
+        }
+        Some((id, _, Err(why))) => refill_with_error(&id, &why),
+        None => {}
+    }
+}
+
+/// Redraw card `id` as it was drawn, with `error` as its error line.
+fn refill_with_error(id: &str, error: &str) {
+    let mtm = super::mtm();
+    STATE.with_borrow_mut(|s| {
+        let Some(e) = s.cards.iter_mut().find(|e| e.id == id) else { return };
+        let Some(c) = &e.controls else { return };
+        let (card, pending, confirm) = (c.card.clone(), c.pending, c.confirm.clone());
+        let ui = CardUi { pending, error: Some(error), confirm: confirm.as_deref() };
+        let (width, opts, epoch) = (e.size.0, e.opts, e.epoch);
+        fill(mtm, e, Draw::Card(&card, &ui), width, opts, epoch);
+        relayout(s, mtm);
+    });
 }
 
 /// Escape: dismiss every card that is not sticky.
