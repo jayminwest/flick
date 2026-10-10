@@ -503,6 +503,15 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `control::net::HOOKS` (`core::control::NetHooks`, plain fn pointers) to `Remote::new`.
   The listener runs iff the switch is on and `peers` is not empty. User guide and manual
   smoke test: `docs/remote.md`.
+- Asking a peer from a module: `core::control::PeerHooks` (one plain fn pointer, `ask(host,
+  words, flags) -> Result<Reply, String>`) is the client seam. `cli::client::PEER` implements
+  it with the `--host` client code (no subprocess): `cli::client::Host::parse`, a 5 s connect
+  per resolved address, then 10 s read and write timeouts for the one reply line; it always
+  sends `--remote` (the peer's transport forces it anyway) and `--json` when asked. `Err`
+  means no reply (bad host, unreachable, timed out, dropped, unparsable); a peer's
+  `{"error":...}` is `Ok(Reply::Error)`. Modules never import `crate::cli`: the `modules!`
+  line passes `crate::cli::PEER`, as it passes `control::net::HOOKS` to `remote`. It blocks,
+  so only background threads call it. The peer applies its own `net_policy`.
 - `flick` with no arguments runs the launcher. `flick [--json] <module> <verb> [args]`
   sends a request; `--json` (first or last) sends `--json` as the last request word and
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With

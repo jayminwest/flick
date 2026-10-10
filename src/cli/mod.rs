@@ -6,6 +6,9 @@
 mod client;
 mod stdin;
 
+#[expect(unused_imports, reason = "the sys fleet takes it on its modules! line (flick-3608)")]
+pub use client::PEER;
+
 use std::ffi::OsStr;
 use std::io::{self, IsTerminal};
 

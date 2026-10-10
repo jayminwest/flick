@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::core::control::{DEFAULT_PORT, EVENTS, Flags, JSON, REMOTE, Reply, request_line};
+use crate::core::control::{
+    DEFAULT_PORT, EVENTS, Flags, JSON, PeerHooks, REMOTE, Reply, request_line,
+};
 
 /// How long a TCP connect to each resolved address may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -87,6 +89,43 @@ pub fn request(target: &Target, words: &[String], flags: Flags) -> i32 {
             UNREACHABLE
         }
     }
+}
+
+/// How long a peer question (`PEER`) waits for its reply line once connected.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
+)]
+const PEER_REPLY: Duration = Duration::from_secs(10);
+
+/// The client side of `core::control::PeerHooks`, passed to modules on their `modules!`
+/// line so they can ask another Mac's Flick without importing this module.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
+)]
+pub const PEER: PeerHooks =
+    PeerHooks { ask: |host, words, flags| ask(host, words, flags, PEER_REPLY) };
+
+/// Send `words` (plus `--remote`, and `--json` with `flags.json`) to the Flick at `host`
+/// (`name[:port]`) and read its reply, waiting at most `reply` for it.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
+)]
+fn ask(host: &str, words: &[String], flags: Flags, reply: Duration) -> Result<Reply, String> {
+    let host = Host::parse(host)?;
+    let unreachable =
+        |e: io::Error| format!("can't reach Flick at {}:{} ({e})", host.name, host.port);
+    let stream = connect_tcp(&host).map_err(unreachable)?;
+    stream
+        .set_read_timeout(Some(reply))
+        .and_then(|()| stream.set_write_timeout(Some(reply)))
+        .map_err(unreachable)?;
+    let words = with_flags(words, Flags { remote: true, ..flags });
+    let line = exchange(Box::new(stream), &words)
+        .map_err(|e| format!("no reply from {}: {e}", host.name))?;
+    Reply::parse(&line)
 }
 
 /// Subscribe to the Flick at `target` and print each event line until it goes away.
@@ -302,6 +341,46 @@ mod tests {
         assert_eq!(events(&host), 1);
         let nowhere = Target::Host(Host { name: "no-such-host.invalid".into(), port });
         assert_eq!(request(&nowhere, &["x".into()], Flags::default()), UNREACHABLE);
+    }
+
+    #[test]
+    fn a_peer_question_gets_the_reply_or_says_why_not() {
+        let host = fake_tcp_flick(upper, &[]);
+        let spec = format!("127.0.0.1:{}", host.port);
+        let words = ["sys".to_string(), "snapshot".into()];
+        let json = Flags { json: true, remote: false };
+        // Always --remote, then --json; through the real `PEER` hook.
+        assert_eq!(
+            (PEER.ask)(&spec, &words, json),
+            Ok(Reply::Ok("SYS SNAPSHOT --REMOTE --JSON".into()))
+        );
+        let refused = fake_tcp_flick(|_| Reply::Error("sys: unknown command".into()), &[]);
+        let refused = format!("127.0.0.1:{}", refused.port);
+        assert_eq!(
+            ask(&refused, &words, json, PEER_REPLY),
+            Ok(Reply::Error("sys: unknown command".into()))
+        );
+        assert!(ask("a b", &words, json, PEER_REPLY).unwrap_err().starts_with("bad host"));
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let e = ask(&format!("127.0.0.1:{port}"), &words, json, PEER_REPLY).unwrap_err();
+        assert!(e.starts_with(&format!("can't reach Flick at 127.0.0.1:{port} (")), "{e}");
+    }
+
+    #[test]
+    fn a_silent_peer_is_an_error_within_the_budget() {
+        // Accepts, reads, never answers.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let spec = format!("127.0.0.1:{}", silent.local_addr().unwrap().port());
+        std::thread::spawn(move || {
+            let held: Vec<_> = silent.incoming().take(1).collect();
+            std::thread::sleep(Duration::from_secs(3));
+            drop(held);
+        });
+        let start = std::time::Instant::now();
+        let e =
+            ask(&spec, &["x".into()], Flags::default(), Duration::from_millis(100)).unwrap_err();
+        assert!(e.starts_with("no reply from 127.0.0.1: "), "{e}");
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

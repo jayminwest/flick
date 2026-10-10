@@ -11,7 +11,8 @@
 //! that transport live here: which addresses are Tailscale addresses (`is_tailnet`), which
 //! peers may connect (`peer_matches`), which requests a network caller may send
 //! (`net_policy`), and the contract between the remote module and the transport
-//! (`NetSettings`, `NetStatus`, `NetHooks`).
+//! (`NetSettings`, `NetStatus`, `NetHooks`), and the client seam a module asks a peer
+//! through (`PeerHooks`).
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -233,6 +234,21 @@ pub struct NetHooks {
     pub apply: fn(Option<NetSettings>) -> Result<NetStatus, String>,
     /// The transport's current state.
     pub status: fn() -> NetStatus,
+}
+
+/// How a module asks another Mac's Flick one question without importing the client (the
+/// `sys` fleet reads a peer's `sys snapshot`): `modules/mod.rs` passes `cli::client::PEER`;
+/// tests pass fakes. Blocking, so only background threads call it.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the sys fleet reads peers through it (flick-3608)")
+)]
+#[derive(Clone, Copy, Debug)]
+pub struct PeerHooks {
+    /// Send `words` with `flags` (`--remote` always) to the Flick at `host` (`name[:port]`)
+    /// and read its one reply: connect 5 s per address, 10 s for the reply. `Err` when no
+    /// reply came (bad host, unreachable, timed out, connection dropped, not a reply).
+    pub ask: fn(host: &str, words: &[String], flags: Flags) -> Result<Reply, String>,
 }
 
 #[cfg(test)]
