@@ -11,6 +11,7 @@ pub mod axwatch;
 pub mod browser;
 pub mod capture;
 pub mod clock;
+pub mod context;
 mod edit;
 pub mod events;
 pub mod files;

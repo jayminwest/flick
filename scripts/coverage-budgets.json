@@ -96,6 +96,7 @@
     "src/modules/tasks/store.rs": 99.5,
     "src/modules/tasks/view.rs": 100.0,
     "src/modules/windows/action.rs": 100.0,
+    "src/platform/context/rules.rs": 100.0,
     "src/platform/hud/card_layout.rs": 100.0,
     "src/platform/hud/keys.rs": 100.0,
     "src/platform/hud/stack.rs": 100.0,
