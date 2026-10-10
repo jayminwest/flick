@@ -126,7 +126,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::float_cmp, reason = "an unknown id scores exactly zero")]
     fn frecency_decays() {
         let mut usage = Usage::new();
         usage.insert("a".into(), (10, 0));

@@ -46,7 +46,6 @@ fn center_clamps_to_the_area() {
 }
 
 #[test]
-#[expect(clippy::float_cmp, reason = "cycled frames are rounded to whole points")]
 fn repeated_halves_cycle_half_two_thirds_third() {
     let cycles = [
         (WindowAction::LeftHalf, [600.0, 800.0, 400.0], true),
