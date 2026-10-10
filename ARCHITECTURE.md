@@ -416,6 +416,16 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 - A module's SQL touches only its own tables, through `store.conn()`. Pattern: a
   `<module>/store.rs` file with `MIGRATIONS` and an extension trait on `Store` (see `Clips` in
   `src/modules/clipboard/store.rs`).
+- `messages` (owner `message`, `src/modules/message/store.rs`) holds the HUD history, cards
+  and chat threads (plan pl-75d3). Migration 3 adds `thread` (NULL: HUD history), `role`
+  (`'me'`: typed in this Mac's chat; NULL: a post), `state` (NULL done, `'partial'`
+  streaming, `'failed'` an ask that did not go out) and an index on `(thread, ts)`, and copies
+  a stored card's JSON `thread` into the column. `put_message` replaces by id; a replacement of
+  a threaded or `partial` row keeps its `ts` and rowid (a stream keeps its place) and its
+  thread when the new post names none; any other replacement is a new row at the new `ts`,
+  as before. Trimming is per scope: unthreaded rows to `max_history`, each thread to
+  `chat_history`, and the thread posted to plus the `chat_threads - 1` others with the newest
+  message; a chat post never evicts unthreaded history.
 
 ## Config
 
@@ -517,7 +527,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
-  `message` (every verb but `card press|focus`, notably `post`, `card post` and `card spec`) is allowed on purpose: peers post messages to this
+  `message` (every verb but `card press|focus`, notably `post` with `--thread`/`--partial`, `card post`, `card spec` and the read-only `threads` and `thread <t>`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click; `card spec` prints `docs/cards.md`
   (compiled in with `include_str!`), the card contract a peer such as KOTA reads.
   `sys snapshot`, `sys services` and `sys fleet` are allowed on purpose too: they are read-only;

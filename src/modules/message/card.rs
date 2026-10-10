@@ -179,6 +179,7 @@ impl Inbox {
             context,
             card: Some(card::to_json(c)),
             remote: cx.remote,
+            thread: c.thread.clone(),
             ..Message::default()
         };
         self.save(&m, took, cx)?;

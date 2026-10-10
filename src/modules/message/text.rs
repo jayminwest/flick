@@ -119,11 +119,15 @@ pub struct Post {
     pub url: Option<String>,
     pub reply_to: Option<String>,
     pub id: Option<String>,
+    /// The conversation it belongs to.
+    pub thread: Option<String>,
     pub pending: bool,
+    /// A reply still streaming: the same id is posted again until a post without it.
+    pub partial: bool,
     pub body: String,
 }
 
-pub const POST_USAGE: &str = "usage: flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--pending] [--] <body...>";
+pub const POST_USAGE: &str = "usage: flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--thread t] [--pending|--partial] [--] <body...>";
 
 /// `post` arguments: flags first, then the body words (joined with spaces); `--` ends the
 /// flags.
@@ -135,8 +139,8 @@ pub fn parse_post(mut args: &[String]) -> Result<Post, String> {
                 args = &args[1..];
                 break;
             }
-            [f, rest @ ..] if f == "--pending" => {
-                post.pending = true;
+            [f, rest @ ..] if f == "--pending" || f == "--partial" => {
+                if f == "--pending" { post.pending = true } else { post.partial = true }
                 args = rest;
                 continue;
             }
@@ -153,12 +157,16 @@ pub fn parse_post(mut args: &[String]) -> Result<Post, String> {
             "--url" => post.url = value,
             "--reply-to" => post.reply_to = value,
             "--id" => post.id = value,
+            "--thread" => post.thread = value,
             _ => return Err(format!("{flag}: unknown flag; {POST_USAGE}")),
         }
     }
     post.body = args.join(" ").trim().to_string();
     if post.body.is_empty() {
         return Err(POST_USAGE.into());
+    }
+    if post.pending && post.partial {
+        return Err("--pending and --partial: a post is one or the other".into());
     }
     if post.body.len() > MAX_BODY {
         return Err(format!("message: body over {MAX_BODY} bytes"));
@@ -168,7 +176,7 @@ pub fn parse_post(mut args: &[String]) -> Result<Post, String> {
     {
         return Err(format!("--url {url}: only http and https links"));
     }
-    for id in [&post.id, &post.reply_to].into_iter().flatten() {
+    for id in [&post.id, &post.reply_to, &post.thread].into_iter().flatten() {
         if !crate::core::card::valid_id(id) {
             return Err(format!("{id}: an id is 1-64 of A-Z a-z 0-9 . _ -"));
         }
@@ -235,8 +243,11 @@ mod tests {
                 id: Some("m.2".into()),
                 pending: true,
                 body: "hello there".into(),
+                ..Post::default()
             }
         );
+        let p = parse_post(&words(&["--thread", "t1", "--partial", "--id", "r", "so", "far"])).unwrap();
+        assert_eq!((p.thread.as_deref(), p.partial, p.pending, p.body.as_str()), (Some("t1"), true, false, "so far"));
         let p = parse_post(&words(&["--title", " ", "--", "--not-a-flag"])).unwrap();
         assert_eq!((p.title, p.body.as_str()), (None, "--not-a-flag"));
     }
@@ -251,6 +262,8 @@ mod tests {
         assert!(err(&["--url", "file:///etc", "b"]).contains("only http and https"));
         assert!(err(&["--id", "a b", "b"]).contains("an id is"));
         assert!(err(&["--reply-to", &"x".repeat(65), "b"]).contains("an id is"));
+        assert!(err(&["--thread", "a/b", "b"]).contains("an id is"));
+        assert!(err(&["--pending", "--partial", "b"]).contains("one or the other"));
         assert!(err(&[&"x".repeat(MAX_BODY + 1)]).contains("over"));
     }
 }

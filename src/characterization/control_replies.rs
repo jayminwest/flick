@@ -281,6 +281,19 @@ fn peers_reach_the_card_verbs() {
 }
 
 #[test]
+fn peers_post_to_and_read_chat_threads() {
+    // KOTA streams a chat reply with `post --thread t --partial` (flick-a7b0): posting stays
+    // allowed with the new flags. Not run here: a post shows the panel, which needs AppKit.
+    let stream = ["message", "post", "--thread", "t1", "--id", "r1", "--partial", "so far"]
+        .map(String::from);
+    assert_eq!(net_policy(&stream), Ok(()));
+    // Thread reads are read-only, so peers may call them.
+    assert_eq!(net_reply(&["message", "threads", "--json"]), r#"{"ok":[]}"#);
+    assert_eq!(net_reply(&["message", "threads"]), r#"{"ok":""}"#);
+    assert_eq!(net_reply(&["message", "thread", "t1", "--json"]), r#"{"error":"No thread t1"}"#);
+}
+
+#[test]
 fn peers_may_read_sys_health() {
     // `sys snapshot` and `sys services` are read-only and are how a peer's fleet view reads
     // this Mac (plan flick-b5d0); `sys fleet` reads what this Mac's own polling found
