@@ -140,7 +140,11 @@ fn a_visible_round_posts_once_more_and_the_timer_posts_until_stopped() {
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(POSTS.load(Ordering::SeqCst), 3);
     start_timer(&sh, Duration::from_millis(20), hooks);
-    std::thread::sleep(Duration::from_millis(150));
+    // Slow CI runners: wait for two timer posts rather than a fixed sleep.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while POSTS.load(Ordering::SeqCst) < 5 && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     stop_timer(&sh);
     std::thread::sleep(Duration::from_millis(50));
     let after = POSTS.load(Ordering::SeqCst);
