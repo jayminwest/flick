@@ -139,7 +139,7 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 /// run code, take the keyboard (`message chat`), start the microphone, make this Mac ssh
 /// (`kota ask`, `message ask`) or send
 /// requests to model servers (`llm`, any verb), restart services or read logs (`sys restart`,
-/// `sys tail`), read the screen, write files or delete data
+/// `sys tail`), pop a key window (`sys window`), read the screen, write files or delete data
 /// that cannot come back (`task rm` drops the task's tracked time). Review this table when a
 /// module gains a verb with side effects. `remote` is handled apart: only `remote status` is
 /// allowed.
@@ -157,7 +157,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("dictation", &[]),
     ("kota", &["ask"]),
     ("llm", &[]),
-    ("sys", &["restart", "tail"]),
+    ("sys", &["restart", "tail", "window"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.

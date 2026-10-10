@@ -94,6 +94,7 @@
     "src/modules/sys/settings.rs": 100.0,
     "src/modules/sys/ssh.rs": 100.0,
     "src/modules/sys/views.rs": 100.0,
+    "src/modules/sys/window.rs": 97.9,
     "src/modules/tasks/cli.rs": 100.0,
     "src/modules/tasks/manage.rs": 100.0,
     "src/modules/tasks/mod.rs": 99.6,

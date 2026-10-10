@@ -268,6 +268,9 @@ and every hotkey.
   machines it starts nothing and the root item `sys:fleet` is hidden. No event says a view
   closed, so the module tracks it: `open` of `fleet` or `machine` sets the flag; root
   search asking `items`, `LauncherOpened`, and pushing another module's view clear it.
+  The fleet window (`sys window`, surface "fleet", `src/modules/sys/window.rs`) counts as
+  a visible view while `surface::is_visible` says it shows, so it keeps the 15 s cadence;
+  hidden, it adds nothing. Its handlers only queue notes and post `ModuleChanged`.
   Settings, a fleet example and the manual checklist: `docs/sys.md`.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
@@ -568,7 +571,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `dictation` (any verb: a peer never starts the microphone) or
   `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), `llm` (any verb:
   a peer never makes this Mac send requests to model servers), `sys restart|tail` (a peer
-  never restarts this Mac's services or reads its logs), and of `remote` only
+  never restarts this Mac's services or reads its logs), `sys window` (a peer never pops
+  the fleet window on this Mac or writes its snapshot), and of `remote` only
   `remote status`. A table verb may be
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
