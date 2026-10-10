@@ -8,7 +8,9 @@
 //!   same id clears the press state). Exit 2 or any failure puts an error line on the card
 //!   and turns the actions back on. A card still pending after `pending_timeout_secs` turns
 //!   to "No update from KOTA".
-//! - Presses on a pending or running card are ignored (no double send or run).
+//! - Presses on a pending or running card are ignored (no double send or run), and so are
+//!   presses on a card KOTA posted as `pending` or `done`: only `open` and `error` cards take
+//!   presses (`actionable`, docs/cards.md "States and updates").
 //! - A local action is checked again at press time (`Do::check` with the origin the card
 //!   was posted from, the `remote` column); a refusal is an error line and nothing runs.
 //!   `open_url`, `open_app` and `copy` run at once and leave a short line ("Copied"),
@@ -117,6 +119,12 @@ pub enum Pressed {
     Closed,
 }
 
+/// Whether a card in `state` takes presses: `open` and `error` (retry) do; `pending` (KOTA
+/// works on it) and `done` show their actions off and ignore them.
+pub fn actionable(state: State) -> bool {
+    matches!(state, State::Open | State::Error)
+}
+
 /// What pressing `a` on a card from `origin` runs: `None` replies to KOTA, else the local
 /// action and whether it also replies. `Err` is why it may not run: a disabled action, or
 /// a `do` that `Do::check` refuses now (checked again at press time, so a stored card can
@@ -180,8 +188,11 @@ impl Inbox {
     /// Press `action` on card `id` with `values` (JSON): from the HUD or `card press`.
     pub(super) fn press(&mut self, id: &str, action: &str, values: String, cx: &Cx) -> Result<Pressed, String> {
         let (c, origin) = stored(id, cx).ok_or(format!("No card {id}"))?;
+        if !actionable(c.state) {
+            return Err(format!("Card {id} is {}: its actions are off", card::state_name(c.state)));
+        }
         let ui = self.ui.entry(id.into()).or_default();
-        if ui.busy() || c.state == State::Pending {
+        if ui.busy() {
             return Err(format!("Card {id} is busy: waiting on KOTA or a run"));
         }
         if action == CANCEL {

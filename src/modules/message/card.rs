@@ -81,7 +81,7 @@ fn card_row(id: &str, cx: &Cx) -> Result<Message, String> {
     cx.store.message(id).filter(|m| m.card.is_some()).ok_or_else(|| format!("No card {id}"))
 }
 
-fn state_name(state: State) -> &'static str {
+pub fn state_name(state: State) -> &'static str {
     match state {
         State::Open => "open",
         State::Pending => "pending",
