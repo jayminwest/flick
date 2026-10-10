@@ -1,0 +1,72 @@
+gui/501/dev.pundit.board = {
+	active count = 1
+	path = /Users/example/Library/LaunchAgents/dev.pundit.board.plist
+	type = LaunchAgent
+	state = running
+
+	program = /Users/example/.local/bin/node
+	arguments = {
+	}
+
+	working directory = /Users/example/Projects/pundit
+
+	stdout path = /Users/example/Projects/pundit/logs/dev.pundit.board.log
+	stderr path = /Users/example/Projects/pundit/logs/dev.pundit.board.log
+	inherited environment = {
+	}
+
+	default environment = {
+	}
+
+	environment = {
+	}
+
+	LWCR = {
+	}
+
+	domain = gui/501 [100002]
+	asid = 100002
+	minimum runtime = 30
+	exit timeout = 5
+	runs = 9
+	pid = 95361
+	immediate reason = inefficient
+	forks = 1
+	execs = 1
+	initialized = 1
+	trampolined = 1
+	started suspended = 0
+	proxy started suspended = 0
+	checked allocations = 0 (queried = 1)
+	checked allocations reason = no host
+	checked allocations flags = 0x0
+	last exit code = 143
+
+	resource coalition = {
+		ID = 881
+		type = resource
+		state = active
+		active count = 1
+		name = dev.pundit.board
+	}
+
+	jetsam coalition = {
+		ID = 882
+		type = jetsam
+		state = active
+		active count = 1
+		name = dev.pundit.board
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	job state = running
+	sanitizer flags = 0x0
+
+	properties = keepalive | runatload | inferred program | managed LWCR | has LWCR
+}

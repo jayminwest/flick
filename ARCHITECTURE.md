@@ -179,7 +179,7 @@ Sources:
 - `ModuleChanged` producers: `flick` (`src/modules/rebuild/`: git check, build runner),
   `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
   threads and notification clicks), `capture` (its shutter thread, and the annotation
-  editor's `on_done` when it closes).
+  editor's `on_done` when it closes), `sys` (its probe and service-check threads).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -223,6 +223,10 @@ and every hotkey.
   check runs at most once per 30 s).
 - Give every child process a time budget. A command that must answer at once may run a
   short bounded call on the main thread (`flick flick version`: git with a 2 s budget).
+- A cached command (`src/modules/sys/`: `sys snapshot`, `sys services`) answers from its
+  cache and starts a refresh on a thread, at most once per 5 s. Only the first call with an
+  empty cache waits for that thread on a `Condvar`, bounded (2.25 s for the 2 s probe); the
+  child itself never runs on the main thread. Nothing refreshes unless a verb asks.
 
 Long-lived I/O threads (`src/modules/herdr/io.rs`): the same rules, for a thread that
 follows an external server.
@@ -399,6 +403,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.
   `message` (every verb but `card press|focus`, notably `post`) is allowed on purpose: peers post messages to this
   Mac's card, which shows text and offers an http(s) link only on a click.
+  `sys snapshot` and `sys services` are allowed on purpose too: they are read-only and are how
+  a peer's fleet view reads this Mac (their JSON is the peer contract, `src/modules/sys/report.rs`).
+  Service checks, including `command` argvs, come only from this Mac's `[[sys.service]]`.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
   reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
   refusals are pinned in `src/characterization/control_replies.rs`.

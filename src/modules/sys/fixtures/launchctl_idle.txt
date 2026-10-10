@@ -1,0 +1,253 @@
+gui/501/org.nix-community.home.kota-heartbeat = {
+	active count = 0
+	path = /Users/example/Library/LaunchAgents/org.nix-community.home.kota-heartbeat.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /bin/sh
+	arguments = {
+	}
+
+	stdout path = /Users/example/Library/Logs/kota-imessage-tick.log
+	stderr path = /Users/example/Library/Logs/kota-imessage-tick.log
+	inherited environment = {
+	}
+
+	default environment = {
+	}
+
+	environment = {
+	}
+
+	LWCR = {
+	}
+
+	domain = gui/501 [100002]
+	asid = 100002
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 69
+	last exit code = 0
+
+	event triggers = {
+		org.nix-community.home.kota-heartbeat.268435476 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+				"Hour" => 11
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435481 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+				"Hour" => 14
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435488 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+				"Hour" => 20
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435475 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 15
+				"Hour" => 10
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435480 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+				"Hour" => 14
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435487 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 15
+				"Hour" => 19
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435474 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+				"Hour" => 9
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435486 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+				"Hour" => 18
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435473 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+				"Hour" => 8
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435485 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+				"Hour" => 17
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435490 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+				"Hour" => 21
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435479 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 15
+				"Hour" => 13
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435484 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+				"Hour" => 17
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435478 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+				"Hour" => 12
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435483 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 15
+				"Hour" => 16
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435477 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+				"Hour" => 11
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435482 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+				"Hour" => 15
+			}
+		}
+		org.nix-community.home.kota-heartbeat.268435489 => {
+			keepalive = 0
+			service = org.nix-community.home.kota-heartbeat
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+				"Hour" => 20
+			}
+		}
+	}
+
+	event channels = {
+		"com.apple.launchd.calendarinterval" = {
+			port = 0x106d9f
+			active = 0
+			managed = 1
+			reset = 0
+			hide = 0
+			watching = 1
+		}
+	}
+
+	resource coalition = {
+		ID = 1592
+		type = resource
+		state = active
+		active count = 1
+		name = org.nix-community.home.kota-heartbeat
+	}
+
+	jetsam coalition = {
+		ID = 1593
+		type = jetsam
+		state = active
+		active count = 1
+		name = org.nix-community.home.kota-heartbeat
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	job state = exited
+	sanitizer flags = 0x0
+
+	properties = inferred program | managed LWCR | has LWCR
+}
