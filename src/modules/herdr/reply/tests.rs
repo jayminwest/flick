@@ -75,9 +75,8 @@ fn wrapping_keeps_indent_and_splits_long_words() {
 }
 
 #[test]
-fn the_tail_keeps_the_last_rows_behind_an_ellipsis() {
-    assert_eq!(tail("one\ntwo", 10, 2), "one\ntwo");
-    assert_eq!(tail("one\ntwo\nthree", 10, 2), "…\nthree");
-    assert_eq!(tail("aaa bbb ccc", 3, 2), "…\nccc");
-    assert_eq!(tail("", 10, 2), "");
+fn the_whole_reply_is_wrapped_and_nothing_is_cut() {
+    assert_eq!(wrapped("one\ntwo\nthree", 10), "one\ntwo\nthree");
+    assert_eq!(wrapped("aaa bbb ccc\nd", 3), "aaa\nbbb\nccc\nd");
+    assert_eq!(wrapped("", 10), "");
 }

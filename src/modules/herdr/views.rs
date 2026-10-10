@@ -215,7 +215,7 @@ pub fn detail(agent: Option<&Agent>, preview: Option<&Preview>, now: u64) -> (Ve
                 subtitle: format!("{lines} line{}", if lines == 1 { "" } else { "s" }),
                 ..Item::new(ItemId::new(ID, "reply"), "Copy Reply", "Copy Reply", Icon::Symbol("doc.on.doc"))
             };
-            (copy, reply::tail(text, reply::WIDTH, reply::ROWS))
+            (copy, reply::wrapped(text, reply::WIDTH))
         }
         (None, _) => (line("Loading output…".into(), "hourglass"), String::new()),
         (Some(Err(e)), _) => (line(e.clone(), "exclamationmark.triangle"), String::new()),
