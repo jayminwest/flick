@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::edit::Entry;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Quicklink {
     pub name: String,
@@ -16,6 +18,14 @@ pub struct Quicklink {
 impl Quicklink {
     pub fn takes_query(&self) -> bool {
         self.url.contains("{query}")
+    }
+
+    /// The link as config fields, in the order a hand-written entry uses.
+    pub fn entry(&self) -> Entry {
+        let mut entry = vec![("name", self.name.clone()), ("url", self.url.clone())];
+        entry.extend(self.keyword.clone().map(|k| ("keyword", k)));
+        entry.extend(self.app.clone().map(|a| ("app", a)));
+        entry
     }
 
     /// The URL to open. Paths (`/…`, `~/…`) become file URLs.
