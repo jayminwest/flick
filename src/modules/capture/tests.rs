@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use super::*;
 use crate::config::parse;
+use crate::core::scratch::Scratch;
 use crate::core::test_cx;
 
 mod ink;
@@ -37,12 +38,9 @@ fn fake_shoot(req: &Request) -> Result<Shot, Error> {
     Ok(Shot { path: req.path.clone(), width: 4, height: 3 })
 }
 
-/// A fresh temp dir for one test.
-fn temp(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("flk-{}-capture-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// A fresh temp dir for one test, removed when it drops.
+fn temp(name: &str) -> Scratch {
+    Scratch::new(&format!("capture-{name}"))
 }
 
 /// A module saving into `dir`, whose fakes log to `CALLS`.

@@ -685,7 +685,9 @@ writes a commented default (`DEFAULT_CONFIG`).
   the legacy array that `LEGACY` maps there; append always writes the table form. It re-reads
   the file each time, refuses a file or a result that `parse` rejects, writes through a
   symlink (unless `target::writable` refuses it), and replaces the file atomically (temp file, fsync, rename). It does not reload:
-  the caller updates its own state.
+  the caller updates its own state. For that it returns `Landed`, the index the added or
+  replaced entry has in the list a reload of that file sees (table entries, then legacy ones),
+  so an appended link goes before legacy `[[quicklinks]]` in memory too.
 
 ## Control socket and CLI
 

@@ -22,11 +22,10 @@ pub fn trash(path: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::scratch::Scratch;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("flk-{}-trash-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(&format!("trash-{name}"))
     }
 
     #[test]
