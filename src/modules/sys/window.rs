@@ -234,7 +234,7 @@ impl Sys {
     }
 
     fn window_draw(&self) {
-        let busy = self.shared.lock().fleet.busy;
+        let busy = self.shared.lock().fleet.busy();
         let (bubbles, (subtitle, status)) =
             self.with_seen(|seen, _| (bubbles(seen, &self.win.filter), header(seen, busy)));
         let rows: Vec<surface::Row> = bubbles.iter().map(Bubble::row).collect();

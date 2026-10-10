@@ -171,7 +171,7 @@ fn no_machines_says_how_to_add_them() {
     assert_eq!(rows(), ["empty|System|||Done|No machines (add `[[sys.machine]]` tables to config.toml)"]);
     assert_eq!(header(), ("Fleet: 0 machines  ·  ⌘R refresh  ·  Esc hides".into(), Status::Idle));
     // Not started: showing it polls nothing.
-    assert!(!m.shared.lock().fleet.busy);
+    assert!(!m.shared.lock().fleet.busy());
 }
 
 #[test]
