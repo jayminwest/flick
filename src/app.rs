@@ -13,8 +13,8 @@ use crate::core::store::{self, Store};
 use crate::core::{Cx, Event, Item, ListView, Outcome, Ranker, Registry};
 use crate::hotkey::{self, Target};
 use crate::modules;
-use crate::platform::events;
 use crate::platform::panel::Key;
+use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
 use screen::{Back, Screen};
@@ -100,7 +100,15 @@ pub fn init(config: Config, store: Store) -> String {
     }
     state.registry.dispatch(Event::Started, &mut state.env.cx(""));
     STATE.with(|s| *s.borrow_mut() = Some(state));
+    status_item::set_opener(open_from_menu);
     launcher
+}
+
+/// A status item's `Open` row: module `module`'s hotkey `key`, on the main queue's next turn,
+/// because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43).
+fn open_from_menu(module: &str, key: &str) {
+    let (module, key) = (module.to_owned(), key.to_owned());
+    events::on_main(move || hotkey(&module, &key));
 }
 
 /// Bind the launcher hotkey and every module's hotkeys from the current config.
