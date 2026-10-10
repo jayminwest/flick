@@ -4,8 +4,9 @@
 //! `+N more` pill.
 //!
 //! A card panel becomes key only when a click lands on a view that needs it (a text field:
-//! `becomesKeyOnlyIfNeeded`), never on show or on a button, and being non-activating it never
-//! activates Flick. While key, it routes the edit keys itself (Flick has no Edit menu).
+//! `becomesKeyOnlyIfNeeded`) or `hud::focus_top` asks, never on show or on a button, and
+//! being non-activating it never activates Flick. While key, it routes the card keys
+//! (`focus`, `keys`) and the edit keys itself (Flick has no Edit menu).
 
 use objc2::rc::Retained;
 use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send};
@@ -42,17 +43,35 @@ define_class!(
             true
         }
 
-        // Flick has no main menu, so the edit keys (⌘X, ⌘C, ⌘V, ⌘A, ⌘Z, ⇧⌘Z) go to the first
-        // responder from here, as in the launcher panel (mx-43d850). Tail expression only
-        // (mx-43d3f4).
+        // The card keys (`keys`) while the panel is key, before the field editor or a
+        // button sees them: Esc gives the keyboard back instead of cancelling an edit.
+        #[unsafe(method(sendEvent:))]
+        fn send_event(&self, event: &NSEvent) {
+            if !super::focus::key_event(self.key(), self.isKeyWindow(), event) {
+                // SAFETY: the superclass method, with the argument it was called with.
+                unsafe { msg_send![super(self), sendEvent: event] }
+            }
+        }
+
+        // The card keys may arrive here first, as key equivalents (⌘1..⌘6, ⌘↵). Flick has no
+        // main menu, so the edit keys (⌘X, ⌘C, ⌘V, ⌘A, ⌘Z, ⇧⌘Z) go to the first responder from
+        // here, as in the launcher panel (mx-43d850). Tail expression only (mx-43d3f4).
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
-            edit::send(event, self)
+            super::focus::key_event(self.key(), self.isKeyWindow(), event)
+                || edit::send(event, self)
                 // SAFETY: the superclass method, with the argument it was called with.
                 || unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
     }
 );
+
+impl CardPanel {
+    /// The panel as an address, as `Views::key` gives it.
+    fn key(&self) -> usize {
+        std::ptr::from_ref(self).cast::<()>() as usize
+    }
+}
 
 /// Whether a click on `v` goes to `v` rather than to the card: buttons (push, radio,
 /// checkbox, pop-up), editable text fields and the field editor.

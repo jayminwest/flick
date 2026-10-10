@@ -309,6 +309,11 @@
 #sound = true
 # Opens the message list; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyM"
+# Moves the keyboard into the newest card without activating Flick (the app you are in stays
+# active); pressed again, or Esc, gives it back. In the card: Tab/Shift-Tab move between
+# controls, Cmd-1..Cmd-6 press action n, Cmd-Return the primary action, Option-Up/Down move
+# to the card above/below. Unset by default.
+#card_hotkey = "cmd+ctrl+alt+shift+KeyK"
 # What pressing a card button that replies to KOTA runs: an argv list, to which Flick appends
 # --action --card <id> --action-id <aid>, with the card's field and choice values as JSON on
 # stdin (20 s budget). Exit 0: the card waits for KOTA's update; 2: KOTA rejected it (last

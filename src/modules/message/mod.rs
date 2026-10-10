@@ -5,7 +5,8 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
-//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`), `action_command`,
+//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
+//! keyboard into the newest card, or gives it back), `action_command`,
 //! `pending_timeout_secs`, `card_timeout_secs`. Table `messages` holds the history. Each
 //! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
@@ -41,6 +42,8 @@ use wire::Env;
 
 const LIST: &str = "list";
 const RECENT: &str = "recent";
+/// The hotkey key of `card_hotkey`.
+const CARD: &str = "card";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -99,6 +102,8 @@ struct Settings {
     sound: bool,
     /// Opens the message list.
     hotkey: Option<String>,
+    /// Moves the keyboard into the newest card (or gives it back).
+    card_hotkey: Option<String>,
     /// What a reply press runs (argv), with `--action --card <id> --action-id <aid>` appended
     /// and the values JSON on stdin. Empty: a press shows an error naming this key.
     action_command: Vec<String>,
@@ -120,6 +125,7 @@ impl Default for Settings {
             max_history: 50,
             sound: true,
             hotkey: None,
+            card_hotkey: None,
             action_command: vec![],
             pending_timeout_secs: 120,
             card_timeout_secs: 0,
@@ -444,11 +450,20 @@ impl Module for Inbox {
     }
 
     fn hotkeys(&self) -> Vec<Binding> {
-        let spec = self.settings.hotkey.as_ref().filter(|s| !s.trim().is_empty());
-        spec.map(|spec| Binding { spec: spec.clone(), key: Ok(RECENT.into()) }).into_iter().collect()
+        let bound = [(&self.settings.hotkey, RECENT), (&self.settings.card_hotkey, CARD)];
+        let spec = |(s, key): (&Option<String>, &str)| {
+            let s = s.as_ref().filter(|s| !s.trim().is_empty())?;
+            Some(Binding { spec: s.clone(), key: Ok(key.into()) })
+        };
+        bound.into_iter().filter_map(spec).collect()
     }
 
+    /// `card_hotkey` gives the keyboard back when a card holds it, else moves it into the
+    /// newest card; the launcher stays as it is.
     fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+        if key == CARD && !(self.env.unfocus)() {
+            (self.env.focus)();
+        }
         (key == RECENT).then(|| recent_view(&self.settings.name))
     }
 
@@ -457,6 +472,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card press <id> <action> [values-json]"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--pending] <body...> | message ls [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card press <id> <action> [values-json] | message card focus"
     }
 }
