@@ -4,7 +4,7 @@ use crate::core::test_cx;
 use testkit::HOOKS;
 
 fn sys(config: &str, hooks: Hooks) -> Sys {
-    let mut m = Sys::with_hooks(hooks);
+    let mut m = Sys::with_hooks(hooks, testkit::WINDOW);
     let table = parse(config).unwrap().section(ID).unwrap().unwrap();
     m.configure(&table).unwrap();
     m
@@ -95,7 +95,7 @@ fn verbs_and_unknown_ones() {
     assert_eq!(m.id(), "sys");
     assert_eq!(
         m.verbs(),
-        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes]"
+        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes] | sys window [--snapshot <png>]"
     );
     assert_eq!(ask(&mut m, &["reboot"], false).unwrap_err(), "sys: unknown command \"reboot\"");
     assert_eq!(ask(&mut m, &["snapshot", "now"], false).unwrap_err(), "sys: unknown command \"snapshot\"");
@@ -245,3 +245,4 @@ fn ticks_poll_on_the_background_cadence_or_while_the_view_shows() {
 
 mod actions;
 mod launcher;
+mod window;

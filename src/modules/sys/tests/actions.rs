@@ -90,7 +90,7 @@ fn menus_follow_the_config() {
     assert_eq!(menu(&mut m, "service/pro/down"), ["restart"]);
     // A service only the peer's snapshot names: nothing to run from here.
     assert!(menu(&mut m, "service/server/kota-dash").is_empty());
-    for key in ["fleet", "agents", "fact/0", "log", "head", "check/up", "machine/nope", "x"] {
+    for key in ["agents", "fact/0", "log", "head", "check/up", "machine/nope", "x"] {
         assert!(menu(&mut m, key).is_empty(), "{key}");
     }
     // In the machine view the head and checks are the picked machine's.

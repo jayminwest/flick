@@ -1,4 +1,5 @@
-//! The module's fleet actions (flick-4a4c): the cmd+K menus, Screen Sharing and Open Dash,
+//! The module's fleet actions (flick-4a4c): the cmd+K menus, Open Fleet Window (the root
+//! item `Fleet`, flick-a2ed), Screen Sharing and Open Dash,
 //! Tail Log (view `log`), Restart behind a destructive confirm, and the `sys tail` and
 //! `sys restart` verbs. `act.rs` decides what runs; `jobs.rs` runs it on threads.
 
@@ -8,7 +9,7 @@ use super::settings::Machine;
 use super::views::{self, Key};
 use super::{ID, Sys};
 use crate::core::later;
-use crate::core::{Action, Cx, ItemId, ListView, Outcome};
+use crate::core::{Action, Cx, Icon, ItemId, ListView, Outcome};
 
 /// `$HOME`, for a `~/` log on this Mac.
 fn home() -> String {
@@ -56,6 +57,9 @@ impl Sys {
 
     /// Cheap (no I/O): the launcher asks on every render.
     pub(super) fn menu(&self, id: &ItemId) -> Vec<Action> {
+        if id.key() == "fleet" {
+            return vec![Action::new("window", "Open Fleet Window", Icon::Symbol("macwindow"))];
+        }
         if let Some(m) = self.machine_of(id.key()) {
             return act::machine_menu(&m);
         }
@@ -70,6 +74,11 @@ impl Sys {
                 let Some(url) = m.and_then(|m| if key == "vnc" { m.vnc } else { m.dash }) else { return gone() };
                 cx.hide();
                 (self.hooks.open)(&url);
+                Outcome::Hide
+            }
+            "window" => {
+                cx.hide();
+                self.window_show();
                 Outcome::Hide
             }
             "tail" => {

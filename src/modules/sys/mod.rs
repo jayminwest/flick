@@ -39,6 +39,10 @@
 //! by default): `name`, `via`, `host`, `ssh`, `vnc`, `dash`, `service`; `refresh_secs` (0)
 //! (`settings.rs`).
 //!
+//! Window (`window.rs`, flick-a2ed): `flick sys window` and cmd+K Open Fleet Window on
+//! `Fleet` show the fleet on the floating surface "fleet", one bubble per machine; it polls
+//! every `VISIBLE_EVERY` s while it shows; Esc hides it. In `NET_DENIED` (it pops a window).
+//!
 //! Cadence (`poll.rs`): the fleet polls on launcher open, on wake and on `sys fleet`; every
 //! `VISIBLE_EVERY` s while the fleet view shows (`fleet_view`, set by the view, flick-9eb1);
 //! every `refresh_secs` when set. Sleep stops the timer and drops rounds in flight. Idle
@@ -59,6 +63,7 @@ mod ssh;
 #[cfg(test)]
 mod testkit;
 mod views;
+mod window;
 mod wire;
 
 use std::collections::HashMap;
@@ -116,23 +121,27 @@ pub struct Sys {
     fleet_view: bool,
     /// The machine view `machine` shows.
     detail: Option<String>,
+    /// The fleet window (`window.rs`).
+    win: window::Win,
 }
 
 impl Sys {
     /// The module with the real hooks; `peer` asks other Macs' Flicks (`cli::PEER`).
     pub fn new(peer: PeerHooks) -> Sys {
-        Sys::with_hooks(wire::hooks(peer))
+        Sys::with_hooks(wire::hooks(peer), wire::WINDOW)
     }
 
-    fn with_hooks(hooks: Hooks) -> Sys {
+    fn with_hooks(hooks: Hooks, win: window::Hooks) -> Sys {
         let shared = Arc::default();
-        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None }
+        let win = window::Win::new(win);
+        Sys { shared, hooks, first_wait: FIRST_WAIT, refresh_secs: 0, started: false, fleet_view: false, detail: None, win }
     }
 
     /// Poll the fleet as `kind` asks, if it has machines. Refreshes this Mac's own cache
-    /// too when a machine is `via = "local"`.
+    /// too when a machine is `via = "local"`. The fleet view on screen, or the fleet window,
+    /// keeps it polling.
     fn poll(&self, kind: Poll) {
-        let visible = self.fleet_view && (self.hooks.visible)();
+        let visible = (self.fleet_view && (self.hooks.visible)()) || self.win.visible();
         let (min_age, again) = match kind {
             Poll::Now => (0, None),
             Poll::Open | Poll::Tick if visible => (VISIBLE_EVERY - 1, Some(Duration::from_secs(VISIBLE_EVERY))),
@@ -353,6 +362,7 @@ impl Module for Sys {
             [v] if v == "fleet" => Ok(self.fleet(cx.json, cx.remote)),
             [v, rest @ ..] if v == "tail" => self.tail_command(rest),
             [v, rest @ ..] if v == "restart" => self.restart_command(rest),
+            [v, rest @ ..] if v == "window" => self.window_command(rest),
             _ => Err(unknown_verb(ID, args)),
         }
     }
@@ -375,14 +385,18 @@ impl Module for Sys {
                 poll::stop_timer(&self.shared);
                 self.shared.lock().fleet.forget_round();
             }
-            Event::ModuleChanged { module: ID } if self.started => self.poll(Poll::Tick),
+            Event::ModuleChanged { module: ID } if self.started => {
+                self.window_drain();
+                self.poll(Poll::Tick);
+                self.window_refresh();
+            }
             _ => {}
         }
         false
     }
 
     fn verbs(&self) -> &'static str {
-        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes]"
+        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes] | sys window [--snapshot <png>]"
     }
 }
 

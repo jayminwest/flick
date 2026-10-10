@@ -219,6 +219,10 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["sys", "restart"], "sys restart"),
         (&["sys", "tail", "web"], "sys tail"),
         (&["sys", "tail", "pro", "ollama"], "sys tail"),
+        // The fleet window (flick-a2ed): a peer must not pop a key window on this Mac or
+        // make it write a snapshot PNG.
+        (&["sys", "window"], "sys window"),
+        (&["sys", "window", "--snapshot", "/tmp/x.png"], "sys window"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
