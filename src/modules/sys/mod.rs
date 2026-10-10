@@ -35,8 +35,9 @@
 //! and starts no round, so a peer never makes this Mac ssh.
 //!
 //! Table `[sys]`: `service` (array of tables; none by default): `name`, `kind` (http, tcp,
-//! launchd, process, command), `target`, `warn`, `fail`, `log`, `restart`; `machine` (none
-//! by default): `name`, `via`, `host`, `ssh`, `vnc`, `dash`, `service`; `refresh_secs` (0);
+//! launchd, process, command), `target`, `warn`, `fail`, `log`, `restart`, `domain` (gui or
+//! system, flick-1356); `machine` (none by default): `name`, `via`, `host`, `ssh`, `vnc`,
+//! `dash`, `service`; `refresh_secs` (0);
 //! `hotkey` (unset: the fleet window's show/hide hotkey, flick-1e00)
 //! (`settings.rs`).
 //!
@@ -425,6 +426,9 @@ impl Module for Sys {
                 self.shared.lock().fleet.forget_round();
             }
             Event::ModuleChanged { module: ID } if self.started => {
+                if let Some(text) = self.shared.lock().toast.take() {
+                    (self.hooks.toast)(&text);
+                }
                 self.window_drain();
                 self.poll(Poll::Tick);
                 self.window_refresh();

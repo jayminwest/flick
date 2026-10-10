@@ -11,6 +11,7 @@ use super::{ID, run, unix_now};
 use crate::core::Event;
 use crate::core::control::PeerHooks;
 use crate::platform::surface::{self, Handlers, Input, Keystroke, Size, Spec, SurfaceId};
+use crate::platform::hud::{self, Content, Corner, Options, Placement, TextCard};
 use crate::platform::{events, panel, workspace};
 
 pub fn hooks(peer: PeerHooks) -> Hooks {
@@ -24,7 +25,17 @@ pub fn hooks(peer: PeerHooks) -> Hooks {
         ask: peer.ask,
         visible: panel::is_visible,
         open: workspace::open_url,
+        toast,
     }
+}
+
+/// A restart's result as a HUD card in the top right corner (`[message]`'s default), for
+/// a few seconds; a newer result replaces it.
+fn toast(body: &str) {
+    let text = TextCard { header: "Fleet", time: "", context: "", body, link: None, pending: false };
+    let placement = Placement { corner: Corner::TopRight, width: 380.0, max_cards: 4 };
+    let opts = Options { timeout_secs: 6.0, sound: false, sticky: false };
+    hud::show("sys-restart", &Content::Text(text), &placement, &opts);
 }
 
 const SURFACE: SurfaceId = SurfaceId("fleet");

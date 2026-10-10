@@ -31,6 +31,7 @@ pub const HOOKS: Hooks = Hooks {
     ask,
     visible: || false,
     open,
+    toast,
 };
 
 thread_local! {
@@ -42,6 +43,18 @@ fn open(url: &str) {
     OPENED.with(|o| o.borrow_mut().push(url.to_string()));
 }
 
+thread_local! {
+    /// The HUD toasts `toast` was asked for on this thread.
+    pub static TOASTS: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
+}
+
+fn toast(text: &str) {
+    TOASTS.with(|t| t.borrow_mut().push(text.to_string()));
+}
+
+/// What `sudo -n` says when it would prompt.
+const SUDO_ASKS: &str = "sudo: a password is required\n";
+
 /// Canned ssh runs by target (the argv's sixth word), the script on stdin answered as the
 /// Mac would:
 /// - `pro`: `DESKTOP`, uid 502, then each `@@ svc` the script asks for: launchd label `up`
@@ -49,14 +62,22 @@ fn open(url: &str) {
 /// - `refused`: ssh's own failure, exit 255; `mute`: exit 0, no output; `slow`: 300 ms,
 ///   then like `pro`; anything else times out.
 /// - an action's script (`exec ...`) on `pro`: a kickstart of `'up'` exits 0, any other 113;
-///   a tail prints `tail via <target>: <script>`.
+///   a tail prints `tail via <target>: <script>` (a plain one of `root.log` is denied); a
+///   `sudo -n` kickstart of `system/up` exits 0, any other asks for a password.
 fn run_input(argv: &[String], script: &str, _budget: Duration) -> Result<Exit, String> {
     let target = argv.get(5).map_or("", String::as_str);
     if target == "pro" && script.starts_with("exec /bin/launchctl kickstart") {
         let up = script.ends_with("/\"'up'\n");
         return if up { exit(0, "", "") } else { exit(113, "", "Could not find service in domain for user gui: 502\n") };
     }
-    if target == "pro" && script.starts_with("exec /usr/bin/tail") {
+    if target == "pro" && script.starts_with("exec /usr/bin/sudo -n /bin/launchctl kickstart") {
+        let up = script.ends_with("\"system/\"'up'\n");
+        return if up { exit(0, "", "") } else { exit(1, "", SUDO_ASKS) };
+    }
+    if target == "pro" && script.starts_with("exec /usr/bin/tail") && script.contains("root.log") {
+        return exit(1, "", "tail: root.log: Permission denied\n");
+    }
+    if target == "pro" && (script.starts_with("exec /usr/bin/tail") || script.starts_with("exec /usr/bin/sudo -n /usr/bin/tail")) {
         return exit(0, &format!("tail via {target}: {script}"), "");
     }
     let answer = |target| match target {
@@ -123,7 +144,10 @@ fn exit(code: i32, stdout: &str, stderr: &str) -> Result<Exit, String> {
 /// - pgrep -x: `syncthing` runs;
 /// - `/fake/print <text>` prints its text; `/fake/sleep <ms>` sleeps, then prints 1;
 /// - launchctl kickstart -k: `gui/501/up` exits 0, else 113 (the print rule below);
-/// - tail -n 100 -- <path>: `last of <path>`, or no such file for a path ending `missing.log`.
+/// - tail -n 100 -- <path>: `last of <path>`, no such file for a path ending `missing.log`,
+///   permission denied for one ending `root.log`;
+/// - the system domain: `launchctl print system/up` runs; a `sudo -n` kickstart of `system/up` and a tail of a
+///   `root.log` succeed; anything else is `sudo: a password is required`.
 fn run(argv: &[String], _budget: Duration) -> Result<Exit, String> {
     let words: Vec<&str> = argv.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -132,13 +156,21 @@ fn run(argv: &[String], _budget: Duration) -> Result<Exit, String> {
         ["/usr/bin/curl", .., "http://slow/"] => exit(0, "200 1.5", ""),
         ["/usr/bin/curl", .., "http://gone/"] => exit(0, "404 0.002", ""),
         ["/usr/bin/curl", ..] => exit(7, "000", "curl: (7) Failed to connect\n"),
-        ["/bin/launchctl", "print", "gui/501/up"] => {
+        ["/bin/launchctl", "print", "gui/501/up" | "system/up"] => {
             exit(0, include_str!("fixtures/launchctl_running.txt"), "")
         }
-        ["/bin/launchctl", "kickstart", "-k", "gui/501/up"] => exit(0, "", ""),
+        ["/bin/launchctl", "kickstart", "-k", "gui/501/up"]
+        | ["/usr/bin/sudo", "-n", "/bin/launchctl", "kickstart", "-k", "system/up"] => exit(0, "", ""),
         ["/usr/bin/tail", "-n", "100", "--", path] if path.ends_with("missing.log") => {
             exit(1, "", &format!("tail: {path}: No such file or directory\n"))
         }
+        ["/usr/bin/tail", "-n", "100", "--", path] if path.ends_with("root.log") => {
+            exit(1, "", &format!("tail: {path}: Permission denied\n"))
+        }
+        ["/usr/bin/sudo", "-n", "/usr/bin/tail", "-n", "100", "--", path] if path.ends_with("root.log") => {
+            exit(0, &format!("root's last of {path}\n"), "")
+        }
+        ["/usr/bin/sudo", ..] => exit(1, "", SUDO_ASKS),
         ["/usr/bin/tail", "-n", "100", "--", path] => exit(0, &format!("last of {path}\n"), ""),
         ["/bin/launchctl", "print", "gui/501/killed"] => {
             exit(0, include_str!("fixtures/launchctl_signal.txt"), "")

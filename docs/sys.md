@@ -25,13 +25,14 @@ warn = 10                        # optional thresholds: ms for http and tcp, the
 fail = 50
 log = "~/Library/Logs/kota-mailwatch.log"  # optional: Tail Log reads its last 100 lines
 restart = false                  # launchd only: lets the dashboard restart it after a confirm
+domain = "gui"                   # launchd only: gui (your agents, default) | system (daemons, via sudo -n)
 ```
 
 | kind | target | ok when |
 |---|---|---|
 | `http` | an `http(s)://` URL | curl (3 s) gets a 2xx or 3xx |
 | `tcp` | `host:port` | it accepts a connection (3 s) |
-| `launchd` | a label in your GUI domain (`gui/<uid>`) | it runs, or its last exit was 0 |
+| `launchd` | a label in your GUI domain (`gui/<uid>`), or `system` with `domain = "system"` | it runs, or its last exit was 0 |
 | `process` | an exact process name | `pgrep -x` finds it |
 | `command` | an argv, run without a shell (5 s) | it exits 0. With `warn` or `fail`, the first number it prints is compared |
 
@@ -76,13 +77,24 @@ States: **fresh**; **stale** when the data is older than three times the cadence
 - **Screen Sharing** (machines with `vnc`) opens the `vnc://` URL.
 - **Open Dash** (machines with `dash`) opens the dashboard.
 - **Tail Log** (services with `log`) shows the last 100 lines. **Tail Again** reads them again.
-- **Restart…** (launchd services with `restart = true`) asks first. The confirm shows the exact command and needs ⌘↵. Locally it runs `launchctl kickstart -k gui/<uid>/<label>`; for a machine it runs `ssh <ssh> launchctl kickstart -k gui/$(id -u)/<label>`.
+- **Restart…** (launchd services with `restart = true`) asks first. The confirm shows the exact command and needs ⌘↵. Locally it runs `launchctl kickstart -k gui/<uid>/<label>`; for a machine it runs `ssh <ssh> launchctl kickstart -k gui/$(id -u)/<label>`. The result also shows as a HUD card in the top right corner for a few seconds (`Restarted …`, or why it failed). `flick sys restart --yes` answers in the terminal instead.
 
-Tail and restart act only on services that this Mac's config defines: its own `[[sys.service]]` (run here) or a `[[sys.machine.service]]` of a machine with `ssh` (run over ssh). A service that only a peer's Flick reports offers neither, because a label, a path or a command never comes from a peer's reply. Restart works only on launch agents in your GUI domain: no `sudo`, no system daemons.
+Tail and restart act only on services that this Mac's config defines: its own `[[sys.service]]` (run here) or a `[[sys.machine.service]]` of a machine with `ssh` (run over ssh). A service that only a peer's Flick reports offers neither, because a label, a path or a command never comes from a peer's reply.
+
+**System daemons.** A launchd service is a launch agent in your GUI domain (`gui/<uid>`) unless it says `domain = "system"`: a launch daemon, run as root, such as a Homebrew service started with `sudo brew services`. Its check reads `launchctl print system/<label>`. Its restart runs `sudo -n launchctl kickstart -k system/<label>`, here or over ssh, and the confirm says `launchd system · sudo -n`. Its tail runs plain `tail` first; only when the log is not readable (`Permission denied`) does it run `sudo -n tail` instead.
+
+`sudo -n` never asks for a password, and Flick never types one. When sudo would need one, the restart fails with *sudo needs a password here; Flick never types one…* and nothing runs. To allow it, add a NOPASSWD rule for exactly that command on the Mac it runs on, with `sudo visudo -f /etc/sudoers.d/flick`:
+
+```
+jaymin ALL=(root) NOPASSWD: /bin/launchctl kickstart -k system/homebrew.mxcl.ollama
+jaymin ALL=(root) NOPASSWD: /usr/bin/tail -n 100 -- /opt/homebrew/var/log/ollama.log
+```
+
+Without a rule, restart it in Terminal.
 
 **Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**, or `flick sys window`, shows the fleet in a floating window that stays up while you work: one bubble per machine (name, state, how it was read, age, metrics, one line per service). The dot by the title turns red when a machine is down or a service fails, orange while machines are being read. It polls every 15 s while it shows and stops once hidden. Type in its field and press ↵ to filter machines (name, state, `via`) or services (name, kind, status); ↵ on an empty field shows everything. ⌘R reads every machine now: the notice line says **Refreshing…** while it runs, then **Refreshed** for a few seconds. Esc or ⌘W hides it. `flick sys window --snapshot <png>` draws it into a PNG without showing it. The bubbles sit at the top of the window, as in a dashboard.
 
-⌘K in the window shows a card under each machine with the same actions as ⌘K in the launcher: **Screen Sharing**, **Open Dash**, **Tail <service>** and **Restart <service>…**. ⌘K again hides the cards. A tail shows under the machine's card. **Restart…** asks first on the card: it shows the exact command with **Cancel** and **Run**. The notice line says `Restarting …`, then the result, or why a press did nothing. With no `vnc`, `dash`, `log` or `restart` set, the notice says so. Hiding the window drops the cards.
+⌘K in the window shows a card under each machine with the same actions as ⌘K in the launcher: **Screen Sharing**, **Open Dash**, **Tail <service>** and **Restart <service>…**. ⌘K again hides the cards. A tail shows under the machine's card. **Restart…** asks first on the card: it shows the exact command with **Cancel** and **Run**. The notice line says `Restarting …`, then the result (also a HUD card), or why a press did nothing. With no `vnc`, `dash`, `log` or `restart` set, the notice says so. Hiding the window drops the cards.
 
 ```toml
 [sys]
@@ -269,12 +281,15 @@ Unit tests cover the probe parser, the check verdicts, the fleet model, the view
 - [ ] **Failing service.** Add a check that cannot pass (`name = "probe-fail"`, `kind = "tcp"`, `target = "127.0.0.1:1"`) to this Mac's `[[sys.service]]` and reload. Its row turns fail with a reason, and `flick sys fleet` lists it under the machine. Remove it.
 - [ ] **Screen Sharing and Open Dash.** ⌘K on mbp-server: **Screen Sharing** opens Screen Sharing to mbp-server, and **Open Dash** opens kota-dash. ⌘K on mac-pro: **Screen Sharing** connects to 100.118.223.57.
 - [ ] **Tail Log.** ⌘K on kota-mailwatch under mbp-server → **Tail Log** shows the last 100 lines of `~/Library/Logs/kota-mailwatch.log` there. **Tail Again** refreshes them. `flick sys tail mbp-server kota-mailwatch` prints the same.
-- [ ] **Restart with confirm.** ⌘K on syncthing under mac-pro → **Restart…** shows `ssh jaymin@100.118.223.57 launchctl kickstart -k gui/$(id -u)/homebrew.mxcl.syncthing`. Esc cancels, and nothing restarts. ⌘↵ restarts it, and the footer says `Restarted syncthing on mac-pro`. Also try ollama: if launchctl answers that the service cannot be found in the GUI domain, ollama runs as a system daemon. Set its `restart = false`.
+- [ ] **Restart with confirm.** ⌘K on syncthing under mac-pro → **Restart…** shows `ssh jaymin@100.118.223.57 launchctl kickstart -k gui/$(id -u)/homebrew.mxcl.syncthing`. Esc cancels, and nothing restarts. ⌘↵ restarts it, and the footer says `Restarted syncthing on mac-pro`. Also try ollama: if launchctl answers that the service cannot be found in the GUI domain, ollama runs as a system daemon: set its `domain = "system"` (see **System daemons**).
 - [ ] **CLI restart needs --yes.** `flick sys restart mac-pro syncthing` prints the command and restarts nothing. `--yes` restarts it.
 - [ ] **No actions for peer-only services.** A service that only mbp-server's Flick reports (for example `kota-dash-ok`) has no **Tail Log** or **Restart…** in ⌘K.
 - [ ] **Network refusal.** From mbp-server: `flick --host jaymins-macbook-pro sys fleet` answers from the cache. `flick --host jaymins-macbook-pro sys restart mac-pro syncthing --yes` and `... sys tail mbp-server kota-dash` print `not allowed over the network` and exit 1.
 - [ ] **Herdr Agents.** The last row of **Fleet** opens the herdr agents view.
 - [ ] **Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**: the launcher hides and a window titled Fleet appears under the pointer with a bubble per machine; the app you were in stays active. Ages stay under about 15 s while it shows. Type `pro` + ↵: only mac-pro remains and a notice line shows the filter; ↵ on an empty field brings all back. ⌘R shows Refreshing… then Refreshed in the notice line, ahead of the filter. Esc hides it; reopen it and it keeps its size and place. `flick --host jaymins-macbook-pro sys window` from mbp-server prints `not allowed over the network`.
 - [ ] **Fleet window actions.** With few machines, the bubbles sit at the top. ⌘K: a card shows under mbp-server and mac-pro. **Screen Sharing** on mac-pro opens Screen Sharing. **Tail kota-mailwatch** shows its last lines under mbp-server's card. **Restart syncthing…** on mac-pro shows the command with Cancel and Run; Cancel restarts nothing. ⌘K again hides the cards.
+- [ ] **Restart toast.** Restart a service from the launcher's ⌘K or the window's card: a `Fleet` HUD card in the top right says `Restarted …` (or why not) and hides after about 6 s. `flick sys restart … --yes` shows no card.
+- [ ] **System daemon without NOPASSWD.** Set `domain = "system"` on a launch daemon whose command has no sudoers rule. Its row shows its state. **Restart…** shows `sudo -n launchctl kickstart -k system/<label>` with `launchd system · sudo -n`; Run fails at once with *sudo needs a password here…*; no password prompt appears and nothing restarts.
+- [ ] **System daemon with NOPASSWD.** Add the rule from **System daemons** for one daemon. Restart it: `Restarted …`. Tail a root-only log of it: the lines show, and the command shown is `sudo -n tail …`.
 - [ ] **Fleet window hotkey.** Set `[sys] hotkey` and reload. The hotkey shows the window; pressed again while the window has the keyboard, it hides it.
 - [ ] **Sleep.** Sleep the laptop with the Fleet view open, then wake it. One round runs after wake, and no stale round from before sleep overwrites it.
