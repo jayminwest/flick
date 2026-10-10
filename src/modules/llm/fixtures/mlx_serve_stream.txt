@@ -1,0 +1,24 @@
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652304,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"usage":null}
+
+: keepalive
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652314,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":"2"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652315,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":"+"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652315,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":"2"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652316,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":" equals"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652316,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":" "},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652317,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":"4"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652317,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{"content":"."},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652318,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":null}
+
+data: {"id":"chatcmpl-1791652304238","object":"chat.completion.chunk","created":1791652318,"model":"kota-local","system_fingerprint":"mlx-serve","choices":[],"usage":{"prompt_tokens":25,"completion_tokens":7,"total_tokens":32,"prompt_tokens_details":{"cached_tokens":0}},"timings":{"prompt_n":25,"cached_n":0,"prompt_ms":8602.982,"prompt_per_second":2.906,"predicted_n":7,"predicted_ms":4234.555,"predicted_per_second":1.653,"tokenize_ms":1.301}}
+
+data: [DONE]
+

@@ -409,7 +409,7 @@ fn edge_cases_reasoning_a_dropped_stream_and_a_failed_save() {
     assert_eq!(m.chat.thread.as_ref().map(|t| t.id.as_str()), Some("lnew1"));
     settle(&mut f, &mut m);
     let t = m.chat.thread.as_ref().unwrap();
-    assert_eq!((t.msgs[1].body.as_str(), &t.msgs[1].end), ("4", &End::Done));
+    assert_eq!((t.msgs[1].body.as_str(), &t.msgs[1].end), ("Four", &End::Done));
     // The module stopped every call (it was dropped or disabled): the reply is kept as failed.
     let mut f = Fx::new();
     let mut m = llm(&server("half"));
