@@ -19,7 +19,7 @@ shell = "pmset displaysleepnow"
 - **Rules.** Names must be unique: `script:<name>` is the item id and keeps its usage history. Keywords must be one word and unique among commands. A quicklink with the same keyword shows next to the command; give them different keywords. `shell` must not be empty.
 - **Environment.** Flick's own, as launchd or the shell that started it set it: a launchd-started Flick has a short `PATH`, so use full paths for tools outside `/usr/bin` and `/bin`.
 
-Script commands run only from the launcher. There is no `flick script` verb, and remote peers cannot run them.
+`flick script run <name> [query]` runs a command by name from this Mac, with the same rules: the query words are joined with spaces, trimmed, quoted as one shell word and capped at 4000 bytes. A command with `{query}` needs a query; one without refuses it. The reply says what ran (`ran <name>: <command line>`) or why nothing ran (unknown name, missing or extra argument, too long) and exits 1. The command starts in the background, so a later failure is the notification above, not the reply. Network peers are refused (`script run: not allowed over the network`): a peer cannot run scripts on this Mac.
 
 ## Manual tests
 

@@ -3,14 +3,16 @@
 //! and an optional `keyword`. A command whose `shell` holds `{query}` takes an argument:
 //! "<keyword> <text>" in root search runs it at once, and Enter or Tab on it asks for the
 //! text. Flick puts the text in single quotes, so it is one shell word whatever it holds.
-//! Ids are `script:<name>`; the typed text rides in the id's `arg`.
+//! Ids are `script:<name>`; the typed text rides in the id's `arg`. `flick script run
+//! <name> [query]` runs one by name with the same rules (a card's `script` action uses it);
+//! network callers are refused it (`core::control::NET_DENIED`).
 
 mod wire;
 
 use serde::Deserialize;
 
 use crate::config::Section;
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome, Tab};
+use crate::core::{Cx, Icon, Item, ItemId, ListView, Module, Outcome, Tab, unknown_verb};
 
 /// The longest argument, in bytes, that Flick passes to a command.
 const MAX_QUERY: usize = 4000;
@@ -62,6 +64,40 @@ impl Default for Scripts {
 impl Scripts {
     fn find(&self, name: &str) -> Option<&Script> {
         self.commands.iter().find(|s| s.name == name)
+    }
+
+    /// The command line for `s` with `query` (already trimmed), or why it can't run.
+    fn line(s: &Script, query: &str) -> Result<String, String> {
+        if query.len() > MAX_QUERY {
+            return Err(format!("{}: argument over {MAX_QUERY} bytes", s.name));
+        }
+        Ok(s.command(query))
+    }
+
+    /// `script run <name> [query...]`: the query words are joined with spaces and trimmed.
+    /// Starts the command and says what ran; its failure is reported as from the launcher.
+    fn run_verb(&self, args: &[String]) -> Result<String, String> {
+        let Some((name, query)) = args.split_first() else {
+            return Err("usage: script run <name> [query]".into());
+        };
+        let Some(s) = self.find(name) else {
+            let names: Vec<&str> = self.commands.iter().map(|s| s.name.as_str()).collect();
+            let known = match names.as_slice() {
+                [] => "none in [[script.commands]]".to_string(),
+                names => format!("commands: {}", names.join(", ")),
+            };
+            return Err(format!("script: no command \"{name}\" ({known})"));
+        };
+        let query = query.join(" ");
+        let query = query.trim();
+        match (s.takes_query(), query.is_empty()) {
+            (true, true) => return Err(format!("script: \"{name}\" needs an argument")),
+            (false, false) => return Err(format!("script: \"{name}\" takes no argument")),
+            _ => {}
+        }
+        let line = Self::line(s, query).map_err(|e| format!("script: {e}"))?;
+        (self.run)(&s.name, &line);
+        Ok(format!("ran {name}: {line}"))
     }
 }
 
@@ -177,11 +213,24 @@ impl Module for Scripts {
         if s.takes_query() && query.is_empty() {
             return Outcome::Stay(None);
         }
-        if query.len() > MAX_QUERY {
-            return Outcome::Stay(Some(format!("{}: argument over {MAX_QUERY} bytes", s.name)));
+        match Self::line(s, query) {
+            Ok(line) => {
+                (self.run)(&s.name, &line);
+                Outcome::Hide
+            }
+            Err(e) => Outcome::Stay(Some(e)),
         }
-        (self.run)(&s.name, &s.command(query));
-        Outcome::Hide
+    }
+
+    fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        match args.split_first() {
+            Some((verb, rest)) if verb == "run" => self.run_verb(rest),
+            _ => Err(unknown_verb("script", args)),
+        }
+    }
+
+    fn verbs(&self) -> &'static str {
+        "script run <name> [query]"
     }
 }
 
