@@ -201,6 +201,10 @@ fn network_callers_are_refused_side_effecting_requests() {
         // A peer (KOTA included) must not make this Mac ssh text to KOTA.
         (&["kota", "ask", "hi"], "kota ask"),
         (&["kota", "ask"], "kota ask"),
+        // Every llm verb: a peer must never make this Mac send requests to model servers.
+        (&["llm", "ping"], "llm ping"),
+        (&["llm", "models", "mlx"], "llm models"),
+        (&["llm"], "llm"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);

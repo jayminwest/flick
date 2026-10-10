@@ -190,7 +190,8 @@ Sources:
   editor's `on_done` when it closes), `sys` (its probe, service-check and fleet threads,
   and its fleet timer),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
-  modifier-release poll), `kota` (its poll round, its timer and its ask thread).
+  modifier-release poll), `kota` (its poll round, its timer and its ask thread), `llm`
+  (its model-list and reply-stream threads, at most one undelivered event at a time).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI) and at `Started` when a
@@ -325,6 +326,22 @@ fakes in `fake.rs` for tests).
   `set_transient_text` returned; `insert = "type"`: `keytap::type_text`.
 - Transcripts and audio are never logged or stored; log lines carry durations and
   character counts.
+
+Model servers (`src/modules/llm/`): OpenAI-compatible HTTP through `/usr/bin/curl`, one
+child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP or TLS crate.
+
+- argv: `/usr/bin/curl -q` (first, so `~/.curlrc` is skipped), fixed flags (`-sS -N
+  --fail-with-body --noproxy * --proto =http,https --connect-timeout 5 --max-time <s>`)
+  and `--url <url>`; a request body goes over stdin (`--data-binary @-`), so prompt text
+  is never in argv. The spawn is an `io::Hooks` fn pointer; tests use `testkit`'s fake
+  curls, never a server.
+- A streamed reply's SSE lines become `openai::Piece`s (text, reasoning, finish, usage,
+  done, error) in the stream's inbox in `io::Shared`; the main thread drains it with
+  `Shared::take(id)`. `io::cancel(id)` kills curl and keeps what arrived. A watchdog thread
+  kills a call still running past its budget. Request and line buffers are zeroed before
+  they are freed (best effort). Nothing logs prompts or replies.
+- With no `[[llm.servers]]` nothing runs; `llm ping|models` start a fetch only when asked
+  and wait for it at most 3.5 s on the main thread (the child runs on its thread).
 
 ### Key tap
 
@@ -479,8 +496,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   caller may not send `reload`, `flick rebuild|cancel`, `keys fire`, `app uninstall`,
   `quicklink add|remove`, `capture` (any verb), `feedback resolve`, `task rm`, `script run`,
   `message card press|focus`, `dictation` (any verb: a peer never starts the microphone) or
-  `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), and of `remote`
-  only `remote status`. A table verb may be
+  `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), `llm` (any verb:
+  a peer never makes this Mac send requests to model servers), and of `remote` only
+  `remote status`. A table verb may be
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
   else reaches the module with `Cx::remote` set, so module remote guards (activity's grant) still apply.

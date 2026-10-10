@@ -1,0 +1,12 @@
+: mlx-serve
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","model":"qwen3-30b-a3b-4bit","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Two plus two"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","model":"qwen3-30b-a3b-4bit","choices":[{"index":0,"delta":{"reasoning_content":" is four."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","model":"qwen3-30b-a3b-4bit","choices":[{"index":0,"delta":{"content":"4"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","model":"qwen3-30b-a3b-4bit","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: {"id":"chatcmpl-2","object":"chat.completion.chunk","model":"qwen3-30b-a3b-4bit","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}}
+
+data: [DONE]
