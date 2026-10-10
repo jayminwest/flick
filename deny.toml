@@ -1,5 +1,6 @@
-# cargo deny check (gate: check:deps). Flick ships no network code; this
-# keeps vulnerable, yanked, copyleft and non-crates.io dependencies out.
+# cargo deny check (gate: check:deps). Flick links no network code (HTTP goes through a
+# /usr/bin/curl child); this keeps vulnerable, yanked, copyleft and non-crates.io
+# dependencies out.
 
 [graph]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
