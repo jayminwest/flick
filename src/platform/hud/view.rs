@@ -1,7 +1,7 @@
 //! The `AppKit` side of one card: a borderless, non-activating `NSPanel` (`CardPanel`) whose
 //! flipped root view takes clicks without the panel becoming key, a blurred background, a
 //! content view that a renderer fills (`text`, `card_view`), and an x close button. Also the
-//! `+N more` pill.
+//! `+N more` pill, which takes a click (paging to the hidden cards) the same way.
 //!
 //! A card panel becomes key only when a click lands on a view that needs it (a text field:
 //! `becomesKeyOnlyIfNeeded`) or `hud::focus_top` asks, never on show or on a button, and
@@ -120,7 +120,7 @@ define_class!(
             let close = p.x >= self.bounds().size.width - CLOSE_HIT && p.y <= CLOSE_HIT;
             let window = self.window().map(|w| Retained::as_ptr(&w).cast::<()>() as usize);
             if let Some(window) = window {
-                timer::after(0.0, move || super::clicked(window, close));
+                timer::after(0.0, move || super::clicks::clicked(window, close));
             }
         }
     }
@@ -137,6 +137,39 @@ define_class!(
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
             true
+        }
+    }
+);
+
+define_class!(
+    // The pill's root: the whole pill is one click target, taken without the panel ever
+    // becoming key or activating Flick.
+    #[unsafe(super(NSView, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "FlickHudPill"]
+    pub struct PillView;
+
+    impl PillView {
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
+            true
+        }
+
+        // The label and the blur are not click targets: the pill takes every click in it.
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> *mut NSView {
+            // SAFETY: NSView's own hitTest:, with its signature.
+            let hit: Option<Retained<NSView>> = unsafe { msg_send![super(self), hitTest: point] };
+            match hit {
+                Some(_) => std::ptr::from_ref(self).cast::<NSView>().cast_mut(),
+                None => std::ptr::null_mut(),
+            }
+        }
+
+        // Deferred: the click may relayout (and hide) this pill while it is delivered.
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, _event: &NSEvent) {
+            timer::after(0.0, super::clicks::more_clicked);
         }
     }
 );
@@ -279,27 +312,32 @@ pub fn make(mtm: MainThreadMarker) -> Views {
     Views { panel, root, effect, content, close }
 }
 
-/// The `+N more` pill: a small panel that ignores the mouse.
+/// The `+N more` pill: a small panel; a click on it pages to the hidden cards.
 pub struct Pill {
     panel: Retained<NSPanel>,
+    effect: Retained<NSVisualEffectView>,
     text: Retained<NSTextField>,
 }
 
 impl Pill {
     pub fn new(mtm: MainThreadMarker) -> Pill {
         let panel = panel(mtm, false);
-        panel.setIgnoresMouseEvents(true);
+        // SAFETY: `initWithFrame:` is NSView's designated initializer; it returns a +1 object.
+        let root: Retained<PillView> =
+            unsafe { msg_send![PillView::alloc(mtm), initWithFrame: NSRect::ZERO] };
         let effect = background(mtm, super::stack::PILL_H / 2.0);
         let text = label(mtm, &NSFont::systemFontOfSize(11.0), &NSColor::secondaryLabelColor());
         text.setAlignment(NSTextAlignment::Center);
         effect.addSubview(&text);
-        panel.setContentView(Some(&effect));
-        Pill { panel, text }
+        root.addSubview(&effect);
+        panel.setContentView(Some(&root));
+        Pill { panel, effect, text }
     }
 
     /// Show `text` at `frame`, or hide.
     pub fn place(&self, shown: Option<(NSRect, &str)>) {
         if let Some((frame, text)) = shown {
+            self.effect.setFrame(rect(0.0, 0.0, frame.size.width, frame.size.height));
             self.text.setStringValue(&ns(text));
             self.text.setFrame(rect(
                 4.0,
