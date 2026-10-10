@@ -22,6 +22,7 @@ pub mod mic;
 pub mod notify;
 pub mod panel;
 pub mod pasteboard;
+pub mod pill;
 pub mod poll;
 pub mod screens;
 pub mod spaces;
