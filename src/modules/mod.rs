@@ -47,6 +47,7 @@ modules! {
         mod herdr => "herdr", herdr::Herdr::default;
         mod tasks => "task", tasks::Tasks::default;
         mod keys => "keys", keys::Keys::default;
+        mod dictation => "dictation", dictation::Dictation::default;
         mod rebuild => "flick", rebuild::Rebuild::default;
         mod capture => "capture", capture::Capture::default;
         mod feedback => "feedback", feedback::Feedback::default;

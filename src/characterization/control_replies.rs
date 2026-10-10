@@ -191,6 +191,13 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["script", "run", "Lock"], "script run"),
         (&["message", "card", "press", "c1", "ok"], "message card press"),
         (&["message", "card", "focus"], "message card focus"),
+        // Every dictation verb: a peer must never start this Mac's microphone.
+        (&["dictation", "start"], "dictation start"),
+        (&["dictation", "stop"], "dictation stop"),
+        (&["dictation", "cancel"], "dictation cancel"),
+        (&["dictation", "last"], "dictation last"),
+        (&["dictation", "status"], "dictation status"),
+        (&["dictation"], "dictation"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
@@ -234,6 +241,9 @@ fn network_requests_are_remote_even_without_the_flag() {
         let req = ["message", "card", verb].map(String::from);
         assert_eq!(net_policy(&req), Ok(()), "{verb}");
     }
+    // Dictation answers locally (status reads only this Mac's settings and files).
+    let local = run(vec!["dictation".into(), "status".into()], Flags::default()).to_line();
+    assert!(local.starts_with(r#"{"ok":"dictation: off"#), "{local}");
     // Scripts run only locally: the same request that peers are refused answers here.
     assert_eq!(
         run(vec!["script".into(), "run".into(), "Lock".into()], Flags::default()).to_line(),
