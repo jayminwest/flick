@@ -96,6 +96,8 @@ Run [`verify-private.sh`](verify-private.sh) next ([checklist](../local-llm.md#v
 ## Troubleshooting
 
 - **`state = not running`, or `last exit code` keeps changing:** the daemon discards its own output, so start the same command in a shell to see the error. Use the plist's arguments, but `--log-level info` and no `--log-file off` are fine for a minute. Then delete any log it wrote: `rm -f ~/.mlx-serve/logs/mlx-serve-11235.log`.
+- **The private chat says `error: 502 (the proxy reached no model server behind it ...)`:** `tailscale serve` is set up, but nothing listens on `127.0.0.1:11235`. The daemon is not installed or not running: run the checks in [Check it](#check-it).
+- **It says `(7) Failed to connect ...`:** nothing answers on the tailnet port. Run `tailscale serve status` on the Mac Pro and look for `:11235`.
 - **It fails on a relative path:** the working directory is `/var/empty`, which it cannot write to. Pass absolute paths in the model arguments.
 - **After an mlx-serve upgrade:** run `verify-private.sh` again. A new version may log somewhere new.
 
