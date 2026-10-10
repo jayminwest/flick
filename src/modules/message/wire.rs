@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::core::store;
-use crate::platform::hud::{self, Card, Placement};
+use crate::platform::hud::{self, Content, Options, Placement};
 use crate::platform::{clock, notify, pasteboard, workspace};
 
 pub struct Env {
@@ -13,7 +13,11 @@ pub struct Env {
     pub utc_offset: fn(i64) -> i32,
     /// A fresh message id.
     pub new_id: fn() -> String,
-    pub show: fn(&Card, &Placement),
+    /// Show or redraw the card with this id; true when it is new.
+    pub show: fn(&str, &Content, &Placement, &Options) -> bool,
+    /// Remove one card (a pending post its reply replaces); true when it showed.
+    pub dismiss: fn(&str) -> bool,
+    /// Remove every card.
     pub hide: fn(),
     /// (id, title, body) as a system notification.
     pub notify: fn(&str, &str, &str),
@@ -28,7 +32,8 @@ impl Default for Env {
             utc_offset: clock::utc_offset,
             new_id,
             show: hud::show,
-            hide: hud::hide,
+            dismiss: hud::dismiss,
+            hide: hud::dismiss_all,
             notify: |id, title, body| {
                 if let Err(e) = notify::post(&format!("message:{id}"), title, body) {
                     eprintln!("flick: message: notification: {e}");

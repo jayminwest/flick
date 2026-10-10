@@ -5,7 +5,8 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
-//! `max_history`, `sound`, `hotkey` (opens `recent`). Table `messages` holds the history.
+//! `max_cards`, `max_history`, `sound`, `hotkey` (opens `recent`). Table `messages` holds the
+//! history. Each message shows as its own card, keyed by its id.
 
 pub mod store;
 #[cfg(test)]
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Section;
 use crate::core::{Action, Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
-use crate::platform::hud::{Card, Corner, Placement};
+use crate::platform::hud::{Content, Corner, Options, Placement, TextCard};
 use store::{Message, Messages};
 use wire::Env;
 
@@ -73,6 +74,8 @@ struct Settings {
     width: f64,
     /// Seconds the panel stays; 0 keeps it until dismissed.
     timeout_secs: u64,
+    /// Cards shown at once; older ones collapse into a `+N more` pill.
+    max_cards: usize,
     /// Messages kept in history.
     max_history: usize,
     /// Play a short sound when a reply arrives (never for pending posts).
@@ -89,6 +92,7 @@ impl Default for Settings {
             position: Position::TopRight,
             width: 380.0,
             timeout_secs: 20,
+            max_cards: 4,
             max_history: 50,
             sound: true,
             hotkey: None,
@@ -114,8 +118,16 @@ impl Inbox {
         Placement {
             corner: self.settings.position.corner(),
             width: self.settings.width,
+            max_cards: self.settings.max_cards,
+        }
+    }
+
+    /// A message card: timed out like any card, no sound for a placeholder.
+    fn options(&self, m: &Message) -> Options {
+        Options {
             timeout_secs: self.settings.timeout_secs as f64,
-            sound: self.settings.sound,
+            sound: self.settings.sound && !m.pending,
+            sticky: false,
         }
     }
 
@@ -130,7 +142,7 @@ impl Inbox {
         if matches!(style, Style::Panel | Style::Both) || panel_only {
             let context = m.context.as_deref().map(|c| format!("Re: {}", text::preview(c, 80)));
             let time = text::stamp(m.ts, (self.env.now)(), (self.env.utc_offset)(m.ts));
-            let card = Card {
+            let card = TextCard {
                 header: self.header(m),
                 time: &time,
                 context: context.as_deref().unwrap_or(""),
@@ -138,7 +150,7 @@ impl Inbox {
                 link: m.url.as_deref(),
                 pending: m.pending,
             };
-            (self.env.show)(&card, &self.placement());
+            (self.env.show)(&m.id, &Content::Text(card), &self.placement(), &self.options(m));
         }
         if matches!(style, Style::Notification | Style::Both) && !panel_only && !m.pending {
             (self.env.notify)(&m.id, self.header(m), &body);
@@ -166,6 +178,10 @@ impl Inbox {
             pending: post.pending,
         };
         cx.store.put_message(&m, self.settings.max_history)?;
+        // The reply takes the place of its placeholder's card.
+        if let Some(pending) = m.reply_to.as_deref().filter(|r| replaced && *r != id) {
+            (self.env.dismiss)(pending);
+        }
         self.display(&m, false);
         Ok((id, replaced))
     }
@@ -265,6 +281,9 @@ impl Module for Inbox {
         }
         if !(240.0..=900.0).contains(&s.width) {
             return Err("[message]: width must be 240 to 900".into());
+        }
+        if s.max_cards == 0 {
+            return Err("[message]: max_cards must be at least 1".into());
         }
         if s.max_history == 0 {
             return Err("[message]: max_history must be at least 1".into());
