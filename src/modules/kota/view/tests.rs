@@ -73,17 +73,20 @@ fn the_menu_lists_state_then_actions() {
         menu_rows[4..],
         [
             Entry::Separator,
-            Entry::Open { title: "Ask KOTA…".into(), key: "ask" },
-            Entry::Open { title: "Inbox (3 waiting)".into(), key: "inbox" },
+            Entry::Open { title: "Ask KOTA…".into(), module: "kota", key: "ask" },
+            // The chat window `[message] chat_hotkey` toggles, through the `message` module.
+            Entry::Open { title: "Open Chat".into(), module: "message", key: "chat:open" },
+            Entry::Open { title: "Inbox (3 waiting)".into(), module: "kota", key: "inbox" },
             Entry::Pick { title: "Open Dashboard".into(), key: "dash" },
             Entry::Pick { title: "Refresh Now".into(), key: "refresh" },
         ]
     );
     let none = menu(&Presence::default(), Badge::default(), 0, 0);
-    assert_eq!(none[4], Entry::Open { title: "Inbox".into(), key: "inbox" });
-    let inbox = |pending, unread| menu(&Presence::default(), Badge { pending, unread }, 0, 0).swap_remove(4);
-    assert_eq!(inbox(0, 1), Entry::Open { title: "Inbox (1 unread)".into(), key: "inbox" });
-    assert_eq!(inbox(2, 1), Entry::Open { title: "Inbox (2 waiting, 1 unread)".into(), key: "inbox" });
+    let open = |title: &str| Entry::Open { title: title.into(), module: "kota", key: "inbox" };
+    assert_eq!(none[5], open("Inbox"));
+    let inbox = |pending, unread| menu(&Presence::default(), Badge { pending, unread }, 0, 0).swap_remove(5);
+    assert_eq!(inbox(0, 1), open("Inbox (1 unread)"));
+    assert_eq!(inbox(2, 1), open("Inbox (2 waiting, 1 unread)"));
 }
 
 #[test]

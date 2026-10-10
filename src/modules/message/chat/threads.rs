@@ -2,6 +2,11 @@
 //! first, each as `message:thread:<t>` (a thread id never holds `:`, so these never meet a
 //! message id). Enter hides the launcher and opens the chat window on that thread. The view
 //! opens from ⌘K on the root item (Chat Threads).
+//!
+//! `OPEN` (`message:chat:open`, and the hotkey key of the same name) opens the window on
+//! the thread it showed, like `chat_hotkey` but never hiding it. Other modules name it to
+//! open the chat window: the `kota` ask view's Open Chat row and the KOTA menu's Open Chat
+//! (flick-ed63).
 
 use super::model;
 use crate::core::{Action, Cx, Icon, Item, ItemId, ListView, Outcome};
@@ -12,6 +17,9 @@ use crate::modules::message::{Inbox, text};
 pub const VIEW: &str = "threads";
 /// The item key prefix of a thread row.
 const PREFIX: &str = "thread:";
+/// The item key (and hotkey key) that opens the window on its current thread. A message id
+/// never holds `:`, so it never meets one.
+pub const OPEN: &str = "chat:open";
 
 pub fn view() -> ListView {
     ListView {
@@ -58,10 +66,11 @@ impl Inbox {
         });
     }
 
-    /// Enter on a thread row: the launcher hides and the chat window shows the thread.
-    pub fn open_thread(&mut self, thread: &str, cx: &mut Cx) -> Outcome {
+    /// Enter on a thread row (or the `OPEN` item): the launcher hides and the chat window
+    /// shows the thread (`None`: the one it showed, else the newest).
+    pub fn open_thread(&mut self, thread: Option<&str>, cx: &mut Cx) -> Outcome {
         cx.hide();
-        self.summon(Some(thread.to_string()), cx);
+        self.summon(thread.map(str::to_string), cx);
         Outcome::Hide
     }
 }
