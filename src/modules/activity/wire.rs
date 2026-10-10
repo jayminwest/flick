@@ -13,8 +13,23 @@ use crate::platform::status_item::{self, Entry};
 use crate::platform::{app, ax, axwatch, clock, events, workspace};
 use crate::core::store::{self, Store};
 
+use super::Activity;
 use super::store::Spans;
 use super::urls::{self, Ask};
+
+/// The module's teardown, run when a reload disables it: take down what `Activity::sync`
+/// put up, so neither the indicator nor the title follow outlives the module. Recording
+/// stays on in the store; a module enabled again resumes it at `Started`.
+impl Drop for Activity {
+    fn drop(&mut self) {
+        if self.indicated {
+            (self.env.indicator)(false);
+        }
+        if self.watched.is_some() {
+            (self.env.unfollow)();
+        }
+    }
+}
 
 /// What the module reads from the system and changes on it.
 pub struct Env {
