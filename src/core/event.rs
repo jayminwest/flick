@@ -10,6 +10,10 @@ use serde::Serialize;
 pub enum Event {
     /// The controller started, before the run loop.
     Started,
+    /// A config reload finished: every module gets it, after the modules the reload enabled
+    /// got `Started`. A module that announces state to others (`CardsPending`) sends it
+    /// again here, so a module that just started hears it (flick-b220).
+    Reloaded,
     /// The launcher opened at root search.
     LauncherOpened,
     /// App `pid` became frontmost.
@@ -86,6 +90,7 @@ mod tests {
     fn events_serialize_to_stable_names() {
         let cases = [
             (Event::Started, r#"{"event":"started"}"#),
+            (Event::Reloaded, r#"{"event":"reloaded"}"#),
             (Event::LauncherOpened, r#"{"event":"launcher_opened"}"#),
             (Event::AppActivated { pid: 42 }, r#"{"event":"app_activated","pid":42}"#),
             (Event::PasteboardChanged, r#"{"event":"pasteboard_changed"}"#),

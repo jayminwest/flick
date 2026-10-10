@@ -35,6 +35,15 @@ fn got(host: &str) -> Result<Fetched, String> {
     Ok(Fetched { snapshot, source: Via::Flick, note: None })
 }
 
+/// `Fleet::due`, each marked busy as `poll::round` does.
+fn claim(f: &mut Fleet, now: u64, min_age: u64) -> Vec<(usize, Machine)> {
+    let due = f.due(now, min_age);
+    for (i, _) in &due {
+        f.slots[*i].busy = true;
+    }
+    due
+}
+
 fn no_local() -> Local {
     Local { snapshot: None, at: None, error: None }
 }
@@ -53,13 +62,40 @@ fn due_machines_are_the_remote_ones_not_tried_lately() {
 }
 
 #[test]
+fn a_machine_being_read_is_not_due_until_its_read_ends() {
+    let mut f = fleet();
+    let names = |d: Vec<(usize, Machine)>| d.into_iter().map(|(_, m)| m.name).collect::<Vec<_>>();
+    let epoch = f.epoch;
+    assert_eq!(names(claim(&mut f, 100, 15)), ["server", "pro"]);
+    assert!(claim(&mut f, 100, 0).is_empty(), "both busy");
+    // The server answers; pro (a slow ssh) still runs and holds only itself.
+    let server = f.slots[1].machine.clone();
+    assert!(f.apply(epoch, 1, &server, got("server"), 101));
+    assert!(f.busy() && !f.slots[1].busy && f.slots[2].busy);
+    assert_eq!(names(claim(&mut f, 101, 0)), ["server"]);
+    // A release from a dropped read leaves a newer read alone.
+    f.forget_round();
+    let newer = f.epoch;
+    assert_eq!(names(claim(&mut f, 130, 15)), ["server", "pro"]);
+    f.release(epoch, 2);
+    assert!(f.slots[2].busy);
+    f.release(newer, 2);
+    f.release(newer, 9);
+    assert!(!f.slots[2].busy && f.slots[1].busy);
+    // A failed read ends it too.
+    assert!(f.apply(newer, 1, &server, Err("down".into()), 131));
+    assert!(!f.busy());
+}
+
+#[test]
 fn results_of_a_dropped_round_or_a_changed_machine_are_not_applied() {
     let mut f = fleet();
     let (epoch, server) = (f.epoch, f.slots[1].machine.clone());
-    f.busy = true;
+    assert_eq!(claim(&mut f, 100, 15).len(), 2);
+    assert!(f.busy());
     // Sleep (or a reload) drops the round in flight.
     f.forget_round();
-    assert!(!f.busy);
+    assert!(!f.busy());
     assert!(!f.apply(epoch, 1, &server, got("server"), 100));
     assert_eq!(f.slots[1].snapshot, None);
     // A machine at that index that is not the one asked about.

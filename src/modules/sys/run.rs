@@ -4,7 +4,8 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::process::{Command, Stdio};
+use std::os::unix::process::CommandExt;
+use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -18,7 +19,8 @@ pub struct Exit {
     pub stderr: String,
 }
 
-/// Run `argv` (no shell) with stdin closed; kill it when `budget` runs out.
+/// Run `argv` (no shell) with stdin closed; kill it and its process group when `budget`
+/// runs out.
 pub fn run(argv: &[String], budget: Duration) -> Result<Exit, String> {
     run_with(argv, None, budget)
 }
@@ -35,6 +37,8 @@ fn run_with(argv: &[String], input: Option<&str>, budget: Duration) -> Result<Ex
         .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        // Its own process group, so a timeout kills what it started too (the probe's pmset).
+        .process_group(0)
         .spawn()
         .map_err(|e| format!("{program}: {e}"))?;
     // Write on a thread too: a child that never reads must not block us past the budget.
@@ -62,9 +66,9 @@ fn run_with(argv: &[String], input: Option<&str>, budget: Duration) -> Result<Ex
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                // A grandchild may hold the pipes open; leave the readers be.
+                kill(&mut child);
+                // A grandchild that left the group may hold the pipes open; leave the
+                // readers be.
                 return Err(format!("timed out after {} s", budget.as_secs_f32()));
             }
             Err(e) => return Err(format!("{program}: {e}")),
@@ -72,6 +76,14 @@ fn run_with(argv: &[String], input: Option<&str>, budget: Duration) -> Result<Ex
     };
     let (stdout, stderr) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
     Ok(Exit { code: status.code(), stdout, stderr })
+}
+
+/// Kill `child`'s process group, then the child, and reap it (as `message::local` does).
+fn kill(child: &mut Child) {
+    let group = format!("-{}", child.id());
+    let _ = Command::new("/bin/kill").args(["-KILL", "--", &group]).status();
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Connect to `target` (`host:port`) within `budget`, trying each address it resolves to;
@@ -131,6 +143,29 @@ mod tests {
         let err = run(&sh("exec sleep 5"), Duration::from_millis(100)).unwrap_err();
         assert_eq!(err, "timed out after 0.1 s");
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_timeout_kills_the_whole_process_group() {
+        let dir = std::env::temp_dir().join(format!("flick-sys-run-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pidfile = dir.join("pid");
+        // The grandchild (like the probe's pmset) hangs; the shell waits on it.
+        let script = format!("sleep 30 & echo $! > '{}'; wait", pidfile.display());
+        let err = run(&sh(&script), Duration::from_millis(300)).unwrap_err();
+        assert_eq!(err, "timed out after 0.3 s");
+        let pid = std::fs::read_to_string(&pidfile).unwrap().trim().to_string();
+        let alive = || Command::new("/bin/kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
+        // Generous: the kill is sent before `run` returns; only reaping by launchd lags.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut running = true;
+        while running && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+            running = alive();
+        }
+        assert!(!running, "grandchild {pid} still runs");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

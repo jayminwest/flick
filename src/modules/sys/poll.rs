@@ -1,13 +1,17 @@
 //! The fleet's background work. The main thread only starts threads and reads `State`.
 //!
-//! - `sys-fleet`: one round over the due remote machines, one `sys-fleet-<i>` thread per
-//!   machine in parallel; each result lands as soon as it is in. With `again`, the round
-//!   then sleeps that long and posts once, so a visible fleet view keeps polling and a hidden
-//!   one stops.
+//! - `sys-fleet-<i>`: one read of machine `i`, started by a round for each due machine
+//!   that no read is running for (`Slot::busy`, per machine: a slow ssh machine holds only
+//!   itself, flick-fd36). Each result lands as soon as it is in; clearing `busy` always
+//!   wakes `Shared::wait`ers, even when the result was dropped.
+//! - `sys-fleet-tick`: while the fleet view or window shows, at most one pending at a time;
+//!   sleeps `VISIBLE_EVERY` s and posts, and the module's next poll starts the next one if it
+//!   still shows. It, not a round, keeps a visible fleet polling, so a fleet of only
+//!   `via = "local"` machines (no round at all) refreshes this Mac's cache too (flick-1e00).
 //! - `sys-fleet-timer`: only with `refresh_secs > 0`; sleeps, posts, repeats until stopped.
 //!
-//! A round captures `Fleet::epoch`; a reload or sleep bumps it, so a round still in flight
-//! (a wake from sleep, a changed machine list) drops its results (mx-82e6eb).
+//! A round captures `Fleet::epoch`; a reload or sleep bumps it, so a read still in flight
+//! (a wake from sleep, a changed machine list) drops its result (mx-82e6eb).
 
 use std::sync::Arc;
 use std::thread;
@@ -24,56 +28,45 @@ use crate::core::control::{Flags, Reply};
 /// Budget of one ssh call (connect 5 s inside it).
 pub const SSH_BUDGET: Duration = Duration::from_secs(10);
 
-/// Read every remote machine whose last attempt ended `min_age` seconds ago or longer,
-/// unless a round runs. True when a round started.
-pub fn round(shared: &Arc<Shared>, min_age: u64, again: Option<Duration>, hooks: Hooks) -> bool {
+/// Read every remote machine whose last attempt ended `min_age` seconds ago or longer and
+/// that is not being read already, each on its own thread. True when one started.
+pub fn round(shared: &Arc<Shared>, min_age: u64, hooks: Hooks) -> bool {
     let now = (hooks.now)();
-    let (epoch, due) = {
-        let mut st = shared.lock();
-        let due = st.fleet.due(now, min_age);
-        if due.is_empty() || st.fleet.busy {
-            return false;
-        }
-        st.fleet.busy = true;
-        (st.fleet.epoch, due)
-    };
-    let sh = Arc::clone(shared);
-    let spawned = thread::Builder::new().name("sys-fleet".into()).spawn(move || {
-        let workers: Vec<_> = due
-            .into_iter()
-            .filter_map(|(i, machine)| {
-                let sh = Arc::clone(&sh);
-                thread::Builder::new()
-                    .name(format!("sys-fleet-{i}"))
-                    .spawn(move || {
-                        let got = fetch(&machine, hooks);
-                        let stored = sh.lock().fleet.apply(epoch, i, &machine, got, (hooks.now)());
-                        if stored {
-                            sh.changed(hooks);
-                        }
-                    })
-                    .ok()
-            })
-            .collect();
-        for worker in workers {
-            let _ = worker.join();
-        }
-        let mut st = sh.lock();
-        if st.fleet.epoch == epoch {
-            st.fleet.busy = false;
-        }
-        drop(st);
-        sh.wake();
-        if let Some(wait) = again {
-            thread::sleep(wait);
-            (hooks.post)();
-        }
-    });
-    if spawned.is_err() {
-        shared.lock().fleet.busy = false;
-        return false;
+    // Held while the threads start, so none applies its result before it is marked busy.
+    let mut st = shared.lock();
+    let epoch = st.fleet.epoch;
+    let mut started = false;
+    for (i, machine) in st.fleet.due(now, min_age) {
+        let sh = Arc::clone(shared);
+        let spawned = thread::Builder::new().name(format!("sys-fleet-{i}")).spawn(move || {
+            let got = fetch(&machine, hooks);
+            let stored = sh.lock().fleet.apply(epoch, i, &machine, got, (hooks.now)());
+            if stored {
+                sh.changed(hooks);
+            } else {
+                sh.wake();
+            }
+        });
+        st.fleet.slots[i].busy = spawned.is_ok();
+        started |= spawned.is_ok();
     }
-    true
+    started
+}
+
+/// Post once after `every`, unless a tick is pending already. The poll the post leads to
+/// calls this again while the fleet still shows.
+pub fn tick_after(shared: &Arc<Shared>, every: Duration, hooks: Hooks) {
+    let mut st = shared.lock();
+    if st.fleet.ticking {
+        return;
+    }
+    let sh = Arc::clone(shared);
+    let spawned = thread::Builder::new().name("sys-fleet-tick".into()).spawn(move || {
+        thread::sleep(every);
+        sh.lock().fleet.ticking = false;
+        sh.changed(hooks);
+    });
+    st.fleet.ticking = spawned.is_ok();
 }
 
 /// Post every `every` until `stop_timer`.

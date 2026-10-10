@@ -139,7 +139,7 @@ the list, refreshed) or `Hide`.
 
 ## Events and the main thread
 
-`Event` (`src/core/event.rs`): `Started`, `LauncherOpened`, `AppActivated { pid }`,
+`Event` (`src/core/event.rs`): `Started`, `Reloaded`, `LauncherOpened`, `AppActivated { pid }`,
 `PasteboardChanged`, `Wake`, `DisplaysChanged`, `Idle { secs }`, `Active`,
 `ModuleChanged { module }`, `Chord { index, down }`, `WindowChanged { pid }`, `Sleep`,
 `Locked`, `Unlocked`, `TaskChanged { task }` (the `task` module's running task, posted with
@@ -179,6 +179,10 @@ Sources:
   change its accessory activation policy; their order in the menu bar is up to macOS.
 - `app::init` dispatches `Started` to modules, and a config reload to the modules it
   enabled (`Registry::dispatch_to`). It is not published to the socket.
+- A config reload then dispatches `Reloaded` to every module (not published either). A
+  module that announces state to other modules by event sends it again there, so a module
+  the reload just enabled hears it without either importing the other (`message` re-sends
+  `CardsPending` for `kota`, flick-b220).
 - `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
@@ -206,8 +210,9 @@ Sources:
   `Locked`/`Unlocked`, so a task's `task_time` and the activity spans tagged with it agree.
 - `CardsPending { count }` is the one link between `message` (which owns the cards) and
   `kota` (its menu bar badge and `kota status`), which never reads the `messages` table.
-  Producer: `message` (`src/modules/message/pending.rs`), with `events::post` at `Started`
-  and after any drain or verb that changed the count. A card counts when it is `open` with
+  Producer: `message` (`src/modules/message/pending.rs`), with `events::post` at `Started`,
+  at `Reloaded` (even unchanged, for a `kota` the reload enabled) and after any drain or
+  verb that changed the count. A card counts when it is `open` with
   an enabled action (`Card::waits_on_user`), no send, KOTA wait or local run is in flight
   for it, and the user has not dismissed it (a timeout does not count as a dismissal).
   Dismissals are in memory, so a restart counts every stored open card again. Consumer:
@@ -259,13 +264,16 @@ and every hotkey.
   cache and starts a refresh on a thread, at most once per 5 s. Only the first call with an
   empty cache waits for that thread on a `Condvar`, bounded (2.25 s for the 2 s probe); the
   child itself never runs on the main thread. Nothing refreshes unless a verb asks.
-- A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): one round thread,
-  one thread per due machine (a peer's Flick through `core::control::PeerHooks`, or
-  `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5 <target> /bin/sh -s` with the probe on
-  stdin, 10 s budget). The round captures an epoch; a reload or `Sleep` bumps it, so late
-  results are dropped. It polls on `LauncherOpened`, `Wake`, `sys fleet` and when its view
-  opens, then every 15 s only while its view shows (the round sleeps and posts once more),
-  and on its own timer only with `[sys] refresh_secs`; `Sleep` stops the timer. With no
+- A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
+  one thread per due machine that is not being read already (a peer's Flick through
+  `core::control::PeerHooks`, or `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5
+  <target> /bin/sh -s` with the probe on stdin, 10 s budget). `busy` is per machine, so a
+  slow ssh read holds only its own machine; each read's end wakes the `Condvar` waiters.
+  The round captures an epoch; a reload or `Sleep` bumps it, so late results are dropped.
+  It polls on `LauncherOpened`, `Wake`, `sys fleet` and when its view opens, then every
+  15 s only while its view shows (each poll leaves one tick thread pending that sleeps and
+  posts once, so a fleet of only `via = "local"` machines refreshes too), and on its own
+  timer only with `[sys] refresh_secs`; `Sleep` stops the timer. With no
   machines it starts nothing and the root item `sys:fleet` is hidden. No event says a view
   closed, so the module tracks it: `open` of `fleet` or `machine` sets the flag; root
   search asking `items`, `LauncherOpened`, and pushing another module's view clear it.
@@ -575,7 +583,7 @@ writes a commented default (`DEFAULT_CONFIG`).
 - Reload (`Reload Flick Config`, `flick reload`): `modules::reload` builds a fresh registry to
   validate the file. On error nothing changes. Modules still enabled keep their instance and
   get `configure` again. Newly enabled modules start fresh. Migrations run again, the fresh
-  modules get `Started`, then hotkeys rebind.
+  modules get `Started`, every module gets `Reloaded`, then hotkeys rebind.
 - Writes: `config::edit::edit_entries(module, key, &Edit)` appends, replaces or removes one
   `[[<module>.<key>]]` entry, found by its `name` field. It uses `toml_edit`, so comments,
   blank lines and key order outside that entry do not change. Replace and remove also look in
