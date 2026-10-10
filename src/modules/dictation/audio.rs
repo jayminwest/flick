@@ -2,8 +2,6 @@
 //! as the engines read it (a WAV file): the WAV bytes, loudness for the level meter, and
 //! the silence gate.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the recorder and engine workers (flick-8b7c) and the verbs (flick-a085) use these"))]
-
 /// Samples per second, what whisper.cpp and parakeet expect.
 pub const SAMPLE_RATE: u32 = 16_000;
 /// The silence gate's window: 50 ms.

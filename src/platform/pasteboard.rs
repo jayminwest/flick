@@ -76,13 +76,11 @@ impl Snapshot {
 }
 
 /// Copy every item and type of the general pasteboard.
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085)"))]
 pub fn snapshot() -> Snapshot {
     snapshot_of(&NSPasteboard::generalPasteboard())
 }
 
 /// Put `snap` back on the general pasteboard; returns the new change count.
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085)"))]
 pub fn restore(snap: &Snapshot) -> isize {
     restore_to(&NSPasteboard::generalPasteboard(), snap)
 }
@@ -90,7 +88,6 @@ pub fn restore(snap: &Snapshot) -> isize {
 /// Replace the general pasteboard's contents with `text` marked transient and concealed,
 /// so clip history and clipboard managers skip it; returns the new change count (restore
 /// only while it is still this).
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085)"))]
 pub fn set_transient_text(text: &str) -> isize {
     set_transient_text_on(&NSPasteboard::generalPasteboard(), text)
 }

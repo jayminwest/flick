@@ -11,8 +11,6 @@
 //! Each `Start` opens a new epoch. Worker results carry the epoch they were started under;
 //! one from an older epoch (the user cancelled, or started again) is `Stale` and dropped.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "the recorder and engine workers (flick-8b7c) and the verbs (flick-a085) use these"))]
-
 /// Where the current dictation is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {

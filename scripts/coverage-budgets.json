@@ -24,6 +24,7 @@
     "src/modules/dictation/audio.rs": 100.0,
     "src/modules/dictation/clip.rs": 100.0,
     "src/modules/dictation/engine.rs": 97.8,
+    "src/modules/dictation/flow.rs": 100.0,
     "src/modules/dictation/mod.rs": 100.0,
     "src/modules/dictation/proc.rs": 100.0,
     "src/modules/dictation/recorder.rs": 92.2,

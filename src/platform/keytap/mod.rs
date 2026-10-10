@@ -202,21 +202,18 @@ pub fn post_key(keycode: u16) {
 
 /// Press and release `keycode` with exactly `flags` (`CGEventFlags`), whatever modifiers are
 /// physically held, marked as injected so the keys engine passes it untouched.
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085) posts cmd+V"))]
 pub fn post_combo(keycode: u16, flags: u64) {
     post_marked(keycode, flags, &[]);
 }
 
 /// Cmd+V in the frontmost app with explicit flags (a held shift does not make it
 /// cmd+shift+V), marked as injected. Unlike `ax::send_paste`, the keys engine ignores it.
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insertion (flick-a085) pastes"))]
 pub fn paste() {
     post_combo(KEY_V, FLAG_COMMAND);
 }
 
 /// Type `text` into the frontmost app as unicode key events (no clipboard), in chunks of
 /// at most 20 UTF-16 units that never split a surrogate pair. Marked as injected, no flags.
-#[cfg_attr(not(test), expect(dead_code, reason = "dictation insert = \"type\" (flick-a085)"))]
 pub fn type_text(text: &str) {
     for chunk in utf16_chunks(text, UNICODE_CHUNK) {
         post_marked(0, 0, &chunk);
