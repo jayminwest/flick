@@ -31,7 +31,7 @@ Each page has the module's settings and commands, then a manual test checklist.
 
 ## Ideas
 
-- [`ios.md`](ios.md): Flick on the iPhone: Screen Time APIs, supervision, KOTA bridge, Rust core. Not built.
+- iOS companion (idea): moved to the separate `flick-ios` repo (`../flick-ios/docs/design.md`).
 
 ## Change Flick
 
