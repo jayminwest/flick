@@ -15,6 +15,9 @@
 //!    [--partial]` (without `--thread` the reply inherits the question's, flick-3d84). Anything else marks the question failed (`Not sent · ⌘R retries`), puts
 //!    the reason on the window's notice line and, for `message ask`, is the verb's error.
 //!
+//! ⌘R (`retry`) sends a failed question again under its id and moves it to the time of the
+//! retry, so "Thinking…" shows for a full `THINKING_SECS` again (flick-1947).
+//!
 //! `message ask [--thread t] <text...>` answers once ssh is done (`core::later`). Without
 //! `--thread` it asks in the thread the window shows (or would show). `message chat
 //! [--thread t]` shows the window. Both are refused over the network (`NET_DENIED`): a peer
@@ -137,8 +140,8 @@ impl Inbox {
         }
     }
 
-    /// Mark failed question `q` as sent again and queue it, under its own id and with the
-    /// chips it was asked with.
+    /// Mark failed question `q` as sent again, at the time of the retry, and queue it, under
+    /// its own id and with the chips it was asked with.
     fn resend(&mut self, q: Message, thread: &str, cx: &Cx) -> Result<(), String> {
         let attached = self.take_unsent(&q.id);
         let s = &self.settings;
@@ -147,6 +150,9 @@ impl Inbox {
         let argv = ask::argv(&s.kota_host, &s.kota_ask, &q.id, thread)?;
         let m = Message { state: Progress::Done, ..q };
         cx.store.put_message(&m, self.keep())?;
+        // It goes out now: "Thinking…" counts from the retry, and the bubble moves there.
+        cx.store.restamp(&m.id, (self.env.now)());
+        (self.env.wake_after)(model::THINKING_SECS.unsigned_abs() + 1);
         self.chat.notice = None;
         self.chat.queue.push_back(Ask { req: m.id, argv, stdin, answer: None, uploads, attached });
         Ok(())
