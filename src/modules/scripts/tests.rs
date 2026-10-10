@@ -137,3 +137,42 @@ fn the_example_config_lists_every_key() {
     crate::config::example::assert_documents::<Settings>("script");
     crate::config::example::assert_documents::<Script>("script.commands");
 }
+
+fn run_verb(m: &mut Scripts, args: &[&str]) -> Result<String, String> {
+    let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
+    test_cx("", |cx| m.command(&args, cx))
+}
+
+#[test]
+fn run_verb_runs_by_name_with_the_query_quoted() {
+    let mut m = configured(KOTA).unwrap();
+    let cmd = r"printf %s 'it'\''s; rm -rf ~' | ssh mbp-server kota-ask";
+    assert_eq!(run_verb(&mut m, &["run", "Ask KOTA", " it's;", "rm -rf ~ "]), Ok(format!("ran Ask KOTA: {cmd}")));
+    assert_eq!(run_verb(&mut m, &["run", "Lock"]), Ok("ran Lock: pmset displaysleepnow".into()));
+    assert_eq!(
+        runs(),
+        [("Ask KOTA".to_string(), cmd.to_string()), ("Lock".to_string(), "pmset displaysleepnow".to_string())]
+    );
+    assert_eq!(m.verbs(), "script run <name> [query]");
+}
+
+#[test]
+fn run_verb_errors_run_nothing() {
+    let mut m = configured(KOTA).unwrap();
+    let err = |m: &mut Scripts, args: &[&str]| run_verb(m, args).unwrap_err();
+    assert_eq!(err(&mut m, &["run"]), "usage: script run <name> [query]");
+    assert_eq!(err(&mut m, &["run", "Nope"]), "script: no command \"Nope\" (commands: Ask KOTA, Lock)");
+    assert_eq!(err(&mut m, &["run", "Ask KOTA"]), "script: \"Ask KOTA\" needs an argument");
+    assert_eq!(err(&mut m, &["run", "Ask KOTA", "  "]), "script: \"Ask KOTA\" needs an argument");
+    assert_eq!(err(&mut m, &["run", "Lock", "now"]), "script: \"Lock\" takes no argument");
+    let long = "x".repeat(MAX_QUERY + 1);
+    assert_eq!(
+        err(&mut m, &["run", "Ask KOTA", &long]),
+        format!("script: Ask KOTA: argument over {MAX_QUERY} bytes")
+    );
+    assert_eq!(err(&mut m, &["ls"]), "script: unknown command \"ls\"");
+    assert_eq!(err(&mut m, &[]), "script: missing command");
+    let mut none = configured("").unwrap();
+    assert_eq!(err(&mut none, &["run", "Lock"]), "script: no command \"Lock\" (none in [[script.commands]])");
+    assert_eq!(runs().len(), 0);
+}

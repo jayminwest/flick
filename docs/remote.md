@@ -15,7 +15,7 @@ flick --json remote status | jq .ok.last
 ```
 
 - **Who can connect.** Flick listens only on this Mac's Tailscale addresses (100.64.0.0/10 and fd7a:115c:a1e0::/48), never on a LAN or wildcard address. Before it reads a request, it asks `tailscale whois` for the caller's machine name and closes the connection unless that name is in `peers`. Tailscale ACLs still apply. `flick remote status` shows the last connection, allowed or refused, with the name Tailscale gave, so you can fix `peers`.
-- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, or `task rm`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
+- **What peers can do.** Every network request runs as a remote caller (`--remote`), whatever the client sends. Peers cannot `reload`, `flick rebuild` or `cancel`, `keys fire`, `app uninstall`, `quicklink add` or `remove`, `capture` anything, `feedback resolve`, `task rm`, `script run`, or `message card press` and `card focus`, and of `remote` only `remote status`. Activity data needs the same grant as a local agent (`flick activity remote allow`). Everything else (tasks, herdr, `feedback add` and `ls`, windows, app list and open, clipboard) answers.
 - **Privacy.** With network access on, the peers you name can read what those commands return, clipboard history included. Name only machines you control. Nothing is sent anywhere: Flick only answers.
 
 ## Setup and manual tests
@@ -83,6 +83,7 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
    `flick --host <host> remote off`, `flick --host <host> capture screen`,
    `flick --host <host> keys fire x`, `flick --host <host> quicklink add x https://x`,
    `flick --host <host> feedback resolve x`, `flick --host <host> task rm 1`,
+   `flick --host <host> script run x`,
    `flick --host <host> flick rebuild`. Then
    `flick --host <host> events` prints `flick: events: not allowed over the network`; with
    `events = true` in `[remote]` (and a reload) it streams instead.
