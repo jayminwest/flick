@@ -113,8 +113,11 @@ Flick appends the links to the config file as `[[quicklink.links]]` entries. It 
 
 | Key | Action |
 |---|---|
-| ↑ ↓, ⌃P ⌃N | Move the selection |
+| ↑ ↓, ⌃P ⌃N, ⌃K ⌃J | Move the selection (also in the ⌘K menu) |
 | ↵ | Run the selected item |
 | ⇥ | Enter a quicklink argument |
 | ⎋ | Go back, or close |
 | ⌫ in an empty field | Go back |
+| J K, ⌃D ⌃U, G ⇧G on a confirmation | Scroll its rows: one, half a page, top or bottom |
+
+The launcher keys are fixed. ⌃K moves up, so it does not delete to the end of the search text.

@@ -3,6 +3,7 @@
 //! `Handlers`.
 
 mod form;
+mod keys;
 mod rows;
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -13,10 +14,10 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl, NSControlTextEditingDelegate,
-    NSEvent, NSFocusRingType, NSFont, NSFontWeightMedium, NSImage, NSPanel, NSResponder, NSScreen,
-    NSTextAlignment, NSTextField, NSTextFieldDelegate, NSTextView, NSVisualEffectBlendingMode,
-    NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
-    NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
+    NSEvent, NSEventModifierFlags, NSEventType, NSFocusRingType, NSFont, NSFontWeightMedium,
+    NSImage, NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate,
+    NSTextView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSDate, NSDictionary, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
@@ -53,6 +54,12 @@ pub enum Key {
     CmdK,
     /// ⌘↵.
     CmdEnter,
+    /// Half a page up or down (⌃U, ⌃D with a read-only title).
+    PageUp,
+    PageDown,
+    /// The first or last row (G, ⇧G with a read-only title).
+    Top,
+    Bottom,
 }
 
 /// What the panel calls back into. `key` returns true when it handled the key; an unhandled
@@ -76,6 +83,16 @@ define_class!(
         #[unsafe(method(canBecomeKeyWindow))]
         fn can_become_key_window(&self) -> bool {
             true
+        }
+
+        // Vim-style navigation (`keys`), before the field editor turns ⌃K into a kill or J
+        // into typing. A key the screen does not take goes on as usual.
+        #[unsafe(method(sendEvent:))]
+        fn send_event(&self, event: &NSEvent) {
+            if !(event.r#type() == NSEventType::KeyDown && nav_key(event).is_some_and(send_key)) {
+                // SAFETY: the superclass method, with the argument it was called with.
+                unsafe { msg_send![super(self), sendEvent: event] }
+            }
         }
 
         // ⌘K and ⌘↵ reach the window before the field editor sees them. Only handled keys
@@ -153,6 +170,21 @@ define_class!(
         }
     }
 );
+
+/// The navigation key of key-down `event`, given whether the panel shows a read-only title.
+fn nav_key(event: &NSEvent) -> Option<Key> {
+    let flags = edit::held(event.modifierFlags());
+    let held = if flags.is_empty() || flags == NSEventModifierFlags::Shift {
+        keys::Held::Plain
+    } else if flags == NSEventModifierFlags::Control {
+        keys::Held::Control
+    } else {
+        keys::Held::Other
+    };
+    let chars = event.charactersIgnoringModifiers().map(|s| s.to_string());
+    let read_only = with_ui(|ui| ui.form.mode.get() == form::Mode::Title).unwrap_or(false);
+    keys::nav(chars.as_deref().unwrap_or(""), held, read_only)
+}
 
 fn send_key(key: Key) -> bool {
     HANDLERS.get().is_some_and(|h| (h.key)(key))

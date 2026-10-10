@@ -31,7 +31,7 @@ const fn topic(
 
 /// Every topic, in the order the help view lists them.
 pub const TOPICS: [Topic; 24] = [
-    topic("launcher", "Launcher", "Type to search apps and commands. ↵ runs, ⌘K shows actions, esc goes back.", "magnifyingglass", "configuration.md#launcher-keys"),
+    topic("launcher", "Launcher", "Type to search apps and commands. ⌃J ⌃K move, ↵ runs, ⌘K shows actions, esc goes back.", "magnifyingglass", "configuration.md#launcher-keys"),
     topic("windows", "Window Commands", "Type a command such as Left Half, or bind one to a hotkey in [window.keys].", "rectangle.split.2x1", "configuration.md"),
     topic("switcher", "Window Switcher", "Switch Windows lists open windows. The first is the previous one, so ↵ jumps back.", "macwindow.on.rectangle", "configuration.md"),
     topic("desktop", "Desktop Toggle", "One hotkey ([desktop] hotkey) jumps to the most recent app on another desktop.", "rectangle.2.swap", "configuration.md"),

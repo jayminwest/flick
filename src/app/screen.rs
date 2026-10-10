@@ -102,6 +102,9 @@ pub enum ConfirmStep {
     Ignore,
 }
 
+/// Rows that ⌃D and ⌃U scroll: half the visible rows.
+const HALF_PAGE: isize = (crate::ui::VISIBLE_ROWS / 2) as isize;
+
 pub fn confirm_step(destructive: bool, key: Key) -> ConfirmStep {
     match key {
         Key::Enter if destructive => ConfirmStep::Hint,
@@ -109,6 +112,10 @@ pub fn confirm_step(destructive: bool, key: Key) -> ConfirmStep {
         Key::Escape => ConfirmStep::Cancel,
         Key::Up => ConfirmStep::Scroll(-1),
         Key::Down => ConfirmStep::Scroll(1),
+        Key::PageUp => ConfirmStep::Scroll(-HALF_PAGE),
+        Key::PageDown => ConfirmStep::Scroll(HALF_PAGE),
+        Key::Top => ConfirmStep::Scroll(isize::MIN),
+        Key::Bottom => ConfirmStep::Scroll(isize::MAX),
         _ => ConfirmStep::Ignore,
     }
 }
@@ -202,6 +209,10 @@ mod tests {
         assert_eq!(confirm_step(true, Key::Escape), ConfirmStep::Cancel);
         assert_eq!(confirm_step(true, Key::Up), ConfirmStep::Scroll(-1));
         assert_eq!(confirm_step(true, Key::Down), ConfirmStep::Scroll(1));
+        assert_eq!(confirm_step(false, Key::PageUp), ConfirmStep::Scroll(-4));
+        assert_eq!(confirm_step(false, Key::PageDown), ConfirmStep::Scroll(4));
+        assert_eq!(confirm_step(false, Key::Top), ConfirmStep::Scroll(isize::MIN));
+        assert_eq!(confirm_step(false, Key::Bottom), ConfirmStep::Scroll(isize::MAX));
         for key in [Key::Tab, Key::BackTab, Key::Backspace, Key::CmdK] {
             assert_eq!(confirm_step(false, key), ConfirmStep::Ignore);
         }
@@ -213,6 +224,9 @@ mod tests {
         assert_eq!(scrolled(0, 1, 20, 8), 1);
         assert_eq!(scrolled(12, 1, 20, 8), 12);
         assert_eq!(scrolled(0, 1, 3, 8), 0);
+        // G and gg: the bottom and the top, whatever the length.
+        assert_eq!(scrolled(5, isize::MAX, 20, 8), 12);
+        assert_eq!(scrolled(5, isize::MIN, 20, 8), 0);
     }
 
     #[test]

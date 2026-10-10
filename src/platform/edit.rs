@@ -10,7 +10,7 @@ use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags};
 use super::mtm;
 
 /// The modifiers that count; Caps Lock, Fn and the keypad flag don't.
-fn held(flags: NSEventModifierFlags) -> NSEventModifierFlags {
+pub(in crate::platform) fn held(flags: NSEventModifierFlags) -> NSEventModifierFlags {
     flags
         & (NSEventModifierFlags::Shift
             | NSEventModifierFlags::Control
