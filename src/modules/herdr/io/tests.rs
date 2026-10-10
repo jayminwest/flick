@@ -135,12 +135,37 @@ fn a_jump_focuses_the_pane_and_records_a_failure() {
     wait("local focus", || server.calls().contains(&"agent.focus w1:p2".to_string()));
     jump(&sh, &t, "hub", "w1:p1", "WezTerm", HOOKS);
     wait("remote focus", || cli.args().contains(&"--machine hub agent focus w1:p1".to_string()));
-    // Each jump thread holds a clone of `sh` and stores its outcome last: let the hub jump end
-    // so its success cannot overwrite the failure below.
-    wait("the jumps to end", || Arc::strong_count(&sh) == 1);
+    // The hub jump may still be running: being older, its success cannot clear this failure.
     jump(&sh, &t, "off", "w1:p1", "WezTerm", HOOKS);
-    wait("failure", || lock(&sh.info).jump.is_some());
+    wait("the jumps to end", || Arc::strong_count(&sh) == 1);
     assert_eq!(lock(&sh.info).jump.as_deref(), Some("jump to off/w1:p1: off: unreachable"));
+}
+
+/// `slow` fails its focus, but only once a `go` file sits next to the script.
+const SLOW_CLI: &str = r#"
+case "$*" in
+  "--machine slow agent focus"*)
+    while [ ! -e "$(dirname "$0")/go" ]; do sleep 0.01; done
+    echo '{"id":"c","error":{"code":"x","message":"unreachable"}}' >&2; exit 1 ;;
+  "--machine hub agent focus"*) echo '{"id":"c","result":{"type":"ok"}}' ;;
+esac
+"#;
+
+#[test]
+fn an_older_jump_that_ends_last_stores_nothing() {
+    let server = Server::start("jump-order", vec![]);
+    let cli = Cli::new("jump-order", SLOW_CLI);
+    let t = transport(&server, &cli);
+    let sh = shared(&["slow", "hub"]);
+    lock(&sh.info).jump = Some("stale".into());
+    jump(&sh, &t, "slow", "w1:p1", "WezTerm", HOOKS);
+    wait("slow focus", || cli.args().contains(&"--machine slow agent focus w1:p1".to_string()));
+    jump(&sh, &t, "hub", "w1:p1", "WezTerm", HOOKS);
+    wait("hub jump", || lock(&sh.info).jump.is_none());
+    // Only the slow jump is left; let it fail now.
+    std::fs::write(cli.dir.join("go"), "").unwrap();
+    wait("the jumps to end", || Arc::strong_count(&sh) == 1);
+    assert_eq!(lock(&sh.info).jump, None);
 }
 
 #[test]
