@@ -76,6 +76,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSAppleEventsUsageDescription</key><string>With [activity] urls = true, Flick reads the front tab URL of your browser to record it in activity spans on this Mac.</string>
+  <key>NSMicrophoneUsageDescription</key><string>With [dictation] on, Flick records while you hold the dictation chord and transcribes it on this Mac; audio never leaves it.</string>
 </dict>
 </plist>
 PLIST

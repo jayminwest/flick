@@ -55,6 +55,7 @@
     "src/platform/hud/stack.rs": 100.0,
     "src/platform/ink/legend.rs": 100.0,
     "src/platform/ink/model.rs": 100.0,
+    "src/platform/pill/layout.rs": 100.0,
     "src/root.rs": 100.0
   }
 }
