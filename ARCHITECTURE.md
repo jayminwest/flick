@@ -60,6 +60,14 @@ the main thread.
 | `command(&[String], &mut Cx) -> Result<String, String>` | `flick <id> <verb> ...` | `args` starts at the verb. Return `Err(unknown_verb(id, args))` for verbs you do not have. |
 | `verbs() -> &'static str` | `flick help` | One line naming `command`'s verbs, e.g. `toy ping`. Empty: none. |
 
+Teardown is `Drop`, not a trait method. A reload drops the instance of a module it disabled
+(and the unused fresh instances it built to validate the file), on the main thread, with no
+`Cx`. A module that puts something on the system (a menu bar item, an AX observer, the key tap,
+a listener, a worker thread) takes it down in `Drop`. Guard that with the module's own "is
+up" state, so a never-started instance does nothing. Modules with a `Drop`: `activity`,
+`kota`, `keys`, `remote`, `herdr`, `llm`.
+State in the store (e.g. `activity`'s recording flag) stays for a module enabled again.
+
 `Cx` gives a module `query` (the search field text; `""` for events, hotkeys and commands),
 `store`, `ranker`, and `hide()`. Call `cx.hide()` before an action that needs the previous app
 frontmost (open, focus, paste), then return `Outcome::Hide`.
@@ -175,6 +183,7 @@ Sources:
 - `platform::axwatch::follow(pid, on_change)` installs one AX observer on an app; the
   `activity` module follows the front app only while recording with `titles` or `urls` on and
   posts `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
+  `activity`'s `Drop` (a reload disabled it) stops the follow and hides its recording dot.
 - `platform::browser::front_tab_url(bundle)` runs `osascript` and blocks on the browser (and
   on its Automation prompt), so `activity` calls it only from its one URL worker thread,
   which leaves the answer in the module's inbox and posts `ModuleChanged`.
