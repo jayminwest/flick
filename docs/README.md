@@ -21,7 +21,7 @@ Each page has the module's settings and commands, then a manual test checklist.
 - [`herdr.md`](herdr.md): coding agents in herdr, local and over SSH.
 - [`capture.md`](capture.md): screenshots, annotation, drawing on screen.
 - [`feedback.md`](feedback.md): notes about Flick, kept in `feedback.jsonl`.
-- [`message.md`](message.md): messages from agents (KOTA) in a corner card, with history.
+- [`message.md`](message.md): messages from agents (KOTA) in a corner card, with history; the KOTA chat window (threads, inline cards, context chips) and its KOTA-side contract.
 - [`cards.md`](cards.md): the card spec for KOTA: JSON schema v1, actions and their security model, presses back to KOTA, examples. Also `flick message card spec`.
 - [`kota.md`](kota.md): KOTA's presence in the menu bar, pending cards, quick ask; moving off the `k` script command.
 - [`local-llm.md`](local-llm.md): chat with models on your own servers (mlx-serve, ollama); history, model picker; the private mlx-serve kit and `verify-private.sh`.
