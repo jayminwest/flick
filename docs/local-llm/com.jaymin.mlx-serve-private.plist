@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Private mlx-serve instance for Flick's private chat (flick-bc10).
+  Install by hand on the Mac Pro: docs/local-llm/private-server.md.
+
+  Two values are placeholders because the shared daemon's plist is not in any repo.
+  Copy them from `sudo launchctl print system/com.jaymin.mlx-serve` (the "program",
+  "arguments" and "username" lines) before installing:
+    __MLX_SERVE_BINARY__  absolute path of the mlx-serve binary
+    __MODEL_ARGS__        the shared daemon's model-selection arguments (for example
+                          its model or model-dir flag and value, and mtp if used), one
+                          <string> per argument; delete the line if it has none
+  Also check that the shared daemon spells host and port as host and port flags.
+  Everything else is deliberate: no log file, errors only, no prompt or tokenize cache,
+  no disk prefix cache, no LAN share, one resident model evicted after 15 idle minutes,
+  stdout/stderr discarded, no core dumps, loopback only (tailscale serve publishes it).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jaymin.mlx-serve-private</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__MLX_SERVE_BINARY__</string>
+    <string>__MODEL_ARGS__</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>11235</string>
+    <string>--log-file</string>
+    <string>off</string>
+    <string>--log-level</string>
+    <string>error</string>
+    <string>--prefix-cache-entries</string>
+    <string>0</string>
+    <string>--tokenize-cache-entries</string>
+    <string>0</string>
+    <string>--max-resident-models</string>
+    <string>1</string>
+    <string>--idle-evict-secs</string>
+    <string>900</string>
+  </array>
+
+  <!-- Same user as the shared daemon so it reads the same model cache. Check the
+       "username" line of `sudo launchctl print system/com.jaymin.mlx-serve`. -->
+  <key>UserName</key>
+  <string>jaymin</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/jaymin</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/var/empty</string>
+  <key>Umask</key>
+  <integer>63</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardInPath</key>
+  <string>/dev/null</string>
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+  <key>StandardErrorPath</key>
+  <string>/dev/null</string>
+
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>Core</key>
+    <integer>0</integer>
+  </dict>
+  <key>HardResourceLimits</key>
+  <dict>
+    <key>Core</key>
+    <integer>0</integer>
+  </dict>
+</dict>
+</plist>
