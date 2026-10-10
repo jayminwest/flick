@@ -132,6 +132,17 @@ pub fn tooltip(action: &Action) -> Option<String> {
     }
 }
 
+/// One line per disabled action saying why it is off, in action order. A HUD card is a
+/// non-activating panel and Flick is never the active app, so `AppKit` never shows its
+/// tooltips: the reason has to be on the card itself (flick-cbf2).
+pub fn disabled_reasons(actions: &[Action]) -> Vec<String> {
+    let reason = |a: &Action| match &a.kind {
+        Kind::Disabled { reason, .. } => Some(format!("{} is off: {reason}", a.label)),
+        _ => None,
+    };
+    actions.iter().filter_map(reason).collect()
+}
+
 /// A `list` row: `1. item` when ordered, else `• item`.
 pub fn list_row(i: usize, item: &str, ordered: bool) -> String {
     if ordered { format!("{}. {item}", i + 1) } else { format!("• {item}") }
