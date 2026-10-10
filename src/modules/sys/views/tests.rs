@@ -60,6 +60,7 @@ fn keys_parse_back() {
     assert_eq!(Key::parse("fleet", &f), Some(Key::Fleet));
     assert_eq!(Key::parse("head", &f), Some(Key::Head));
     assert_eq!(Key::parse("agents", &f), Some(Key::Agents));
+    assert_eq!(Key::parse("log", &f), Some(Key::Log));
     assert_eq!(Key::parse("fact/3", &f), Some(Key::Fact));
     assert_eq!(Key::parse("machine/a/b", &f), Some(Key::Machine("a/b")));
     assert_eq!(Key::parse("check/web", &f), Some(Key::Check("web")));
@@ -194,4 +195,27 @@ fn fact_icons() {
     let icons: Vec<Icon> = ["load", "memory", "disk", "battery", "thermal"].into_iter().map(fact_icon).collect();
     let want = ["cpu", "memorychip", "internaldrive", "battery.100", "thermometer"].map(Icon::Symbol);
     assert_eq!(icons, want);
+}
+
+#[test]
+fn log_view_shows_the_last_tail() {
+    let (items, footer, text) = log_view(None, 1_000);
+    assert!(items.is_empty() && text.is_empty());
+    assert_eq!(footer, "No log tailed  ·  esc to go back");
+    let mut t = Tail { id: 1, machine: "pro".into(), service: "ollama".into(), shown: "ssh pro tail -n 100 /x".into(), text: None, at: None };
+    let (items, footer, text) = log_view(Some(&t), 1_000);
+    assert_eq!((items[0].id.as_str(), items[0].title.as_str()), ("sys:log", "ollama · pro"));
+    assert_eq!((items[0].subtitle.as_str(), items[0].accessory.as_str()), ("loading… · ssh pro tail -n 100 /x", ""));
+    assert_eq!((footer.as_str(), text.as_str()), ("ollama log · pro  ·  esc to go back", ""));
+    t.at = Some(990);
+    let mut subtitle = |got: Result<String, String>| {
+        t.text = Some(got);
+        let (items, _, text) = log_view(Some(&t), 1_000);
+        assert_eq!(items[0].accessory, "10s ago");
+        (items[0].subtitle.clone(), text)
+    };
+    assert_eq!(subtitle(Ok("a\nb\n".into())), ("2 lines · ssh pro tail -n 100 /x".into(), "a\nb\n".into()));
+    assert_eq!(subtitle(Ok("one".into())).0, "1 line · ssh pro tail -n 100 /x");
+    assert_eq!(subtitle(Ok("\n".into())), ("empty · ssh pro tail -n 100 /x".into(), String::new()));
+    assert_eq!(subtitle(Err("ssh: refused".into())), ("ssh: refused · ssh pro tail -n 100 /x".into(), String::new()));
 }

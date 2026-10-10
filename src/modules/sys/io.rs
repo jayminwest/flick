@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use super::check::{self, Verdict};
 use super::fleet::Fleet;
+use super::jobs::Tail;
 use super::probe::{self, Snapshot};
 use super::run::Exit;
 use super::settings::{Kind, Service};
@@ -52,6 +53,9 @@ pub struct Hooks {
     pub ask: fn(&str, &[String], Flags) -> Result<Reply, String>,
     /// The launcher panel is on screen (main thread).
     pub visible: fn() -> bool,
+    /// Open a URL in its app: `vnc://` in Screen Sharing, a dash in the browser (main
+    /// thread).
+    pub open: fn(&str),
 }
 
 /// One configured service and its last verdict.
@@ -74,6 +78,10 @@ pub struct State {
     pub checking: bool,
     /// The `[[sys.machine]]` fleet (`poll.rs`).
     pub fleet: Fleet,
+    /// The last tail asked for (`jobs.rs`).
+    pub tail: Option<Tail>,
+    /// The last restart's result and when it ended (`jobs.rs`).
+    pub acted: Option<(String, u64)>,
     /// When the last services round started.
     checked_round: Option<u64>,
     epoch: u64,

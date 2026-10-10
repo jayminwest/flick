@@ -1,13 +1,23 @@
 //! Module `sys`: this Mac's health and the services it checks, for the fleet dashboard
 //! (plan flick-b5d0). Steps so far: the probe and a cached `sys snapshot` (flick-bd74),
 //! `[[sys.service]]` checks and `sys services` (flick-4573), the `[[sys.machine]]` fleet and
-//! `sys fleet` (flick-3608), the launcher views (flick-9eb1).
+//! `sys fleet` (flick-3608), the launcher views (flick-9eb1), the fleet actions (flick-4a4c).
 //!
 //! Launcher (`views.rs`): root item `sys:fleet` "Fleet", only while `[[sys.machine]]`
 //! tables exist (with none it is hidden and nothing polls). It opens view `fleet`: a row
 //! per machine (status icon, metrics, age) and per service of each, then Herdr Agents,
 //! which pushes herdr's `agents` view by name. Enter on a machine or a service opens view
-//! `machine`: its state, each probe fact, its services. Read-only; actions are flick-4a4c.
+//! `machine`: its state, each probe fact, its services.
+//!
+//! Actions (cmd+K, `ops.rs`, `act.rs`): a machine offers Screen Sharing (its `vnc` URL) and
+//! Open Dash (its `dash`). A service that this Mac's config defines (its `[[sys.service]]`
+//! under the `via = "local"` machine, or a `[[sys.machine.service]]` of a machine with
+//! `ssh`) offers Tail Log with a `log` (view `log`, the last `act::TAIL_LINES` lines as its
+//! text) and Restart with `restart = true`: a destructive confirm (cmd+Enter) showing the
+//! exact `launchctl kickstart -k` command, then it runs here or over ssh, never through a
+//! peer's Flick. `flick sys tail [<machine>] <service>` prints the lines;
+//! `flick sys restart [<machine>] <service>` prints the command and restarts only with
+//! `--yes`. Both are in `NET_DENIED` (they run code and read files).
 //!
 //! `flick sys snapshot [--json]`: CPU load, memory, disks, battery, thermal and uptime
 //! from one run of `probe::PROBE` (stock tools, no FFI), plus the services' last verdicts.
@@ -34,9 +44,12 @@
 //! every `refresh_secs` when set. Sleep stops the timer and drops rounds in flight. Idle
 //! cost: with no machines, or `refresh_secs = 0` and the launcher closed, nothing runs.
 
+mod act;
 mod check;
 mod fleet;
 mod io;
+mod jobs;
+mod ops;
 mod poll;
 mod probe;
 mod report;
@@ -54,7 +67,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::config::Section;
 use crate::core::control::PeerHooks;
-use crate::core::{Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use crate::core::{Action, Cx, Event, Item, ItemId, ListView, Module, Outcome, unknown_verb};
 use fleet::{Fleet, Local, VISIBLE_EVERY};
 use io::{Hooks, Shared, State};
 use settings::Settings;
@@ -86,6 +99,7 @@ enum Go {
     Machine(String),
     Agents,
     Fleet,
+    Log,
     Stay(Option<String>),
 }
 
@@ -259,12 +273,17 @@ impl Module for Sys {
         match view {
             "fleet" => Some(self.show(view, "Search machines and services…")),
             "machine" if self.detail.is_some() => Some(self.show(view, "Search this machine…")),
+            "log" => Some(self.show_log()),
             _ => None,
         }
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        if view.name == "log" {
+            return self.fill_log(view);
+        }
         let now = (self.hooks.now)();
+        let acted = jobs::acted(self.shared.lock().acted.as_ref(), now).map(str::to_string);
         let detail = self.detail.as_deref();
         let (items, footer) = self.with_seen(|seen, _| {
             if view.name == "machine" {
@@ -274,7 +293,10 @@ impl Module for Sys {
                 (views::fleet_items(seen), format!("{}  ·  esc to go back", views::summary_line(seen)))
             }
         });
-        view.footer = footer;
+        view.footer = match acted {
+            Some(a) => format!("{a}  ·  {footer}"),
+            None => footer,
+        };
         // The bonus keeps the view's order (machine, then its services) for equal scores.
         let order: HashMap<String, usize> =
             items.iter().enumerate().map(|(i, item)| (item.id.to_string(), i)).collect();
@@ -291,6 +313,7 @@ impl Module for Sys {
             }
             Some(Key::Agents) => Go::Agents,
             Some(Key::Fleet | Key::Head | Key::Fact) => Go::Fleet,
+            Some(Key::Log) => Go::Log,
             None => Go::Stay(None),
         });
         match go {
@@ -303,8 +326,23 @@ impl Module for Sys {
                 Outcome::Push(ListView::new("herdr", "agents"))
             }
             Go::Fleet => Outcome::Push(ListView::new(ID, "fleet")),
+            Go::Log => self.tail_again(),
             Go::Stay(status) => Outcome::Stay(status),
         }
+    }
+
+    /// Machines: Screen Sharing, Open Dash. Services this Mac's config defines: Tail Log,
+    /// Restart (`ops.rs`).
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.menu(id)
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        self.run_action(id, key, cx)
+    }
+
+    fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
+        self.confirm_restart(token)
     }
 
     /// `--json` (`cx.json`) answers with the JSON in `report.rs`.
@@ -313,6 +351,8 @@ impl Module for Sys {
             [v] if v == "snapshot" => self.snapshot(cx.json),
             [v] if v == "services" => Ok(self.services(cx.json)),
             [v] if v == "fleet" => Ok(self.fleet(cx.json, cx.remote)),
+            [v, rest @ ..] if v == "tail" => self.tail_command(rest),
+            [v, rest @ ..] if v == "restart" => self.restart_command(rest),
             _ => Err(unknown_verb(ID, args)),
         }
     }
@@ -342,7 +382,7 @@ impl Module for Sys {
     }
 
     fn verbs(&self) -> &'static str {
-        "sys snapshot | sys services | sys fleet"
+        "sys snapshot | sys services | sys fleet | sys tail [<machine>] <service> | sys restart [<machine>] <service> [--yes]"
     }
 }
 

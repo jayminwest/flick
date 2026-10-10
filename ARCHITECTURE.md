@@ -190,7 +190,7 @@ Sources:
   `activity` (the status item's Stop Recording, its tab URL worker), `herdr` (its I/O
   threads and notification clicks), `capture` (its shutter thread, and the annotation
   editor's `on_done` when it closes), `sys` (its probe, service-check and fleet threads,
-  and its fleet timer),
+  its fleet timer, and its tail and restart threads),
   `dictation` (its recorder and transcription threads, the pill's Esc, and its
   modifier-release poll), `kota` (its poll round, its timer, its ask thread, and its menu
   bar item's picks and menu opens), `llm` (its model-list and reply-stream threads, at most
@@ -534,7 +534,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `quicklink add|remove`, `capture` (any verb), `feedback resolve`, `task rm`, `script run`,
   `message card press|focus`, `dictation` (any verb: a peer never starts the microphone) or
   `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), `llm` (any verb:
-  a peer never makes this Mac send requests to model servers), and of `remote` only
+  a peer never makes this Mac send requests to model servers), `sys restart|tail` (a peer
+  never restarts this Mac's services or reads its logs), and of `remote` only
   `remote status`. A table verb may be
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything
@@ -547,6 +548,12 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `src/modules/sys/report.rs`), and `sys fleet` only reads what this Mac's own `[[sys.machine]]`
   polling found: for a remote caller (`Cx::remote`) it starts no round, so a peer never makes
   this Mac ssh or ask its peers.
+  The fleet's actions never go through a peer's Flick (flick-4a4c): `sys tail` and
+  `sys restart` (denied over the network) run `tail -n 100 -- <log>` and
+  `launchctl kickstart -k gui/<uid>/<label>` on this Mac or over this Mac's own ssh, only for
+  a service this Mac's config defines with `log` or `restart = true`, and the launcher's
+  Restart is a destructive `Confirm` whose row is the exact command. A label, path or command
+  from a peer's snapshot never runs.
   Service checks, including `command` argvs, and ssh targets come only from this Mac's config.
   `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
   round, at most one per 10 s) are allowed on purpose too.
