@@ -275,6 +275,7 @@ impl State {
             eprintln!("flick: store migration failed: {e}");
         }
         self.registry.dispatch_to(&started, Event::Started, &mut self.env.cx(""));
+        self.registry.dispatch(Event::Reloaded, &mut self.env.cx(""));
         let bound = self.bind();
         self.enter(None);
         bound.map(|()| "Config reloaded".into())

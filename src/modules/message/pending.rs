@@ -15,7 +15,10 @@
 //! counts again until the user acts on or dismisses it.
 //!
 //! `announce` runs at `Started` (the first count), after every `ModuleChanged` drain and
-//! after every verb, and sends the event only when the count changed.
+//! after every verb, and sends the event only when the count changed. At `Reloaded` it
+//! sends the count even when unchanged: a module the reload enabled (`kota`) got `Started`
+//! but has not heard it yet (flick-b220). `message` never learns who started; the core
+//! tells every module that a reload ended, so neither imports the other.
 
 use super::store::Messages;
 use super::{Inbox, card};
