@@ -23,7 +23,7 @@ pub enum Corner {
 }
 
 impl Corner {
-    fn top(self) -> bool {
+    pub fn top(self) -> bool {
         matches!(self, Corner::TopRight | Corner::TopLeft | Corner::Top)
     }
 }

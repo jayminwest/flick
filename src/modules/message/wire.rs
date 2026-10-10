@@ -44,6 +44,11 @@ pub struct Env {
     pub show_card: fn(&Card, &CardUi, &Placement, &Options) -> bool,
     /// Redraw a structured card if it shows; true when it does.
     pub update_card: fn(&Card, &CardUi, &Options) -> bool,
+    /// Move the keyboard into the newest card without activating Flick; false when none
+    /// shows.
+    pub focus: fn() -> bool,
+    /// Give the keyboard back if a card holds it; true when one did.
+    pub unfocus: fn() -> bool,
     /// Register the HUD's press and dismiss handlers (once; later calls do nothing).
     pub subscribe: fn(),
     /// Take what the HUD handlers queued.
@@ -77,6 +82,8 @@ impl Default for Env {
             run_local: local::exec,
             show_card: hud::show_card,
             update_card: hud::update_card,
+            focus: hud::focus_top,
+            unfocus: hud::unfocus,
             subscribe,
             take_notes,
             exec: run::exec,

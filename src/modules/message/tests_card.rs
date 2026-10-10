@@ -1,7 +1,7 @@
 //! `message card` verbs over the shared fixture: post, replace, `reply_to`, the silent `done`
 //! update of a dismissed card, origin, and errors. Nothing reaches `AppKit`.
 
-use super::tests::{Fixture, inbox, take_log};
+use super::tests::{Fixture, inbox, set_keyboard, take_log};
 use super::*;
 use crate::core::card as core_card;
 
@@ -143,4 +143,16 @@ fn bad_cards_and_verbs_are_errors_and_show_nothing() {
     }
     assert_eq!(f.run(&mut m, false, &["card", "ls"]), Ok(String::new()));
     assert_eq!(card::body(&core_card::parse(r#"{"id":"a","title":"T"}"#, core_card::Origin::Local).unwrap().card), "");
+}
+
+#[test]
+fn card_focus_moves_the_keyboard_into_the_newest_card() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    set_keyboard(1);
+    assert_eq!(f.run(&mut m, false, &["card", "focus"]), Ok("A card has the keyboard; Esc gives it back".into()));
+    set_keyboard(0);
+    assert_eq!(f.run(&mut m, false, &["card", "focus"]), Err("No card shows".into()));
+    assert_eq!(take_log(), ["focus", "focus"]);
+    assert!(f.run(&mut m, false, &["card", "focus", "c1"]).unwrap_err().starts_with("usage:"));
+    set_keyboard(1);
 }
