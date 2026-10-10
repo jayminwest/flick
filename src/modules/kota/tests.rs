@@ -168,10 +168,11 @@ fn verbs_and_unknown_commands() {
 #[test]
 fn cards_pending_feeds_status() {
     let mut k = configured("").unwrap();
-    event(&mut k, Event::CardsPending { count: 2 });
+    event(&mut k, Event::CardsPending { count: 2, unread: 1 });
     let json: serde_json::Value = serde_json::from_str(&command(&mut k, &["status"], true).unwrap()).unwrap();
-    assert_eq!(json["pending"], 2);
-    assert!(command(&mut k, &["status"], false).unwrap().contains("\n2 waiting\n"));
-    event(&mut k, Event::CardsPending { count: 0 });
-    assert!(!command(&mut k, &["status"], false).unwrap().contains("waiting"));
+    assert_eq!((&json["pending"], &json["unread"]), (&serde_json::json!(2), &serde_json::json!(1)));
+    assert!(command(&mut k, &["status"], false).unwrap().contains("\n2 waiting\n1 unread\n"));
+    event(&mut k, Event::CardsPending { count: 0, unread: 0 });
+    let text = command(&mut k, &["status"], false).unwrap();
+    assert!(!text.contains("waiting") && !text.contains("unread"), "{text}");
 }

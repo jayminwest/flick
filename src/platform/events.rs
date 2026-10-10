@@ -111,7 +111,7 @@ pub fn start(sink: fn(Event)) {
 }
 
 /// Seconds since the last keyboard or mouse input in this login session.
-fn idle_secs() -> f64 {
+pub fn idle_secs() -> f64 {
     // SAFETY: plain C call with valid enum values; it only reads input timestamps.
     unsafe { CGEventSourceSecondsSinceLastEventType(COMBINED_SESSION, ANY_INPUT) }
 }

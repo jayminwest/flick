@@ -18,6 +18,7 @@ style = "panel"          # panel | notification | both | none (history only)
 position = "top-right"   # top-right | top-left | bottom-right | bottom-left | top | bottom
 width = 380              # points, 240 to 900
 timeout_secs = 20        # 0 keeps the card until dismissed
+unprompted_timeout_secs = 0  # how long the card of a post nobody asked for stays; 0 until dismissed
 max_cards = 4            # cards shown at once; older ones collapse into a "+N more" pill
 max_history = 50         # messages kept outside chat threads
 chat_history = 200       # messages kept per chat thread
@@ -40,9 +41,19 @@ All keys are optional; the values above are the defaults except `name` (default 
 
 - Each message is its own card, keyed by its id: posting (or `show`ing) an id that already shows redraws that card in place, without a sound; a new id stacks a new card nearest the `position` corner, older ones moving away from it. At most `max_cards` show; the rest wait in a `+N more` pill and come back as cards close. The stack sits on the screen under the pointer when its first card appeared, and stays there until it empties; it is above other windows and on every Space.
 - It never activates Flick and takes the keyboard only when you click one of its text fields or use `card_hotkey` (see [Keyboard](#keyboard)), so typing stays in the app you are using.
-- **Click** opens the post's `--url` (http and https only) and dismisses the card; without a link, a click just dismisses it. The **x** in the top right corner just closes it. **Esc** dismisses every card from any app (except while a card has the keyboard: then Esc only gives it back); that needs Accessibility for Flick (without it, use a click or the timeout). Each card hides after its own `timeout_secs`, later if the pointer rests on it.
+- **Click** opens the post's `--url` (http and https only) and dismisses the card; without a link, a click just dismisses it. The **x** in the top right corner just closes it. **Esc** dismisses every card from any app (except while a card has the keyboard: then Esc only gives it back); that needs Accessibility for Flick (without it, use a click or the timeout). Each card hides after its own `timeout_secs`, later if the pointer rests on it. The time runs only while you are at the Mac: if there was no keyboard or mouse input since the card showed (you were away, the screen was locked or the display asleep), or the Mac slept, it stays until you are back and then gets its full time again.
 - The body is plain text with light markdown cleanup: `**`, `__` and backticks dropped, `#` headings and `-`/`*` bullets as plain lines and `•`, `[text](url)` as `text (url)`. The card shows up to 18 lines; the list has the full text.
 - `style = "notification"` or `"both"` also posts a macOS notification (needs notification permission; clicking it does nothing yet).
+
+## Unread posts
+
+A post nobody asked for, `message post` without `--reply-to` (and not `--pending`, `--partial` or in a chat thread), is unread until you see it. KOTA's unprompted nudges are such posts.
+
+- Its card stays until you close it (`unprompted_timeout_secs`, default 0). Esc closes it like any message card.
+- Closing its card (x, a click, Esc) reads it. So does opening the message list (the launcher item, `hotkey`, or Inbox in the KOTA menu): rows read that way show `Unread` in that list, and their corner cards close. A timeout, `message hide` or a restart leave it unread.
+- The KOTA menu bar badge counts unread posts with the cards waiting on you. `flick events` sends `{"event":"cards_pending","count":<cards>,"unread":<posts>}`.
+- `message ls` marks it `(unread)`; `ls --json` has `"unread": true` (absent when read). A peer can check whether its post was seen.
+- Replies (`--reply-to`), placeholders and chat posts behave as before: `timeout_secs`, never unread.
 
 ## Pending posts and replies
 
@@ -62,7 +73,7 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
 
 - Posting the same `id` again replaces the card in place. `reply_to` (a pending message id) replaces that placeholder, as `post --reply-to` does.
 - A card in state `open` with an enabled action stays for `card_timeout_secs` (default: until closed; Esc leaves it); a `pending` card (the hourglass, without sound or notification) stays until it is updated or closed; other cards hide after `timeout_secs`.
-- A card you dismissed (`card dismiss`, its x or Esc) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently. A card that only timed out shows any update.
+- A card you dismissed (`card dismiss`, its x or Esc) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently. A card that only timed out shows any update. Dismissals are stored, so they hold across a restart (and a dismissed card stays out of the KOTA badge).
 
 ### Presses
 

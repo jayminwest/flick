@@ -146,8 +146,8 @@ impl Inbox {
                     // The HUD has no use for the answer; errors already show on the card.
                     let _ = self.press(&card, &action, values, cx);
                 }
-                Note::Dismissed(id) => self.forget(id),
-                Note::Expired(id) => self.expire(id),
+                Note::Dismissed(id) => self.forget(&id, cx),
+                Note::Expired(id) => self.expire(&id, cx),
             }
         }
         for done in self.worker.take() {
@@ -218,7 +218,7 @@ impl Inbox {
             Do::Dismiss if reply => return self.send(id, action, values, true, cx),
             Do::Dismiss => {
                 (self.env.dismiss)(id);
-                self.forget(id.into());
+                self.forget(id, cx);
                 return Ok(Pressed::Closed);
             }
             Do::OpenUrl(url) => {
@@ -312,7 +312,7 @@ impl Inbox {
         match done.exit {
             Exit::Sent if ui.close_on_sent => {
                 (self.env.dismiss)(&done.card);
-                self.forget(done.card);
+                self.forget(&done.card, cx);
             }
             Exit::Sent => {
                 ui.phase = Phase::Waiting { since: (self.env.now)() };

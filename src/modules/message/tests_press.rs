@@ -160,7 +160,7 @@ fn hud_dismissals_mark_the_card_and_drop_its_state() {
     settle(&mut f, &mut m);
     queue(Note::Dismissed("c1".into()));
     settle(&mut f, &mut m);
-    assert!(m.ui.is_empty() && m.dismissed.contains("c1"));
+    assert!(m.ui.is_empty() && f.closed("c1"));
     take_log();
     // A done update of a card the user closed stays in history (plan risk 10).
     let done = r#"{"id":"c1","title":"Deploy?","state":"done"}"#;
@@ -174,13 +174,13 @@ fn dismiss_closes_the_card() {
     press("later");
     settle(&mut f, &mut m);
     assert_eq!(take_log(), ["dismiss c1"]);
-    assert!(m.dismissed.contains("c1") && m.ui.is_empty());
+    assert!(f.closed("c1") && m.ui.is_empty());
     // A dismiss that replies closes the card once the send succeeds.
     let (mut f, mut m) = posted("[message]\naction_command = [\"sent\"]");
     press("bye");
     settle(&mut f, &mut m);
     assert_eq!(take_log(), ["update c1 Open|true|None|None|0|true", "dismiss c1"]);
-    assert!(m.dismissed.contains("c1") && m.ui.is_empty());
+    assert!(f.closed("c1") && m.ui.is_empty());
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn stray_presses_do_nothing() {
     }
     settle(&mut f, &mut m);
     assert_eq!(take_log(), [""; 0]);
-    assert!(m.ui.is_empty() && !m.dismissed.contains("c1"), "{:?}", m.ui);
+    assert!(m.ui.is_empty() && !f.closed("c1"), "{:?}", m.ui);
     f.local = true;
     assert_eq!(f.run(&mut m, false, &["card", "press", "c1", "web"]), Err("Card c1 is done: its actions are off".into()));
     // An error card takes presses again (retry).

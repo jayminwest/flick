@@ -1,5 +1,6 @@
-//! The KOTA menu bar item: the presence glyph plus the pending-card count, the tooltip and
-//! the menu (`view::menu`), kept in step with the presence on the main thread.
+//! The KOTA menu bar item: the presence glyph plus the count of pending cards and unread
+//! posts (`view::Badge`), the tooltip and the menu (`view::menu`), kept in step with the
+//! presence on the main thread.
 //!
 //! The item shows only once the module has started, while the `[kota]` table sets a key
 //! (the Mac that polls) and `status_item` is true; otherwise it is hidden, so a Mac
@@ -56,7 +57,7 @@ impl Kota {
         self.polling() && self.settings.status_item
     }
 
-    /// Show, update or hide the item to match the presence and the pending count.
+    /// Show, update or hide the item to match the presence and the badge.
     pub(super) fn sync_item(&mut self) {
         if !self.wants_item() {
             if self.shown.take().is_some() {
@@ -68,9 +69,9 @@ impl Kota {
         let offset = (self.hooks.utc_offset)(i64::try_from(now).unwrap_or(0));
         let p = self.shared.lock();
         let next = (
-            view::title(&p.presence, self.pending),
+            view::title(&p.presence, self.badge),
             view::tooltip(&p.presence, now),
-            view::menu(&p.presence, self.pending, now, offset),
+            view::menu(&p.presence, self.badge, now, offset),
         );
         drop(p);
         if self.shown.as_ref() == Some(&next) {

@@ -30,7 +30,7 @@ fn started(text: &str) -> Kota {
 #[test]
 fn no_kota_key_means_no_item() {
     let mut k = configured("").unwrap();
-    for e in [Event::Started, Event::CardsPending { count: 3 }, Event::ModuleChanged { module: ID }] {
+    for e in [Event::Started, Event::CardsPending { count: 3, unread: 0 }, Event::ModuleChanged { module: ID }] {
         event(&mut k, e);
     }
     drop(k);
@@ -50,8 +50,11 @@ fn the_item_follows_the_presence_and_the_badge() {
     event(&mut k, Event::ModuleChanged { module: ID });
     event(&mut k, Event::LauncherOpened);
     assert!(take_ui().is_empty());
-    event(&mut k, Event::CardsPending { count: 2 });
+    event(&mut k, Event::CardsPending { count: 2, unread: 0 });
     assert_eq!(take_ui(), [THINKING.replace("show K… ", "show K… 2 ")]);
+    // An unread post adds to the badge.
+    event(&mut k, Event::CardsPending { count: 1, unread: 1 });
+    assert_eq!(take_ui(), [THINKING.replace("show K… ", "show K… 2 ")], "the Inbox row changed");
     event(&mut k, Event::Locked);
     assert_eq!(take_ui(), [THINKING.replace("show K… ", "show K? 2 ").replace("<1m\n", "<1m (stale)\n")]);
     // Disabled or dropped: hidden.
@@ -79,7 +82,7 @@ fn emptying_the_table_hides_it() {
     take_ui();
     k.configure(&parse("").unwrap().section(ID).unwrap().unwrap()).unwrap();
     assert_eq!(take_ui(), ["hide"]);
-    event(&mut k, Event::CardsPending { count: 1 });
+    event(&mut k, Event::CardsPending { count: 1, unread: 0 });
     assert!(take_ui().is_empty());
 }
 

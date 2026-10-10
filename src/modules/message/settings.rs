@@ -53,6 +53,8 @@ pub(super) struct Settings {
     pub(super) width: f64,
     /// Seconds the panel stays; 0 keeps it until dismissed.
     pub(super) timeout_secs: u64,
+    /// Seconds the card of a post nobody asked for stays (`seen.rs`); 0 until dismissed.
+    pub(super) unprompted_timeout_secs: u64,
     /// Cards shown at once; older ones collapse into a `+N more` pill.
     pub(super) max_cards: usize,
     /// Messages kept in history outside threads (`post` without `--thread`).
@@ -92,6 +94,7 @@ impl Default for Settings {
             position: Position::TopRight,
             width: 380.0,
             timeout_secs: 20,
+            unprompted_timeout_secs: 0,
             max_cards: 4,
             max_history: 50,
             chat_history: 200,
