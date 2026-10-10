@@ -73,6 +73,7 @@ impl Fixture {
     fn request(&self, rev: Option<&str>) -> Request {
         Request {
             source: self.src(),
+            home: self.src(),
             rev: rev.map(String::from),
             gates: false,
             restart: false,
@@ -104,6 +105,17 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.dir);
     }
+}
+
+/// flick-be14: a build of another worktree bakes the checkout this Flick tracks, so the
+/// installed app's "Rebuild Available" still compares against it, not the worktree.
+#[test]
+fn a_worktree_build_bakes_the_tracked_checkout() {
+    let f = Fixture::new("home", QUIET);
+    let home = f.dir.join("main");
+    let p = f.build(Request { home: home.clone(), ..f.request(Some("HEAD")) });
+    assert_eq!(p.phase, Phase::Installed, "{}", f.log());
+    assert!(f.log().contains(&format!("source={} time=unset", home.display())), "{}", f.log());
 }
 
 #[test]
@@ -299,6 +311,7 @@ fn end_to_end_build_into_a_temp_install_dir() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let install = dir.join("install");
     let req = Request {
+        home: source.clone(),
         source,
         rev: Some("HEAD".into()),
         gates: false,

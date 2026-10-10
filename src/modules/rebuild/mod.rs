@@ -138,10 +138,12 @@ impl Rebuild {
         }
     }
 
-    /// A build of `rev` (`None`: the tree as it is) of checkout `source`.
+    /// A build of `rev` (`None`: the tree as it is) of checkout `source`. The installed app
+    /// keeps tracking this Flick's checkout (`home`), whichever tree it was built from.
     fn request(&self, rev: Option<String>, source: PathBuf, open_log: bool) -> Request {
-        let (gates, restart, install_dir) = (self.gates, self.restart, self.install_dir.clone());
-        Request { source, rev, gates, restart, install_dir, open_log }
+        let (home, gates, restart) = (self.source.clone(), self.gates, self.restart);
+        let install_dir = self.install_dir.clone();
+        Request { source, home, rev, gates, restart, install_dir, open_log }
     }
 
     /// Start a build and show its progress; a build already running shows instead.
