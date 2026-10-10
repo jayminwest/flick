@@ -200,3 +200,37 @@ fn the_root_item_offers_open_fleet_window() {
     settle(&m);
     assert_eq!(tried(&m), [None, Some(1_000), Some(1_000)]);
 }
+
+#[test]
+fn cmd_r_says_refreshing_then_refreshed_ahead_of_the_filter() {
+    fresh();
+    // `slow` answers after 300 ms, so the round still runs when the window redraws.
+    let mut m = sys(&FLEET.replace("ssh = \"pro\"", "ssh = \"slow\""), HOOKS);
+    event(&mut m, Event::Started);
+    ask(&mut m, &["window"], false).unwrap();
+    settle(&m);
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert_eq!(notice(), None, "showing it is not a cmd+R");
+    send(&mut m, Note::Filter("pro".into()));
+    let showing = "Showing “pro”  ·  Return on an empty field shows all";
+    SHOWN.with(|s| s.borrow_mut().notes.push(Note::Refresh));
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert_eq!(notice(), Some(format!("Refreshing…  ·  {showing}")));
+    settle(&m);
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert_eq!(notice(), Some(format!("Refreshed  ·  {showing}")));
+    // Still there within `REFRESHED_FOR` s, gone at the first redraw after.
+    m.hooks.now = || 1_002;
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert_eq!(notice(), Some(format!("Refreshed  ·  {showing}")));
+    m.hooks.now = || 1_003;
+    event(&mut m, Event::ModuleChanged { module: ID });
+    assert_eq!(notice().as_deref(), Some(showing));
+    // Without a filter it stands alone; cmd+W drops it.
+    send(&mut m, Note::Filter(String::new()));
+    send(&mut m, Note::Refresh);
+    assert_eq!(notice().as_deref(), Some("Refreshed"));
+    send(&mut m, Note::Close);
+    ask(&mut m, &["window"], false).unwrap();
+    assert_eq!(notice(), None);
+}

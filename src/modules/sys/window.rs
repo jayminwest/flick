@@ -11,7 +11,10 @@
 //!   `VISIBLE_EVERY` s (`Sys::poll`). Hidden, it costs nothing.
 //! - The input filters: Return applies its text (machines whose name, state or `via`
 //!   holds it with all their services, else only the services whose name, kind or status
-//!   does); Return on an empty input shows everything again. cmd+R polls every machine now.
+//!   does); Return on an empty input shows everything again. cmd+R polls every machine now
+//!   (flick-4e70): the notice says `Refreshing…` while that round runs, then `Refreshed`
+//!   until the first redraw `REFRESHED_FOR` s later (at the latest the next 15 s tick),
+//!   ahead of the filter's notice.
 //! - The surface's handlers only queue a `Note` and post `ModuleChanged` (mx-fcbc43); the
 //!   module drains them on the main thread, then redraws while it shows.
 
@@ -66,6 +69,19 @@ pub fn note(k: Keystroke, input: impl FnOnce() -> String) -> Option<Note> {
     }
 }
 
+/// How long `Refreshed` stays after a cmd+R round, in seconds.
+pub const REFRESHED_FOR: u64 = 3;
+
+/// Where the last cmd+R stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refresh {
+    Idle,
+    /// Its round runs.
+    Running,
+    /// Its round ended at this time.
+    Done(u64),
+}
+
 /// The window's state in the module.
 pub struct Win {
     pub hooks: Hooks,
@@ -73,11 +89,27 @@ pub struct Win {
     opened: bool,
     /// The last filter applied, trimmed; empty for none.
     filter: String,
+    refresh: Refresh,
 }
 
 impl Win {
     pub fn new(hooks: Hooks) -> Win {
-        Win { hooks, opened: false, filter: String::new() }
+        Win { hooks, opened: false, filter: String::new(), refresh: Refresh::Idle }
+    }
+
+    /// Move the cmd+R state on: a round that ran and no longer `busy` is `Done` at `now`;
+    /// `Done` ends `REFRESHED_FOR` s later. The notice text, if any.
+    fn refresh_notice(&mut self, busy: bool, now: u64) -> Option<&'static str> {
+        self.refresh = match self.refresh {
+            Refresh::Running if !busy => Refresh::Done(now),
+            Refresh::Done(at) if now.saturating_sub(at) >= REFRESHED_FOR => Refresh::Idle,
+            other => other,
+        };
+        match self.refresh {
+            Refresh::Idle => None,
+            Refresh::Running => Some("Refreshing…"),
+            Refresh::Done(_) => Some("Refreshed"),
+        }
     }
 
     /// Whether the window shows.
@@ -197,9 +229,14 @@ pub fn header(seen: &[Seen], busy: bool) -> (String, Status) {
     (format!("{}  ·  ⌘R refresh  ·  Esc hides", summary_line(seen)), status)
 }
 
-/// The notice line for `filter`.
-pub fn notice(filter: &str) -> Option<String> {
-    (!filter.is_empty()).then(|| format!("Showing “{filter}”  ·  Return on an empty field shows all"))
+/// The notice line: the cmd+R state `refresh`, then what `filter` shows.
+pub fn notice(refresh: Option<&str>, filter: &str) -> Option<String> {
+    let filter = (!filter.is_empty()).then(|| format!("Showing “{filter}”  ·  Return on an empty field shows all"));
+    match (refresh, filter) {
+        (Some(r), Some(f)) => Some(format!("{r}  ·  {f}")),
+        (Some(r), None) => Some(r.to_string()),
+        (None, f) => f,
+    }
 }
 
 const USAGE: &str = "sys: usage: sys window [--snapshot <png>]";
@@ -220,27 +257,38 @@ impl Sys {
         for note in (self.win.hooks.take)() {
             match note {
                 Note::Filter(text) => text.trim().clone_into(&mut self.win.filter),
-                Note::Refresh => self.poll(Poll::Now),
-                Note::Close => (self.win.hooks.hide)(),
+                Note::Refresh => {
+                    self.poll(Poll::Now);
+                    self.win.refresh = Refresh::Running;
+                }
+                Note::Close => {
+                    (self.win.hooks.hide)();
+                    self.win.refresh = Refresh::Idle;
+                }
             }
         }
     }
 
     /// Redraw the window if it shows.
-    pub(super) fn window_refresh(&self) {
+    pub(super) fn window_refresh(&mut self) {
         if self.win.visible() {
             self.window_draw();
         }
     }
 
-    fn window_draw(&self) {
-        let busy = self.shared.lock().fleet.busy();
+    fn window_draw(&mut self) {
+        let (busy, reading) = {
+            let st = self.shared.lock();
+            let local = st.fleet.has_local() && (st.probing || st.checking);
+            (st.fleet.busy(), st.fleet.busy() || local)
+        };
+        let refresh = self.win.refresh_notice(reading, (self.hooks.now)());
         let (bubbles, (subtitle, status)) =
             self.with_seen(|seen, _| (bubbles(seen, &self.win.filter), header(seen, busy)));
         let rows: Vec<surface::Row> = bubbles.iter().map(Bubble::row).collect();
         (self.win.hooks.rows)(&rows);
         (self.win.hooks.header)("Fleet", &subtitle, status);
-        (self.win.hooks.notice)(notice(&self.win.filter).as_deref());
+        (self.win.hooks.notice)(notice(refresh, &self.win.filter).as_deref());
     }
 
     /// `sys window`: show it. `sys window --snapshot <png>`: draw it into a PNG.
