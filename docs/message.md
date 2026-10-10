@@ -48,7 +48,7 @@ A post with `--pending` is a placeholder: an hourglass, a dimmed body, "Waiting 
 
 ## Cards
 
-A card is a message with structure, posted as JSON (schema in `src/core/card.rs`; the full spec, `docs/cards.md`, is coming). It shows as a card with its title, blocks (text, key/value rows, lists, progress, choices, fields) and action buttons. It is stored in the same history as its plain text (the `message:<id>` row and `ls` show that text).
+A card is a message with structure, posted as JSON. The schema, the action vocabulary, the press round trip and examples are in [cards.md](cards.md), the spec KOTA reads with `flick --host <mac> message card spec`; this section is the user side. It shows as a card with its title, blocks (text, key/value rows, lists, progress, choices, fields) and action buttons. It is stored in the same history as its plain text (the `message:<id>` row and `ls` show that text).
 
 ```bash
 printf %s "$json" | flick --host my-laptop message card post --stdin   # or: message card post '<json>'
@@ -107,6 +107,7 @@ flick message card get <id>      # the stored (normalized) card JSON
 flick message card ls [--limit n]  # <id>\t<time>\t<state>\t<title>, newest first (--json: [{id,ts,remote,card}])
 flick message card show <id>     # show the card again
 flick message card dismiss <id>|--all  # remove the card (every card)
+flick message card spec          # print the card spec (docs/cards.md, built in)
 flick message card press <id> <action> [values-json]  # press a button as a click does (this Mac only)
 flick message card focus         # move the keyboard into the newest card, as card_hotkey does (this Mac only)
 ```
@@ -117,7 +118,7 @@ flick message card focus         # move the keyboard into the newest card, as ca
 
 `post` prints the message id (generated unless `--id`; ids are 1-64 of `A-Z a-z 0-9 . _ -`); with `--json` it answers `{"id":"…","replaced":true|false}`. The body is the words after the flags joined by spaces, at most 16 KiB; put `--` before a body that starts with `--`.
 
-**Network.** Peers in `[remote] peers` may send every `message` verb except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
+**Network.** Peers in `[remote] peers` may send every `message` verb (including `card spec`) except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
 
 ## Manual tests
 

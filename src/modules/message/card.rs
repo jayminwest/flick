@@ -11,6 +11,7 @@
 //!   or with `--json` `{"id","replaced","warnings"}`.
 //! - `get <id>`: the stored normalized JSON. `ls [--limit n]`: `id  time  state  title`.
 //! - `show <id>`: show it again. `dismiss <id>|--all`: remove its card (every card's).
+//! - `spec`: `docs/cards.md`, the KOTA-facing spec, built in (`SPEC`); peers may read it.
 //! - `focus`: move the keyboard into the newest card, as `card_hotkey` does (denied over the
 //!   network: it takes the keyboard).
 //! - `press <id> <action> [values-json]`: press a button as the HUD does, through the same
@@ -30,7 +31,11 @@ use crate::core::Cx;
 use crate::core::card::{self, Card, Origin, State, VALUES_MAX};
 use crate::platform::hud::Options;
 
-const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all | press <id> <action> [values-json] | focus";
+const USAGE: &str = "usage: flick message card post <json>|--stdin | get <id> | ls [--limit n] | show <id> | dismiss <id>|--all | spec | press <id> <action> [values-json] | focus";
+
+/// The card spec for KOTA (`message card spec`): `docs/cards.md`, compiled in so a peer reads
+/// the contract of the Flick it talks to. A test parses every `json` block in it as a card.
+pub const SPEC: &str = include_str!("../../../docs/cards.md");
 
 /// Most dismissed ids remembered; past it the set starts over (a forgotten id only means a
 /// `done` update of it shows again).
@@ -109,6 +114,7 @@ impl Inbox {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
             ["post", json] => self.post_card(json, cx),
+            ["spec"] => Ok(SPEC.into()),
             ["get", id] => Ok(card_row(id, cx)?.card.unwrap_or_default()),
             ["ls"] => self.list_cards(20, cx),
             ["ls", "--limit", n] => {
