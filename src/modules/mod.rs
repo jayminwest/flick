@@ -45,6 +45,7 @@ modules! {
         mod clipboard => "clip", || clipboard::Clipboard;
         mod activity => "activity", activity::Activity::default;
         mod herdr => "herdr", herdr::Herdr::default;
+        mod sys => "sys", sys::Sys::default;
         mod tasks => "task", tasks::Tasks::default;
         mod keys => "keys", || keys::Keys::new(crate::control::local);
         mod dictation => "dictation", dictation::Dictation::default;
