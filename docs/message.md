@@ -28,9 +28,12 @@ card_hotkey = "cmd+ctrl+alt+shift+KeyK"  # moves the keyboard into the newest ca
 action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "jaymin@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
 pending_timeout_secs = 120  # a sent press waiting this long for KOTA shows "No update from KOTA"; 0 waits
 card_timeout_secs = 0       # how long an open card with actions stays; 0 until acted on or closed
+chat_hotkey = "cmd+ctrl+alt+shift+KeyJ"  # shows or hides the KOTA chat window; unbound by default
+kota_host = "jaymin@mbp-server"          # where a chat question goes (ssh target)
+kota_ask = ".dotfiles/home/.local/bin/kota-ask"  # kota-ask on that host, relative to its home
 ```
 
-All keys are optional; the values above are the defaults except `name` (default `Messages`), `hotkey`, `card_hotkey` and `action_command` (default empty: card presses that reply show an error naming the key).
+All keys are optional; the values above are the defaults except `name` (default `Messages`), `hotkey`, `card_hotkey`, `chat_hotkey` (unbound: no chat) and `action_command` (default empty: card presses that reply show an error naming the key).
 
 ## The card
 
@@ -96,6 +99,11 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
 
 - **Messages** (or your `name`) in root search shows the latest message as its subtitle; Enter opens the list.
 - In the list, newest first: Enter copies the message's text. ⌘K: **Show in Panel**, **Open Link** (with a link) and **Copy Message**.
+- ⌘K on the root item: **Chat Threads**, the chat threads newest first; Enter opens the chat window on one.
+
+## Chat
+
+`chat_hotkey` shows a floating chat window with KOTA on the screen under the pointer, the caret in its input; the app you were in stays active, and Esc (or ⌘W, or the hotkey again) hides the window and gives that app the keyboard back. Return sends (⇧Return adds a line); your question shows at once with "Thinking…" under it, and goes to KOTA as `printf %s <question> | ssh <kota_host> <kota_ask> --id <req> --thread <t>` (20 s). If that fails the question is marked "Not sent · ⌘R retries" and the reason shows under the transcript; ⌘R sends it again. KOTA answers in the thread with `message post --thread <t> --reply-to <req> --id <x> [--partial]`; streaming re-posts update one bubble. While the window shows a thread, posts to it show no corner card and play no sound. ⌘N starts a thread, ⌘[ and ⌘] move to the older and newer one. Full chat docs: flick-3c60.
 
 ## Commands
 
@@ -104,6 +112,8 @@ flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--
 flick message ls [--limit n]     # <id>\t<time>\t<title: >body[ (pending|partial|failed)], newest first (--json: the records)
 flick message threads [--limit n]  # <thread>\t<time of last>\t<n> messages\t<first body>, newest first (--json: [{id,messages,first_ts,last_ts,first_body}])
 flick message thread <t> [--limit n]  # the thread's newest n messages, oldest first, as ls prints them (--json: the records)
+flick message chat [--thread t] [--snapshot <png>]  # show the chat window (on thread t); --snapshot draws it into a PNG (this Mac only)
+flick message ask [--thread t] <text...>  # ask KOTA in the chat (default: the window's thread); answers once ssh is done (this Mac only)
 flick message show [id]          # show a message (default the latest) in the card again
 flick message hide               # dismiss every card
 flick message card post <json>|--stdin   # the card id, then one "warning: …" line per warning
@@ -124,7 +134,7 @@ flick message card focus         # move the keyboard into the newest card, as ca
 
 **Threads and streaming** (for the chat window, plan pl-75d3). `--thread <t>` (an id as above) files the post in conversation `t`; a card's `thread` does the same. `--partial` marks a reply that is still streaming: post the same `--id` again with the text so far, and once more without `--partial` when it is complete. A partial post redraws its card in place with no sound and no notification; the final one plays the sound and notifies as any post. `--partial` and `--pending` together are an error. Re-posting an id that is in a thread or partial keeps its original time and place (and its thread, if the re-post has no `--thread`); re-posting any other id makes it new, as before. Unthreaded history keeps `max_history` messages, each thread `chat_history`, and `chat_threads` threads; chat never evicts unthreaded history. `--json` messages carry `thread`, `role` (`"me"` for what you typed in the chat) and `state` (`"partial"` or `"failed"`) only when set. `thread <t>` for a thread with no messages is the error `No thread <t>` (exit 1).
 
-**Network.** Peers in `[remote] peers` may send every `message` verb (including `card spec`, `threads` and `thread`) except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
+**Network.** Peers in `[remote] peers` may send every `message` verb (including `card spec`, `threads` and `thread`) except `card press`, `card focus`, `chat` and `ask` (a peer must not open a window that takes this Mac's keyboard or make this Mac ssh): posting is the point of the module. A post can only show text and offer an http(s) link that you click.
 
 ## Manual tests
 

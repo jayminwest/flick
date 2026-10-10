@@ -29,7 +29,6 @@ pub mod poll;
 pub mod screens;
 pub mod spaces;
 pub mod status_item;
-#[expect(dead_code, reason = "the KOTA chat wiring (flick-eedd) opens the first surface")]
 pub mod surface;
 pub mod timer;
 pub mod workspace;

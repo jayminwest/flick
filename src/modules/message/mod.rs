@@ -7,16 +7,18 @@
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
 //! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
 //! keyboard into the newest card, or gives it back), `action_command`,
-//! `pending_timeout_secs`, `card_timeout_secs`. Table `messages` holds the history. Each
+//! `pending_timeout_secs`, `card_timeout_secs`, `chat_hotkey` (shows or hides the chat
+//! window), `kota_host`, `kota_ask` (where a chat question goes). Table `messages` holds the history. Each
 //! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
 //! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`,
 //! local actions that run a process (`script`, `flick`, `shell`) in `local.rs`. Chat threads
 //! (`post --thread`, `--partial` streaming) are stored per thread; `thread.rs` reads them;
-//! `chat/` is the chat window's pure side (transcript model, ask composer, attach paths).
+//! `chat/` is the KOTA chat window (`message chat`, `message ask`, view `threads`, ids
+//! `message:thread:<t>`). While the window shows a thread, posts to it show no card and
+//! play no sound (`chat::model::alert`).
 
 mod card;
-#[cfg_attr(not(test), expect(dead_code, reason = "the KOTA chat window's pure side; wired in flick-eedd"))]
 mod chat;
 mod dispatch;
 mod local;
@@ -56,6 +58,8 @@ const LIST: &str = "list";
 const RECENT: &str = "recent";
 /// The hotkey key of `card_hotkey`.
 const CARD: &str = "card";
+/// The hotkey key of `chat_hotkey`.
+const CHAT: &str = "chat";
 
 #[derive(Default)]
 pub struct Inbox {
@@ -76,6 +80,8 @@ pub struct Inbox {
     worker: run::Worker<run::Done>,
     /// Local runs in flight (`local.rs`).
     local: run::Worker<local::Done>,
+    /// The chat window (`chat/session.rs`).
+    chat: chat::session::Chat,
 }
 
 /// The JSON answer of `post`.
@@ -165,6 +171,7 @@ impl Inbox {
     fn post(&self, args: &[String], cx: &Cx) -> Result<(String, bool), String> {
         let post = text::parse_post(args)?;
         let id = post.id.unwrap_or_else(self.env.new_id);
+        let first = cx.store.message(&id).is_none();
         let (context, replaced) = quote(post.reply_to.as_deref(), cx);
         let m = Message {
             id: id.clone(),
@@ -180,7 +187,10 @@ impl Inbox {
             ..Message::default()
         };
         self.save(&m, replaced, cx)?;
-        self.display(&m, false);
+        // Its sound is `quiet`'s, as `alert` decides it.
+        if chat::model::alert(&m, first, self.chat_showing()).hud {
+            self.display(&m, false);
+        }
         Ok((id, replaced))
     }
 
@@ -221,6 +231,7 @@ impl Inbox {
         match words.as_slice() {
             ["card", ..] => self.card_verb(&args[1..], cx),
             ["thread" | "threads", ..] => self.thread_verb(args, cx),
+            ["chat" | "ask", ..] => self.chat_verb(args, cx),
             ["post", ..] => {
                 let (id, replaced) = self.post(&args[1..], cx)?;
                 if cx.json {
@@ -298,7 +309,10 @@ impl Module for Inbox {
     /// and at `Started`, the count of cards waiting on the user (`pending.rs`).
     fn on_event(&mut self, event: Event, cx: &mut Cx) -> bool {
         match event {
-            Event::ModuleChanged { module: "message" } => self.drain(cx),
+            Event::ModuleChanged { module: "message" } => {
+                self.drain(cx);
+                self.chat_drain(cx);
+            }
             Event::Started => {}
             _ => return false,
         }
@@ -325,6 +339,7 @@ impl Module for Inbox {
         if s.action_command.first().is_some_and(|p| p.trim().is_empty()) {
             return Err("[message]: action_command needs a program first".into());
         }
+        chat::ask::argv(&s.kota_host, &s.kota_ask, "r", "t").map_err(|e| format!("[message]: {e}"))?;
         self.settings = s;
         Ok(())
     }
@@ -344,10 +359,17 @@ impl Module for Inbox {
     }
 
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
-        (view == RECENT).then(|| recent_view(&self.settings.name))
+        match view {
+            RECENT => Some(recent_view(&self.settings.name)),
+            chat::threads::VIEW => Some(chat::threads::view()),
+            _ => None,
+        }
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        if view.name == chat::threads::VIEW {
+            return self.refresh_threads(view, cx);
+        }
         let now = (self.env.now)();
         let list = cx.store.messages(self.settings.max_history);
         let n = list.len();
@@ -364,6 +386,9 @@ impl Module for Inbox {
         if id.key() == LIST {
             return Outcome::Push(ListView::new("message", RECENT));
         }
+        if let Some(t) = chat::threads::thread_of(id.key()) {
+            return self.open_thread(t, cx);
+        }
         match cx.store.message(id.key()) {
             Some(m) => {
                 (self.env.copy)(&text::plain(&m.body));
@@ -374,6 +399,9 @@ impl Module for Inbox {
     }
 
     fn actions(&mut self, id: &ItemId, cx: &mut Cx) -> Vec<Action> {
+        if id.key() == LIST {
+            return vec![chat::threads::action()];
+        }
         let Some(m) = (id.key() != LIST).then(|| cx.store.message(id.key())).flatten() else {
             return vec![];
         };
@@ -386,6 +414,9 @@ impl Module for Inbox {
     }
 
     fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        if (id.key(), key) == (LIST, chat::threads::VIEW) {
+            return Outcome::Push(chat::threads::view());
+        }
         let Some(m) = cx.store.message(id.key()) else { return Outcome::Stay(None) };
         match (key, &m.url) {
             ("show", _) => {
@@ -404,7 +435,8 @@ impl Module for Inbox {
     }
 
     fn hotkeys(&self) -> Vec<Binding> {
-        let bound = [(&self.settings.hotkey, RECENT), (&self.settings.card_hotkey, CARD)];
+        let s = &self.settings;
+        let bound = [(&s.hotkey, RECENT), (&s.card_hotkey, CARD), (&s.chat_hotkey, CHAT)];
         let spec = |(s, key): (&Option<String>, &str)| {
             let s = s.as_ref().filter(|s| !s.trim().is_empty())?;
             Some(Binding { spec: s.clone(), key: Ok(key.into()) })
@@ -413,10 +445,13 @@ impl Module for Inbox {
     }
 
     /// `card_hotkey` gives the keyboard back when a card holds it, else moves it into the
-    /// newest card; the launcher stays as it is.
-    fn hotkey(&mut self, key: &str, _cx: &mut Cx) -> Option<ListView> {
+    /// newest card; `chat_hotkey` shows or hides the chat window. The launcher stays as it is.
+    fn hotkey(&mut self, key: &str, cx: &mut Cx) -> Option<ListView> {
         if key == CARD && !(self.env.unfocus)() {
             (self.env.focus)();
+        }
+        if key == CHAT {
+            self.chat_toggle(cx);
         }
         (key == RECENT).then(|| recent_view(&self.settings.name))
     }
@@ -424,10 +459,11 @@ impl Module for Inbox {
     fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
         let result = self.run_verb(args, cx);
         self.announce(cx);
+        self.chat_refresh(cx);
         result
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--thread t] [--pending|--partial] <body...> | message ls [--limit n] | message threads [--limit n] | message thread <t> [--limit n] | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--thread t] [--pending|--partial] <body...> | message ls [--limit n] | message threads [--limit n] | message thread <t> [--limit n] | message chat [--thread t] [--snapshot <png>] | message ask [--thread t] <text...> | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
     }
 }
