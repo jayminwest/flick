@@ -2,7 +2,7 @@
 //! a timeout, and this user's uid. Only background threads call these (and the first
 //! `sys snapshot`, which waits on one with the same budget).
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -20,14 +20,30 @@ pub struct Exit {
 
 /// Run `argv` (no shell) with stdin closed; kill it when `budget` runs out.
 pub fn run(argv: &[String], budget: Duration) -> Result<Exit, String> {
+    run_with(argv, None, budget)
+}
+
+/// `run` with `input` written to the child's stdin, then stdin closed (the ssh fleet probe).
+pub fn run_input(argv: &[String], input: &str, budget: Duration) -> Result<Exit, String> {
+    run_with(argv, Some(input), budget)
+}
+
+fn run_with(argv: &[String], input: Option<&str>, budget: Duration) -> Result<Exit, String> {
     let (program, rest) = argv.split_first().ok_or("empty command")?;
     let mut child = Command::new(program)
         .args(rest)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("{program}: {e}"))?;
+    // Write on a thread too: a child that never reads must not block us past the budget.
+    if let (Some(text), Some(mut stdin)) = (input, child.stdin.take()) {
+        let text = text.to_string();
+        thread::spawn(move || {
+            let _ = stdin.write_all(text.as_bytes());
+        });
+    }
     // Read on threads so a full pipe never stalls the child while we wait for it.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
         thread::spawn(move || {
@@ -97,6 +113,16 @@ mod tests {
         assert_eq!(exit, Exit { code: Some(3), stdout: "out\n".into(), stderr: "err\n".into() });
         let killed = run(&sh("kill -9 $$"), Duration::from_secs(5)).unwrap();
         assert_eq!(killed.code, None);
+    }
+
+    #[test]
+    fn feeds_stdin_to_a_child() {
+        let argv = vec!["/bin/sh".to_string(), "-s".into()];
+        let exit = run_input(&argv, "echo from stdin; exit 4\n", Duration::from_secs(5)).unwrap();
+        assert_eq!((exit.code, exit.stdout.as_str()), (Some(4), "from stdin\n"));
+        // A child that never reads its stdin still ends at the budget.
+        let err = run_input(&sh("exec sleep 5"), &"x".repeat(1 << 20), Duration::from_millis(100)).unwrap_err();
+        assert_eq!(err, "timed out after 0.1 s");
     }
 
     #[test]

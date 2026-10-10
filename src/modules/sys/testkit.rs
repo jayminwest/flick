@@ -1,16 +1,94 @@
 //! Fakes for the module's tests. `run` answers from fixtures by argv, so no test runs the
-//! probe, curl, launchctl, pgrep or a configured command; `connect` never opens a socket.
+//! probe, curl, launchctl, pgrep or a configured command; `connect` never opens a socket;
+//! `run_input` never runs ssh and `ask` never reaches a peer.
 
+use std::fmt::Write as _;
 use std::time::Duration;
 
-use super::run::Exit;
+use serde_json::json;
+
 use super::io::Hooks;
 use super::probe::PROBE;
+use super::run::Exit;
+use crate::core::control::{Flags, Reply};
 
 /// The real probe output from mbp-server.
 pub const SERVER: &str = include_str!("fixtures/probe_mbp_server.txt");
+/// The real probe output from a desktop Mac without a battery.
+pub const DESKTOP: &str = include_str!("fixtures/probe_desktop.txt");
 
-pub const HOOKS: Hooks = Hooks { post: || {}, now: || 1_000, run, connect, uid: || Some(501) };
+pub const HOOKS: Hooks = Hooks {
+    post: || {},
+    now: || 1_000,
+    run,
+    connect,
+    uid: || Some(501),
+    run_input,
+    ask,
+    visible: || false,
+};
+
+/// Canned ssh runs by target (the argv's sixth word), the script on stdin answered as the
+/// Mac would:
+/// - `pro`: `DESKTOP`, uid 502, then each `@@ svc` the script asks for: launchd label `up`
+///   running, anything else not loaded; pgrep `ollama` runs, anything else does not;
+/// - `refused`: ssh's own failure, exit 255; `mute`: exit 0, no output; `slow`: 300 ms,
+///   then like `pro`; anything else times out.
+fn run_input(argv: &[String], script: &str, _budget: Duration) -> Result<Exit, String> {
+    let target = argv.get(5).map_or("", String::as_str);
+    let answer = |target| match target {
+        "pro" | "slow" => {
+            let mut out = format!("{DESKTOP}@@ uid\n502\n");
+            for line in script.lines().filter(|l| l.starts_with("out=$(")) {
+                let i = line.split("@@ svc ").nth(1).and_then(|r| r.split('\\').next()).unwrap_or("?");
+                let (text, rc) = if line.contains("launchctl") {
+                    if line.contains("/\"'up' 2>&1") {
+                        (include_str!("fixtures/launchctl_running.txt").trim_end().to_string(), 0)
+                    } else {
+                        (include_str!("fixtures/launchctl_missing.txt").trim_end().to_string(), 113)
+                    }
+                } else if line.contains("-x 'ollama'") {
+                    ("812".to_string(), 0)
+                } else {
+                    (String::new(), 1)
+                };
+                let _ = write!(out, "@@ svc {i}\n{text}\n@@ rc {i} {rc}\n");
+            }
+            Ok(Exit { code: Some(0), stdout: out, stderr: String::new() })
+        }
+        "refused" => Ok(Exit {
+            code: Some(255),
+            stdout: String::new(),
+            stderr: "ssh: connect to host pro port 22: Connection refused\n".into(),
+        }),
+        "mute" => Ok(Exit { code: Some(0), ..Exit::default() }),
+        _ => Err("timed out after 10 s".into()),
+    };
+    if target == "slow" {
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    answer(target)
+}
+
+/// Canned peers by host: `server` answers a snapshot (`--json` and `--remote` required);
+/// `old` is a Flick without the sys module; `odd` answers text; `busy` has no snapshot yet;
+/// `late` answers after 300 ms; anything else is unreachable.
+fn ask(host: &str, words: &[String], flags: Flags) -> Result<Reply, String> {
+    assert_eq!(words, ["sys", "snapshot"]);
+    assert!(flags.json && flags.remote);
+    let snapshot = || Reply::Ok(json!({ "host": host, "cpu_load": [0.5, 0.4, 0.3], "services": [] }));
+    match host {
+        "server" => Ok(snapshot()),
+        "late" => {
+            std::thread::sleep(Duration::from_millis(300));
+            Ok(snapshot())
+        }
+        "old" => Ok(Reply::Error("unknown module \"sys\" (modules: app, clip)".into())),
+        "odd" => Ok(Reply::Ok("text".into())),
+        "busy" => Ok(Reply::Error("sys: no snapshot yet (probe still running)".into())),
+        _ => Err(format!("can't reach Flick at {host}:7419 (Connection refused)")),
+    }
+}
 
 #[expect(clippy::unnecessary_wraps, reason = "fake hooks answer as the real ones do")]
 fn exit(code: i32, stdout: &str, stderr: &str) -> Result<Exit, String> {

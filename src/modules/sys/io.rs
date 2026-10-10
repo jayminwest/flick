@@ -6,9 +6,10 @@
 //! - `sys-probe`: one run of `probe::PROBE`, then the parsed snapshot into `State`.
 //! - `sys-checks`: one round of every `[[sys.service]]`, one thread per service in
 //!   parallel; each result lands as soon as it is in.
+//! - the fleet's threads live in `poll.rs` and share `State`.
 //!
-//! Nothing repeats on its own: a round starts only when a command asks, and at most once
-//! per `MIN_AGE` seconds, so an idle Flick runs no children and no timers. Each thread
+//! Nothing here repeats on its own: a round starts only when a command or the fleet asks,
+//! and at most once per `MIN_AGE` seconds, so an idle Flick runs no children and no timers. Each thread
 //! posts `ModuleChanged` when it writes. A reload bumps `State::epoch`; a round from before
 //! it drops its results.
 
@@ -17,9 +18,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::check::{self, Verdict};
+use super::fleet::Fleet;
 use super::probe::{self, Snapshot};
 use super::run::Exit;
 use super::settings::{Kind, Service};
+use crate::core::control::{Flags, Reply};
 
 /// Budget of the probe's child.
 pub const PROBE_BUDGET: Duration = Duration::from_secs(2);
@@ -43,6 +46,12 @@ pub struct Hooks {
     pub connect: fn(&str, Duration) -> Result<Duration, String>,
     /// This user's uid, for launchd's `gui/<uid>` domain.
     pub uid: fn() -> Option<u32>,
+    /// Run an argv with `input` on its stdin and a time budget (`run::run_input`; ssh).
+    pub run_input: fn(&[String], &str, Duration) -> Result<Exit, String>,
+    /// Ask a peer's Flick (`core::control::PeerHooks::ask`).
+    pub ask: fn(&str, &[String], Flags) -> Result<Reply, String>,
+    /// The launcher panel is on screen (main thread).
+    pub visible: fn() -> bool,
 }
 
 /// One configured service and its last verdict.
@@ -63,6 +72,8 @@ pub struct State {
     pub probing: bool,
     pub services: Vec<Entry>,
     pub checking: bool,
+    /// The `[[sys.machine]]` fleet (`poll.rs`).
+    pub fleet: Fleet,
     /// When the last services round started.
     checked_round: Option<u64>,
     epoch: u64,
@@ -81,9 +92,14 @@ impl Shared {
     }
 
     /// Wake waiters and post `ModuleChanged`.
-    fn changed(&self, hooks: Hooks) {
-        self.changed.notify_all();
+    pub fn changed(&self, hooks: Hooks) {
+        self.wake();
         (hooks.post)();
+    }
+
+    /// Wake waiters only.
+    pub fn wake(&self) {
+        self.changed.notify_all();
     }
 
     /// Wait until `done` holds or `budget` runs out; whether it holds.
