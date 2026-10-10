@@ -91,7 +91,7 @@ shell = "id=$(\"$HOME/Applications/Flick.app/Contents/MacOS/Flick\" message post
 
 Replace it once the laptop runs a Flick with this module (`flick kota status` answers instead of `unknown module`):
 
-1. Add `[kota]` with a `hotkey` (and any key that differs from the defaults) to the laptop's config.toml.
+1. Add `[kota]` with a `hotkey` (and any key that differs from the defaults) to the laptop's config. When one config.toml is shared between Macs, put it in the laptop's [per-host overlay](configuration.md#per-host-overlay), so mbp-server does not poll too.
 2. Remove the `[[script.commands]]` "Ask KOTA" table and run **Reload Flick Config**.
 3. Ask KOTA with the hotkey, the menu bar item's **Ask KOTA…**, or `flick kota ask <text>` in a shell.
 

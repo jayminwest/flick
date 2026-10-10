@@ -4,6 +4,7 @@
     "src/cli/stdin.rs": 100.0,
     "src/config.rs": 88.6,
     "src/config/edit.rs": 97.3,
+    "src/config/overlay.rs": 100.0,
     "src/control/net.rs": 90.0,
     "src/control/server.rs": 96.5,
     "src/control/tailscale.rs": 95.0,
