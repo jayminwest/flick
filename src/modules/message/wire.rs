@@ -1,12 +1,19 @@
-//! What `message` does to the system: the clock, the HUD, notifications, the pasteboard and
-//! opening links. `Env::default()` is the real thing; tests swap in plain functions.
+//! What `message` does to the system: the clock, the HUD, notifications, the pasteboard,
+//! opening links, the KOTA action command and the HUD's press and dismiss handlers.
+//! `Env::default()` is the real thing; tests swap in plain functions and never register the
+//! real handlers (mx-444675).
 
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::dispatch::Note;
+use super::run::{self, Exit, Job};
+use crate::core::Event;
+use crate::core::card::Card;
 use crate::core::store;
-use crate::platform::hud::{self, Content, Options, Placement};
-use crate::platform::{clock, notify, pasteboard, workspace};
+use crate::platform::hud::{self, CardUi, Content, Options, Placement};
+use crate::platform::{clock, events, notify, pasteboard, timer, workspace};
 
 pub struct Env {
     pub now: fn() -> i64,
@@ -23,6 +30,20 @@ pub struct Env {
     pub notify: fn(&str, &str, &str),
     pub copy: fn(&str),
     pub open_url: fn(&str),
+    /// Show or redraw a structured card with its press state; true when it is new.
+    pub show_card: fn(&Card, &CardUi, &Placement, &Options) -> bool,
+    /// Redraw a structured card if it shows; true when it does.
+    pub update_card: fn(&Card, &CardUi, &Options) -> bool,
+    /// Register the HUD's press and dismiss handlers (once; later calls do nothing).
+    pub subscribe: fn(),
+    /// Take what the HUD handlers queued.
+    pub take_notes: fn() -> Vec<Note>,
+    /// Run one KOTA send (on the worker thread).
+    pub exec: fn(&Job) -> Exit,
+    /// Tell the module, from any thread, that work finished (`ModuleChanged`).
+    pub changed: fn(),
+    /// Post `ModuleChanged` after this many seconds (the pending watchdog).
+    pub wake_after: fn(u64),
 }
 
 impl Default for Env {
@@ -41,8 +62,40 @@ impl Default for Env {
             },
             copy: pasteboard::set_text,
             open_url: workspace::open_url,
+            show_card: hud::show_card,
+            update_card: hud::update_card,
+            subscribe,
+            take_notes,
+            exec: run::exec,
+            changed,
+            wake_after: |secs| timer::after(secs as f64, changed),
         }
     }
+}
+
+/// What the HUD handlers queued, drained by the module on `ModuleChanged`.
+static NOTES: Mutex<Vec<Note>> = Mutex::new(Vec::new());
+
+fn changed() {
+    events::post(Event::ModuleChanged { module: "message" });
+}
+
+/// Queue `note` and wake the module. Runs inside `AppKit` callbacks, so it never touches app
+/// state (mx-fcbc43).
+fn queue(note: Note) {
+    NOTES.lock().unwrap_or_else(PoisonError::into_inner).push(note);
+    changed();
+}
+
+fn take_notes() -> Vec<Note> {
+    std::mem::take(&mut *NOTES.lock().unwrap_or_else(PoisonError::into_inner))
+}
+
+fn subscribe() {
+    hud::on_press(|card, action, values| {
+        queue(Note::Press { card: card.into(), action: action.into(), values });
+    });
+    hud::on_dismiss(|card, _why| queue(Note::Dismissed(card.into())));
 }
 
 /// `m` and the time in milliseconds, base 36, plus a counter so two posts in one

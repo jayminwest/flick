@@ -283,6 +283,17 @@
 #sound = true
 # Opens the message list; unset by default.
 #hotkey = "cmd+ctrl+alt+shift+KeyM"
+# What pressing a card button that replies to KOTA runs: an argv list, to which Flick appends
+# --action --card <id> --action-id <aid>, with the card's field and choice values as JSON on
+# stdin (20 s budget). Exit 0: the card waits for KOTA's update; 2: KOTA rejected it (last
+# stderr line shown); anything else: an error on the card. Unset (empty) by default: presses
+# show an error. Example:
+#action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "jaymin@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
+# Seconds a sent press waits for KOTA to update the card before it shows "No update from
+# KOTA"; 0 waits forever.
+#pending_timeout_secs = 120
+# Seconds an open card with actions stays; 0 keeps it until acted on or closed.
+#card_timeout_secs = 0
 
 # --- remote: answer "flick --host <this Mac>" from these Tailscale peers, on Tailscale
 # addresses only. Off until "flick remote on" or "Turn On Network Access". Peers may not

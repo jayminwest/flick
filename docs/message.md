@@ -22,9 +22,12 @@ max_cards = 4            # cards shown at once; older ones collapse into a "+N m
 max_history = 50         # messages kept
 sound = true             # a short sound when a message (not a pending one) arrives
 hotkey = "cmd+ctrl+alt+shift+KeyM"  # opens the list; unbound by default
+action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "jaymin@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
+pending_timeout_secs = 120  # a sent press waiting this long for KOTA shows "No update from KOTA"; 0 waits
+card_timeout_secs = 0       # how long an open card with actions stays; 0 until acted on or closed
 ```
 
-All keys are optional; the values above are the defaults except `name` (default `Messages`) and `hotkey`.
+All keys are optional; the values above are the defaults except `name` (default `Messages`), `hotkey` and `action_command` (default empty: card presses that reply show an error naming the key).
 
 ## The card
 
@@ -44,15 +47,24 @@ A post with `--pending` is a placeholder: an hourglass, a dimmed body, "Waiting 
 
 ## Cards
 
-A card is a message with structure, posted as JSON (schema in `src/core/card.rs`; the full spec, `docs/cards.md`, comes with the card renderer). Today it shows as a text card: the title as the header, then each block and the action labels in brackets as plain text. It is stored in the same history (the `message:<id>` row and `ls` show that text).
+A card is a message with structure, posted as JSON (schema in `src/core/card.rs`; the full spec, `docs/cards.md`, is coming). It shows as a card with its title, blocks (text, key/value rows, lists, progress, choices, fields) and action buttons. It is stored in the same history as its plain text (the `message:<id>` row and `ls` show that text).
 
 ```bash
 printf %s "$json" | flick --host my-laptop message card post --stdin   # or: message card post '<json>'
 ```
 
 - Posting the same `id` again replaces the card in place. `reply_to` (a pending message id) replaces that placeholder, as `post --reply-to` does.
-- A card in state `open` with an enabled action stays until closed (Esc leaves it); other cards hide after `timeout_secs`. A `pending` card shows the hourglass, without sound or notification.
-- A card you dismissed with `card dismiss` comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently.
+- A card in state `open` with an enabled action stays for `card_timeout_secs` (default: until closed; Esc leaves it); other cards hide after `timeout_secs`. A `pending` card shows the hourglass, without sound or notification.
+- A card you dismissed (`card dismiss`, its x, Esc or its timeout) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently.
+
+### Presses
+
+- An action without `do` (or with `"reply": true`) replies to KOTA: Flick runs `action_command` with `--action --card <id> --action-id <action id>` appended and the card's field and choice values as a JSON object on stdin (`{"<input id>": "text" | "option id" | null | ["option id", …]}`), on a background thread, killed after 20 s. The card shows "Sent to KOTA…" with its actions off while it runs.
+  - Exit 0: the card stays pending until KOTA posts the same id again (which redraws it and clears the pending state). If no update comes within `pending_timeout_secs`, the card shows "No update from KOTA" and its actions come back.
+  - Exit 2: the card shows "KOTA rejected: <last stderr line>"; other exits, a timeout or a command that cannot start show an error line. Either way the actions come back, so you can retry.
+  - Presses on a pending card are ignored, so a press is never sent twice. Without `action_command` a press shows "Set [message] action_command to send presses to KOTA".
+- `"do": "dismiss"` closes the card (with `"reply": true`, after the press reaches KOTA). A `shell` action never runs on the first press: the card shows the exact command with Cancel and Run. Running it and the other local actions (`open_url`, `open_app`, `copy`, `script`, `flick`) come with a later step (flick-e244); for now they show an error line. A local action with `"reply": true` already sends its press.
+- Pending, error and confirm states live in memory only.
 - Invalid JSON, a card over 16 KiB, or a missing/invalid `id`, `title`, `v` or `state` is an error reply `invalid card: <reason>` (exit 1); nothing is shown or stored. Anything else is shown as well as it can be, with a warning.
 - Cards posted over the network are marked remote: a `flick` action naming a verb peers may not send is shown disabled.
 
@@ -92,3 +104,4 @@ flick message card dismiss <id>|--all  # remove the card (every card)
 7. Post five messages with different `--id`s: four cards stack from the corner, newest nearest it, with a `+1 more` pill; close one and the hidden card appears. Post one of the ids again: that card redraws in place, no sound.
 8. From a peer: `flick --host <this Mac> message post --title KOTA "from the server"` shows the card.
 9. `printf %s '{"id":"c1","title":"Deploy?","blocks":[{"type":"text","md":"Ship **v2**"}],"actions":[{"id":"go","label":"Ship"}]}' | flick message card post --stdin`: a card "Deploy?" with "Ship v2" and "[Ship]" stays (Esc does not close it). Post it again with `"state":"done"`: it redraws in place and hides after `timeout_secs`. `flick message card post '{"id":"x"}'` prints `flick: invalid card: …` and exits 1.
+10. Set `action_command = ["/bin/sh", "-c", "cat > /tmp/press.json; echo \"$@\" >> /tmp/press.json", "sh"]` and reload. Post a card with a field and a `Ship` action without `do`, type in the field and press Ship: the card shows "Sent to KOTA…", `/tmp/press.json` holds the values JSON and `--action --card <id> --action-id ship`. Re-post the card: it redraws with Ship enabled. With `pending_timeout_secs = 10`, press again and wait: "No update from KOTA" shows. With `exit 2` in the script (writing a line to stderr first), the card shows "KOTA rejected: <that line>".

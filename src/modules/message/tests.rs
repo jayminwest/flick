@@ -7,6 +7,7 @@ use super::*;
 use crate::config::parse;
 use crate::core::Ranker;
 use crate::core::store::Store;
+use crate::platform::hud::CardUi;
 
 /// 2026-10-09 18:31:01 UTC.
 pub(super) const TS: i64 = 1_791_570_661;
@@ -14,6 +15,28 @@ pub(super) const TS: i64 = 1_791_570_661;
 thread_local! {
     /// What the fakes saw, in order.
     static LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// What the fake HUD handlers queued.
+    static NOTES: RefCell<Vec<dispatch::Note>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Queue `note` as the HUD handlers would.
+pub(super) fn queue(note: dispatch::Note) {
+    NOTES.with(|n| n.borrow_mut().push(note));
+}
+
+/// A fake KOTA send, run on the worker thread: `action_command`'s program picks the exit;
+/// `echo` fails with the argv and stdin, so tests can read them off the error line.
+fn exec(job: &run::Job) -> run::Exit {
+    match job.argv[0].as_str() {
+        "sent" => run::Exit::Sent,
+        "reject" => run::Exit::Rejected("card is gone".into()),
+        "echo" => run::Exit::Failed(format!("{} <{}", job.argv.join(" "), job.stdin)),
+        other => run::Exit::Failed(format!("{other}: failed")),
+    }
+}
+
+fn ui_line(ui: &CardUi) -> String {
+    format!("{}|{:?}|{:?}", ui.pending, ui.error, ui.confirm)
 }
 
 fn log(line: String) {
@@ -31,7 +54,11 @@ pub(super) fn inbox(config: &str) -> Inbox {
             utc_offset: |_| -25_200,
             new_id: || "m1".into(),
             show: |id, content, p, o| {
-                let Content::Text(card) = content;
+                // A match, not `let`: a new `Content` variant must fail here, not compile away.
+                #[expect(clippy::infallible_destructuring_match, reason = "one variant today; more may come")]
+                let card = match content {
+                    Content::Text(card) => card,
+                };
                 log(format!(
                     "show {id} {}|{}|{}|{}|{:?}|{}|{:?}|{}|{}|{}|{}",
                     card.header, card.time, card.context, card.body, card.link, card.pending,
@@ -47,9 +74,28 @@ pub(super) fn inbox(config: &str) -> Inbox {
             notify: |id, title, body| log(format!("notify {id}|{title}|{body}")),
             copy: |text| log(format!("copy {text}")),
             open_url: |url| log(format!("open {url}")),
+            show_card: |c, ui, p, o| {
+                log(format!(
+                    "card {} {} {:?}|{}|{:?}|{}|{}|{}|{}",
+                    c.id, c.title, c.state, ui_line(ui), p.corner, p.max_cards, o.timeout_secs, o.sound, o.sticky
+                ));
+                true
+            },
+            update_card: |c, ui, o| {
+                log(format!("update {} {:?}|{}|{}|{}", c.id, c.state, ui_line(ui), o.timeout_secs, o.sticky));
+                true
+            },
+            subscribe: || {},
+            take_notes: || NOTES.with(|n| std::mem::take(&mut *n.borrow_mut())),
+            exec,
+            changed: || {},
+            wake_after: |secs| log(format!("wake {secs}")),
         },
         settings: Settings::default(),
         dismissed: HashSet::new(),
+        ui: dispatch::Uis::new(),
+        presses: 0,
+        worker: run::Worker::default(),
     };
     m.configure(&parse(config).unwrap().section("message").unwrap().unwrap()).unwrap();
     m
