@@ -283,6 +283,15 @@ fn network_requests_are_remote_even_without_the_flag() {
 }
 
 #[test]
+fn peers_list_and_read_unread_posts() {
+    // Unread posts (flick-8ce3): a peer may list them and mark them read, e.g. KOTA taking
+    // back a nudge it sent; reading takes no keyboard and runs nothing.
+    assert_eq!(net_reply(&["message", "ls", "--unread", "--json"]), r#"{"ok":[]}"#);
+    assert_eq!(net_reply(&["message", "read", "--all"]), r#"{"ok":"Read 0 posts"}"#);
+    assert_eq!(net_reply(&["message", "read", "n1"]), r#"{"error":"No message n1"}"#);
+}
+
+#[test]
 fn peers_reach_the_card_verbs() {
     // A peer's card reaches the module: a structural error is the verb's error (exit 1),
     // and nothing is stored. (A valid card shows the panel, which needs AppKit.)

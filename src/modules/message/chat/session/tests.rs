@@ -12,6 +12,7 @@ use crate::modules::message::store::{Progress, Role};
 use crate::modules::message::tests::{Fixture, inbox, take_log};
 
 mod open;
+mod polish;
 
 const OK: &str = "[message]\nchat_hotkey = \"cmd+KeyJ\"\nkota_host = \"ok@host\"";
 

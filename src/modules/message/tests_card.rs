@@ -36,13 +36,15 @@ fn replies_list_warnings_and_a_repost_replaces() {
     let (mut f, mut m) = (Fixture::new(), inbox("[message]\nstyle = \"both\""));
     let odd = r#"{"id":"c1","title":"T","x":1}"#;
     assert_eq!(f.run(&mut m, false, &["card", "post", odd]), Ok("c1\nwarning: unknown key \"x\" ignored".into()));
-    assert_eq!(take_log(), ["card c1 T Open|false|None|None|TopRight|4|20|true|false", "notify c1|T|"]);
+    // No actions, no reply_to: nobody asked for it, so it stays until closed (flick-8ce3).
+    assert_eq!(take_log(), ["card c1 T Open|false|None|None|TopRight|4|0|true|false", "notify c1|T|"]);
+    assert!(f.store.message("c1").unwrap().unread);
     let done = deploy_in("done");
     assert_eq!(
         f.run(&mut m, true, &["card", "post", &done]),
         Ok(r#"{"id":"c1","replaced":true,"warnings":[]}"#.into())
     );
-    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|20|true|false", "notify c1|Deploy?|Shipped."]);
+    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|0|true|false", "notify c1|Deploy?|Shipped."]);
     assert_eq!(f.run(&mut m, false, &["card", "ls"]).unwrap(), "c1\t11:31\tdone\tDeploy?");
     f.run(&mut m, false, &["card", "post", &deploy_in("pending")]).unwrap();
     // A pending card: no sound, no notification, and no timeout (flick-9bdb, was 20).
@@ -205,7 +207,8 @@ fn a_kota_pending_card_stays_until_its_done_update_shows() {
     f.run(&mut m, false, &["card", "post", &deploy_in("pending")]).unwrap();
     assert!(take_log()[0].ends_with("|0|false|false"), "no timeout while KOTA works");
     f.run(&mut m, false, &["card", "post", &deploy_in("done")]).unwrap();
-    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|20|true|false"]);
+    // Its done update has no actions or reply_to: unread, until closed (flick-8ce3).
+    assert_eq!(take_log(), ["card c1 Deploy? Done|false|None|None|TopRight|4|0|true|false"]);
     // A card that only timed out is not dismissed for its updates: a done one shows.
     queue(dispatch::Note::Expired("c1".into()));
     f.cx("", false, |cx| m.drain(cx));

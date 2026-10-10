@@ -95,13 +95,16 @@ impl Inbox {
     /// How a card behaves in the HUD: one that waits on the user (open, an enabled action)
     /// stays `card_timeout_secs` (0: until acted on or closed), one waiting on KOTA (after a
     /// press, or posted `pending`) stays until KOTA or the watchdog changes it, so its final
-    /// update shows (flick-9bdb); others time out like a message.
+    /// update shows (flick-9bdb); one nobody asked for (`seen::unprompted_card`) stays
+    /// `unprompted_timeout_secs`; others time out like a message.
     pub(super) fn card_options(&self, c: &Card, ui: &Ui) -> Options {
         let sticky = c.waits_on_user();
         let secs = if ui.busy() || c.state == State::Pending {
             0
         } else if sticky {
             self.settings.card_timeout_secs
+        } else if super::seen::unprompted_card(c) {
+            self.settings.unprompted_timeout_secs
         } else {
             self.settings.timeout_secs
         };
@@ -187,6 +190,8 @@ impl Inbox {
             dismissed: old.flatten().filter(|_| silent),
             ..Message::default()
         };
+        // A card nobody asked for is unread unless its update goes to history silently.
+        let m = Message { unread: !silent && super::seen::unprompted(&m), ..m };
         self.save(&m, took, cx)?;
         self.ui.remove(&m.id);
         if !silent {
