@@ -24,6 +24,8 @@ mod module;
 mod rank;
 mod registry;
 mod routing;
+#[cfg(test)]
+pub mod scratch;
 pub mod store;
 pub mod track;
 mod view;

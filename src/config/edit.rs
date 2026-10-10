@@ -416,12 +416,9 @@ enabled = false
         assert!(err.starts_with("not edited, the result would not load"), "{err}");
     }
 
-    /// A fresh directory under the system temp dir.
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("flick-edit-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    /// A fresh directory under the system temp dir, removed when it drops.
+    fn scratch(name: &str) -> crate::core::scratch::Scratch {
+        crate::core::scratch::Scratch::new(&format!("edit-{name}"))
     }
 
     fn files(dir: &Path) -> Vec<String> {
@@ -452,7 +449,6 @@ enabled = false
         assert!(edit_file(&link, "quicklink", "links", &Edit::Append(entry("A", "/"))).is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "hotkey = [");
         assert_eq!(files(&dir), ["config.toml", "real.toml"]);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -464,7 +460,6 @@ enabled = false
             fs::read_to_string(&path).unwrap(),
             append(DEFAULT_CONFIG, entry("A", "/")).unwrap()
         );
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -482,6 +477,5 @@ enabled = false
         fs::create_dir(&sub).unwrap();
         assert!(write_atomic(&sub, "c").is_err());
         assert_eq!(files(&dir), ["config.toml", "sub"]);
-        let _ = fs::remove_dir_all(&dir);
     }
 }
