@@ -6,7 +6,8 @@
 //!   asked); a showing id is redrawn in place, keeping its slot, without a sound. `update`
 //!   redraws only a card that shows. `dismiss` / `dismiss_all` remove cards.
 //! - `stack` (pure) places them: at most `Placement::max_cards` show, the rest collapse into
-//!   a `+N more` pill; the stack stays on the screen it first appeared on until it empties.
+//!   a `+N more` pill (a click on it pages to the hidden cards); the stack stays on the
+//!   screen it first appeared on until it empties.
 //! - Each card hides after its own `Options::timeout_secs` unless the pointer rests on it;
 //!   the timeout runs only while the user is at the Mac (`timeout.rs`).
 //!   Every card has an x close button. A click elsewhere on a text card opens its link and
@@ -154,6 +155,8 @@ struct State {
     /// The visible area of the screen the stack appeared on; `None` while empty.
     area: Option<NSRect>,
     pill: Option<Pill>,
+    /// How many cards the last layout showed (the rest are behind the pill).
+    shown: usize,
     monitors: Vec<Retained<AnyObject>>,
 }
 
@@ -336,6 +339,7 @@ fn relayout(s: &mut State, mtm: MainThreadMarker) {
     let area = stack::Rect::new(area.origin.x, area.origin.y, area.size.width, area.size.height);
     let sizes: Vec<(f64, f64)> = s.cards.iter().map(|e| e.size).collect();
     let layout = stack::layout(area, corner, &sizes, s.max_cards);
+    s.shown = layout.cards.iter().filter(|f| f.is_some()).count();
     for (e, frame) in s.cards.iter().zip(&layout.cards) {
         e.views.place(frame.map(ns_rect));
     }
