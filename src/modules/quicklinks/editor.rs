@@ -12,8 +12,8 @@ const DELETE: &str = "delete/";
 
 impl Quicklinks {
     /// Write `edit` to the file that holds the links: this Mac's overlay when it sets them,
-    /// else config.toml (or the test files).
-    fn write(&self, edit: &Edit) -> Result<(), String> {
+    /// else config.toml (or the test files). `Ok` holds where a reload puts the link.
+    fn write(&self, edit: &Edit) -> Result<Option<usize>, String> {
         match &self.file {
             Some((path, host)) => edit::edit_in(path, host.as_deref(), "quicklink", "links", edit),
             None => edit::edit_entries("quicklink", "links", edit),
@@ -30,9 +30,11 @@ impl Quicklinks {
                 self.links[i] = link;
             }
             None if editing.is_some() => return Err("That quicklink no longer exists".into()),
+            // A reload puts it after the table entries, before legacy [[quicklinks]] ones.
             None => {
-                self.write(&Edit::Append(link.entry()))?;
-                self.links.push(link);
+                let at = self.write(&Edit::Append(link.entry()))?;
+                let at = at.unwrap_or(self.links.len()).min(self.links.len());
+                self.links.insert(at, link);
             }
         }
         Ok(())
@@ -214,7 +216,10 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.starts_with(CONFIG), "{text}");
         assert!(text.ends_with("keyword = \"r\"\napp = \"Safari\"\n"), "{text}");
-        assert_eq!(reloaded(&path).len(), 4);
+        // The new links sit where a reload puts them: before the legacy one.
+        assert_eq!(names(&m), ["Docs", "Crates", "Rs", "Old"]);
+        let now: Vec<_> = m.links.iter().map(|q| format!("{}={}", q.name, q.url)).collect();
+        assert_eq!(reloaded(&path), now);
         let dup = run(&mut m, &["add", "docs", "x"]).unwrap_err();
         assert_eq!(dup, "A quicklink named \"docs\" already exists");
     }
@@ -347,5 +352,20 @@ mod tests {
         assert_eq!(run(&mut m, &["remove", "Here"]).unwrap(), "Removed quicklink Here");
         assert_eq!(fs::read_to_string(&path).unwrap(), CONFIG);
         assert_eq!(reloaded(&overlay), ["X=/x"]);
+    }
+
+    #[test]
+    fn an_add_lands_before_the_overlays_legacy_links() {
+        // config.toml has no legacy link; the overlay's list (table + legacy) replaces it.
+        let over = "[[quicklinks]]\nname = \"Old\"\nurl = \"/o\"\n\n\
+                    [[quicklink.links]]\nname = \"Here\"\nurl = \"/h\"\n";
+        let Fixture { mut m, path, _dir } = module("overlay-legacy", over);
+        let overlay = path.with_file_name("config.mbp.toml");
+        fs::write(&overlay, over).unwrap();
+        fs::write(&path, "[[quicklink.links]]\nname = \"Base\"\nurl = \"/b\"\n").unwrap();
+        m.file = Some((path, Some("mbp".into())));
+        run(&mut m, &["add", "X", "/x"]).unwrap();
+        assert_eq!(names(&m), ["Here", "X", "Old"]);
+        assert_eq!(reloaded(&overlay), ["Here=/h", "X=/x", "Old=/o"]);
     }
 }

@@ -11,6 +11,9 @@ use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Tab
 
 use super::{LEGACY, config_path, host_name, parse, target, write_default};
 
+/// An edit's result: where the added or replaced entry sits in the list a reload sees.
+pub type Landed = Result<Option<usize>, String>;
+
 /// One entry: `(field, value)` pairs in file order. Leave a field out to drop it.
 pub type Entry = Vec<(&'static str, String)>;
 
@@ -27,25 +30,19 @@ pub enum Edit {
 
 /// Apply `edit` to the file that holds the entries: this Mac's overlay when it sets them,
 /// else config.toml (written with the default first when there is none).
-pub fn edit_entries(module: &str, key: &str, edit: &Edit) -> Result<(), String> {
+pub fn edit_entries(module: &str, key: &str, edit: &Edit) -> Landed {
     edit_in(&config_path(), host_name().as_deref(), module, key, edit)
 }
 
 /// `edit_entries` for config file `base` and the overlay of `host` next to it.
-pub fn edit_in(
-    base: &Path,
-    host: Option<&str>,
-    module: &str,
-    key: &str,
-    edit: &Edit,
-) -> Result<(), String> {
+pub fn edit_in(base: &Path, host: Option<&str>, module: &str, key: &str, edit: &Edit) -> Landed {
     edit_file(&target::entries_file(base, host, module, key), module, key, edit)
 }
 
 /// Re-read `path` (never a cached copy, so a hand edit is not lost), edit it and replace it
 /// atomically. A symlink is written through to its target, unless that is in the Nix store
 /// or read-only (`target::writable`).
-pub fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Result<(), String> {
+pub fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Landed {
     let at = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
     if !path.exists() && fs::symlink_metadata(path).is_err() {
         write_default(path);
@@ -53,7 +50,8 @@ pub fn edit_file(path: &Path, module: &str, key: &str, edit: &Edit) -> Result<()
     let target = target::writable(path)?;
     let text = fs::read_to_string(&target).map_err(|e| at(&e))?;
     let text = edit_text(&text, module, key, edit).map_err(|e| at(&e))?;
-    write_atomic(&target, &text).map_err(|e| at(&e))
+    write_atomic(&target, &text).map_err(|e| at(&e))?;
+    Ok(landed(&text, module, key, edit))
 }
 
 /// `text` with `edit` applied. Refuses a file that does not load, and an edit that would
@@ -79,6 +77,16 @@ fn edit_text(text: &str, module: &str, key: &str, edit: &Edit) -> Result<String,
     let text = doc.to_string();
     parse(&text).map_err(|e| format!("not edited, the result would not load: {e}"))?;
     Ok(text)
+}
+
+/// The index of the entry `edit` added or replaced in edited `text`'s `[<module>] <key>`:
+/// table entries, then legacy ones, as a reload sees them. `None` for a removal.
+fn landed(text: &str, module: &str, key: &str, edit: &Edit) -> Option<usize> {
+    let (Edit::Append(entry) | Edit::Replace { entry, .. }) = edit else { return None };
+    let name = entry.iter().find(|(field, _)| *field == "name")?.1.as_str();
+    let table = parse(text).ok()?.section(module).ok()??.get::<toml::Table>().ok()?;
+    let named = |e: &toml::Value| e.get("name").and_then(toml::Value::as_str) == Some(name);
+    table.get(key)?.as_array()?.iter().position(named)
 }
 
 /// An array of entries: `[[a.b]]` tables or an inline `b = [{ ... }]`.
@@ -304,6 +312,13 @@ enabled = false
         );
         assert_eq!(out, expected);
         assert_eq!(names(&out), ["Work", "Home", "New", "Old"]);
+        // Each edit says where its entry sits in that list; a removal has none.
+        let at = |e: &Edit| {
+            landed(&edit_text(COMMENTED, "quicklink", "links", e).unwrap(), "quicklink", "links", e)
+        };
+        assert_eq!(at(&Edit::Append(entry("New", "/"))), Some(2));
+        assert_eq!(at(&Edit::Replace { name: "Old".into(), entry: entry("Was", "/") }), Some(2));
+        assert_eq!(at(&Edit::Remove { name: "Old".into() }), None);
     }
 
     #[test]
