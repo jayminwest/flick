@@ -9,7 +9,7 @@ use crate::modules::kota::tests::{configured, event, wait};
 use crate::modules::kota::{ID, Kota};
 
 const SERVER: &str = "[kota]\nmachine = \"server\"\ndash = \"http://ok\"\n";
-const THINKING: &str = "show K… | KOTA: thinking · <1m\nFlick KOTA cards design brainstorm | 8 rows";
+const THINKING: &str = "show K… | KOTA: thinking · <1m\nFlick KOTA cards design brainstorm | 9 rows";
 
 fn reconfigure(k: &mut Kota, text: &str) {
     k.configure(&parse(text).unwrap().section(ID).unwrap().unwrap()).unwrap();
@@ -45,7 +45,7 @@ fn the_item_follows_the_presence_and_the_badge() {
     // `Started` shows it; the round may or may not have ended by then.
     assert_eq!(calls.first().map(String::as_str), Some("listen"));
     assert_eq!(calls.last().map(String::as_str), Some(THINKING));
-    assert!(calls.len() == 2 || calls[1] == "show K? | KOTA: unknown | 7 rows", "{calls:?}");
+    assert!(calls.len() == 2 || calls[1] == "show K? | KOTA: unknown | 8 rows", "{calls:?}");
     // Nothing changed: no redraw.
     event(&mut k, Event::ModuleChanged { module: ID });
     event(&mut k, Event::LauncherOpened);

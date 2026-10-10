@@ -12,6 +12,10 @@ fn answer(now: Result<String, String>) -> Result<String, String> {
     later::settle(now, later::take(), later::MAX_WAIT)
 }
 
+fn ids(view: &ListView) -> Vec<&str> {
+    view.items.iter().map(|i| i.id.as_str()).collect()
+}
+
 fn sent(k: &Kota) -> bool {
     k.shared.lock().asks.first().is_some_and(|a| a.status != Status::Sending)
 }
@@ -91,14 +95,25 @@ fn the_hotkey_opens_the_ask_view() {
 }
 
 #[test]
+fn the_views_open_chat_row_is_the_message_modules_item() {
+    let mut k = configured(ASKS).unwrap();
+    let mut view = test_cx("", |cx| k.open("ask", cx)).unwrap();
+    // Empty field: Open Chat first, so the hotkey then ↵ opens the chat window (flick-ed63).
+    test_cx("  ", |cx| k.refresh(&mut view, cx));
+    assert_eq!(ids(&view), ["message:chat:open"]);
+    assert_eq!((view.items[0].title.as_str(), view.items[0].verb), ("Open Chat", "Open"));
+    assert_eq!((view.footer.as_str(), view.text.as_str()), ("KOTA: unknown  ·  ↵ opens chat", ""));
+    // A question: Ask first, Open Chat still there.
+    test_cx(" what's on? ", |cx| k.refresh(&mut view, cx));
+    assert_eq!(ids(&view), ["kota:ask", "message:chat:open"]);
+    assert_eq!(view.footer, "KOTA: unknown  ·  ↵ sends");
+}
+
+#[test]
 fn the_view_sends_the_typed_question() {
     let mut k = configured(ASKS).unwrap();
     let mut view = test_cx("", |cx| k.open("ask", cx)).unwrap();
-    test_cx("  ", |cx| k.refresh(&mut view, cx));
-    assert!(view.items.is_empty());
-    assert_eq!((view.footer.as_str(), view.text.as_str()), ("KOTA: unknown  ·  ↵ sends", ""));
     test_cx(" what's on? ", |cx| k.refresh(&mut view, cx));
-    assert_eq!(view.items.len(), 1);
     let item = view.items[0].clone();
     assert_eq!((item.title.as_str(), item.id.arg()), ("Ask KOTA: what's on?", Some("what's on?")));
     assert!(matches!(test_cx("", |cx| k.activate(&item.id, cx)), Outcome::Hide));

@@ -6,7 +6,8 @@
 //! (the Mac that polls) and `status_item` is true; otherwise it is hidden, so a Mac
 //! without `[kota]` has no KOTA item. It is redrawn only when its title, tooltip or rows
 //! change. Menu rows: Ask KOTA… and Inbox route like the module's hotkeys `ask` and
-//! `inbox` (`platform::status_item` opener); Open Dashboard and Refresh Now are picks.
+//! `inbox` (`platform::status_item` opener), Open Chat like the `message` module's hotkey
+//! `chat:open` (`CHAT`); Open Dashboard and Refresh Now are picks.
 //! Opening the menu starts a round (at most one per `io::REFRESH_EVERY` seconds); an open
 //! menu takes the new rows in place.
 //!
@@ -29,6 +30,10 @@ pub const REFRESH: &str = "refresh";
 pub const INBOX: &str = "inbox";
 /// The cards view the Inbox row opens: the `message` module's recent list, by name.
 pub const INBOX_VIEW: (&str, &str) = ("message", "recent");
+/// The KOTA chat window (the one `[message] chat_hotkey` toggles), by name: the `message`
+/// module's item key and hotkey key that show it on its current thread. The menu's Open
+/// Chat routes to that hotkey; the ask view's Open Chat row is that item (flick-ed63).
+pub const CHAT: (&str, &str) = ("message", "chat:open");
 
 /// What the item does on the system; `wire::UI` is the real thing, tests use
 /// `testkit::UI`.
