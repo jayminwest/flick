@@ -17,6 +17,7 @@ system_prompt = ""                 # sent first in every chat; "" for none
 history = true                     # keep normal chats in flick.db
 max_threads = 100                  # the most chats kept; saving one past it drops the oldest (1 to 10000)
 max_tokens = 0                     # token cap per reply; 0 for the server's default
+context_chars = 48000              # most characters of the chat sent per prompt; 0 for all
 timeout_secs = 300                 # seconds one reply may take (1 to 3600)
 
 [[llm.servers]]
@@ -41,18 +42,18 @@ A server with `private = true` is reserved for the private chat. The normal chat
 - Type and press Return to send. ⇧Return or ⌥Return adds a line. The reply streams into the window. While a reasoning model thinks, its bubble says "Thinking…". The reasoning text itself is not shown or kept.
 - ⌘. stops the reply and keeps what had arrived (marked "stopped"). ⌘N starts a new chat. ⌘W or Esc hides the window. One reply runs at a time; a prompt sent while one streams goes back into the input.
 - A failed reply shows red with the server's reason. The header dot is orange while a reply or a model list is on its way and red after a failure.
-- Each prompt sends the whole chat so far, after `system_prompt`.
-- A kept chat whose server is no longer in the config (or is now `private`) refuses to send and says why. Pick a model to move it to another server.
+- Each prompt sends the newest part of the chat that fits in `context_chars` characters, after `system_prompt` (which counts too). The prompt itself is always sent, and what is sent starts with one of your prompts, not a reply. When older messages are left out, the notice line says how many were sent, for example "Sent the newest 3 of 5 messages". The window and flick.db keep the whole chat. `context_chars = 0` sends the whole chat every time.
+- A kept chat whose server is no longer in the config (or is now `private`) moves to the default server and `default_model` when you open it or send from it. The notice line says so. It never moves to a private server; with no normal server left it refuses to send.
 
 ## Picking a model
 
-⌘K on **Local Model Chat**, then **Choose Model…**, lists every normal server's models. The lists are fetched again each time the view opens. Enter on a model makes the open chat use it from the next prompt on, and new chats too, until Flick restarts. A server that did not answer shows its error; Enter on that row asks it again.
+⌘K on **Local Model Chat**, then **Choose Model…**, lists every normal server's models. The lists are fetched again each time the view opens. Enter on a model makes the open chat use it from the next prompt on, and new chats too. The pick is kept in flick.db (table `llm_pick`, the server and model names only), so it holds after a restart, also with `history = false`. A pick whose server is no longer a normal server in the config is ignored. A server that did not answer shows its error; Enter on that row asks it again.
 
 Without a pick, a chat uses `default_server` and `default_model`. When those are empty, it uses the first normal server and the first model that server lists. The list is fetched when you send the first prompt.
 
 ## History
 
-With `history = true` (the default), each prompt and each finished reply is written to flick.db, in tables `llm_threads` and `llm_messages`. A finished reply is one that is done, stopped or failed. Only the newest `max_threads` chats are kept; saving a chat past that drops the oldest along with its messages. ⌘K on **Local Model Chat**, then **Chat History**, lists the kept chats, newest first. Enter reopens one. On launch, the window shows the newest kept chat.
+With `history = true` (the default), each prompt and each finished reply is written to flick.db, in tables `llm_threads` and `llm_messages`. A finished reply is one that is done, stopped or failed. Only the newest `max_threads` chats are kept; saving a chat past that drops the oldest along with its messages. ⌘K on **Local Model Chat**, then **Chat History**, lists the kept chats, newest first. Enter reopens one. ⌘K on a chat, then **Delete Chat**, asks first; ⌘Return deletes the chat and its messages from flick.db. If the window shows that chat, a reply on its way is stopped and the window starts a new chat. On launch, the window shows the newest kept chat.
 
 With `history = false`, nothing is written. The chat lives in memory until ⌘N or quit, and **Chat History** is empty. Chats kept earlier stay in flick.db and are not shown.
 
@@ -81,6 +82,7 @@ private = true
 
 - It talks only to a server with `private = true` (the first one listed). With none, the launcher item and the hotkey say "no private server" and nothing is sent; it never falls back to a normal server. `private = true` is your word that the server keeps no logs or caches; Flick cannot check it.
 - The model is `default_model` if the private server lists it, else the first model it lists. Each prompt sent before a model is known fetches the list again, so a prompt sent after the server starts works. If the list fails, the prompt goes back into the input and the notice says why (see [Troubleshooting](local-llm/private-server.md#troubleshooting)). The first reply after a while may wait while the server loads the model ("Waiting for the model…").
+- It sends the whole private conversation with each prompt. `context_chars`, the kept model pick and **Delete Chat** belong to the normal chat only; none of them writes or reads anything of the private chat.
 - The window says **Private - nothing is saved** in a banner and has its own outline. It is left out of screenshots, screen recording and screen sharing. Spell check, autocorrect, text completion, predictions, Writing Tools and undo are off in its input, and its bubbles cannot be selected.
 - Keys: Return sends, ⌘. stops the reply, ⌘N clears the chat, ⌘W or Esc hides and clears it. The hotkey hides (and clears) it while it has the keyboard.
 - ⌘C copies the input's selection, or, with nothing selected, the last reply. Either copy is marked concealed and transient, so Flick's clip history and other clipboard managers skip it. Pasting it elsewhere is up to you.
@@ -110,16 +112,20 @@ Run these in the app; unit tests cover the logic with a fake curl and a fake win
 7. Point a server at a dead port and send. With `default_model` empty, the notice line gives the error and the prompt returns to the input. With a `default_model`, the reply shows red with the error.
 8. Set `history = false`, reload, and chat. Check that `sqlite3 ~/Library/Application\ Support/Flick/flick.db 'select count(*) from llm_messages'` does not grow.
 9. Press Esc and ⌘W: the window hides, and the app you were in gets the keyboard back.
+10. In **Chat History**, ⌘K on a chat, **Delete Chat**: a confirmation names the chat; ⌘Return removes it from the list and from flick.db.
+11. Set `context_chars = 200`, reload, and chat until the notice says "Sent the newest …": the reply still makes sense for the newest messages.
+12. Pick a model, quit and relaunch Flick: **Local Model Chat** still names the picked model.
+13. Rename a server in the config and reload, then open a chat kept on the old name: the notice says it now uses the default server, and a prompt gets a reply.
 
 Private chat:
 
-10. With no `private = true` server: **Private Model Chat** says "no private server" in the launcher, the private hotkey shows the same, and no request reaches the normal server.
-11. Add a private server and reload. The private hotkey shows a window titled "Private Chat" with the "Private - nothing is saved" banner and an outlined frame. Send a prompt: the reply streams in.
-12. Take a screenshot (⇧⌘3, ⇧⌘5 window capture) and start a screen recording: the private window is missing from both.
-13. Type a misspelled word in its input: no red underline, no autocorrect, no completion popup. Right-click: no context menu.
-14. ⌘C with nothing selected, then check Flick's clip history (and any clipboard manager): the reply is not listed, but it pastes into another app.
-15. Each of these leaves an empty window with a "Cleared when ..." notice: Esc then reopen, ⌘N, lock the screen (⌃⌘Q) and unlock, sleep and wake, **Reload Flick Config**. After quit and relaunch the window is empty too (with no notice).
-16. After a private exchange, `sqlite3 ~/Library/Application\ Support/Flick/flick.db .dump | grep <a word you sent>` finds nothing.
+14. With no `private = true` server: **Private Model Chat** says "no private server" in the launcher, the private hotkey shows the same, and no request reaches the normal server.
+15. Add a private server and reload. The private hotkey shows a window titled "Private Chat" with the "Private - nothing is saved" banner and an outlined frame. Send a prompt: the reply streams in.
+16. Take a screenshot (⇧⌘3, ⇧⌘5 window capture) and start a screen recording: the private window is missing from both.
+17. Type a misspelled word in its input: no red underline, no autocorrect, no completion popup. Right-click: no context menu.
+18. ⌘C with nothing selected, then check Flick's clip history (and any clipboard manager): the reply is not listed, but it pastes into another app.
+19. Each of these leaves an empty window with a "Cleared when ..." notice: Esc then reopen, ⌘N, lock the screen (⌃⌘Q) and unlock, sleep and wake, **Reload Flick Config**. After quit and relaunch the window is empty too (with no notice).
+20. After a private exchange, `sqlite3 ~/Library/Application\ Support/Flick/flick.db .dump | grep <a word you sent>` finds nothing.
 
 ## Private server
 

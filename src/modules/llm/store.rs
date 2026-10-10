@@ -1,6 +1,6 @@
-//! The normal chat's history (flick-6a0d): tables `llm_threads` and `llm_messages`, and the
-//! only SQL that touches them. Private chats never reach this file: `PrivateSession` has no
-//! store handle.
+//! The normal chat's history (flick-6a0d): tables `llm_threads` and `llm_messages`, the
+//! model pick (`llm_pick`, flick-5dfe), and the only SQL that touches them. Private chats never
+//! reach this file: `PrivateSession` has no store handle, and the private chat takes no `Cx`.
 
 use rusqlite::{Row, params};
 
@@ -15,6 +15,9 @@ pub const MIGRATIONS: &[&str] = &[
     // 'failed' (`error` says why).
     "CREATE TABLE llm_threads (id TEXT PRIMARY KEY, server TEXT NOT NULL, model TEXT NOT NULL, title TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL);
      CREATE TABLE llm_messages (thread TEXT NOT NULL, seq INTEGER NOT NULL, ts INTEGER NOT NULL, role TEXT NOT NULL, model TEXT NOT NULL, body TEXT NOT NULL, state TEXT, error TEXT, PRIMARY KEY (thread, seq));",
+    // The normal chat's last pick in the `models` view (flick-5dfe): one row, a normal
+    // server's name and a model id, no chat text.
+    "CREATE TABLE llm_pick (id INTEGER PRIMARY KEY CHECK (id = 1), server TEXT NOT NULL, model TEXT NOT NULL);",
 ];
 
 /// Who wrote a message.
@@ -111,6 +114,12 @@ pub trait Chats {
     fn llm_threads(&self, limit: usize) -> Vec<Thread>;
     /// Thread `id` and its messages in order.
     fn llm_thread(&self, id: &str) -> Option<(Thread, Vec<Msg>)>;
+    /// Drop thread `id` and its messages; whether it was kept.
+    fn llm_delete(&self, id: &str) -> Result<bool, String>;
+    /// The server and model picked last, if any.
+    fn llm_pick(&self) -> Option<(String, String)>;
+    /// Keep `server` and `model` as the pick.
+    fn llm_set_pick(&self, server: &str, model: &str) -> Result<(), String>;
 }
 
 fn n(k: usize) -> i64 {
@@ -159,6 +168,24 @@ impl Chats for Store {
         let mut stmt = conn.prepare(sql).ok()?;
         let list = stmt.query_map([id], msg).map(|rows| rows.flatten().collect()).unwrap_or_default();
         Some((t, list))
+    }
+
+    fn llm_delete(&self, id: &str) -> Result<bool, String> {
+        let fail = |e: rusqlite::Error| format!("llm: can't delete the chat: {e}");
+        let tx = self.conn().unchecked_transaction().map_err(fail)?;
+        tx.execute("DELETE FROM llm_messages WHERE thread = ?1", [id]).map_err(fail)?;
+        let gone = tx.execute("DELETE FROM llm_threads WHERE id = ?1", [id]).map_err(fail)?;
+        tx.commit().map_err(fail)?;
+        Ok(gone > 0)
+    }
+
+    fn llm_pick(&self) -> Option<(String, String)> {
+        self.conn().query_row("SELECT server, model FROM llm_pick WHERE id = 1", [], |r| Ok((r.get(0)?, r.get(1)?))).ok()
+    }
+
+    fn llm_set_pick(&self, server: &str, model: &str) -> Result<(), String> {
+        let sql = "INSERT OR REPLACE INTO llm_pick (id, server, model) VALUES (1, ?1, ?2)";
+        self.conn().execute(sql, [server, model]).map(|_| ()).map_err(|e| format!("llm: can't keep the model pick: {e}"))
     }
 }
 
@@ -237,5 +264,32 @@ mod tests {
         assert!(err.unwrap_err().starts_with("llm: can't save the chat: "));
         assert_eq!(s.llm_threads(5), []);
         assert!(s.llm_thread("a").is_none());
+        assert!(s.llm_delete("a").unwrap_err().starts_with("llm: can't delete the chat: "));
+        assert_eq!(s.llm_pick(), None);
+        assert!(s.llm_set_pick("mlx", "q").unwrap_err().starts_with("llm: can't keep the model pick: "));
+    }
+
+    #[test]
+    fn a_deleted_thread_goes_with_its_messages_and_no_other() {
+        let s = store();
+        save(&s, "a", 0, &m(Who::User, "1", End::Done, 1), 5);
+        save(&s, "a", 1, &m(Who::Assistant, "2", End::Done, 2), 5);
+        save(&s, "b", 0, &m(Who::User, "3", End::Done, 3), 5);
+        assert_eq!(s.llm_delete("a"), Ok(true));
+        assert_eq!(ids(&s), ["b"]);
+        let left: i64 = s.conn().query_row("SELECT COUNT(*) FROM llm_messages", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 1);
+        assert_eq!(s.llm_delete("a"), Ok(false));
+    }
+
+    #[test]
+    fn the_pick_is_one_row_replaced() {
+        let s = store();
+        assert_eq!(s.llm_pick(), None);
+        s.llm_set_pick("mlx", "qwen").unwrap();
+        s.llm_set_pick("ollama", "gemma").unwrap();
+        assert_eq!(s.llm_pick(), Some(("ollama".into(), "gemma".into())));
+        let rows: i64 = s.conn().query_row("SELECT COUNT(*) FROM llm_pick", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
     }
 }
