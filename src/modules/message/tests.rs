@@ -30,12 +30,18 @@ fn inbox(config: &str) -> Inbox {
             now: || TS,
             utc_offset: |_| -25_200,
             new_id: || "m1".into(),
-            show: |card, p| {
+            show: |id, content, p, o| {
+                let Content::Text(card) = content;
                 log(format!(
-                    "show {}|{}|{}|{}|{:?}|{}|{:?}|{}|{}",
+                    "show {id} {}|{}|{}|{}|{:?}|{}|{:?}|{}|{}|{}|{}",
                     card.header, card.time, card.context, card.body, card.link, card.pending,
-                    p.corner, p.timeout_secs, p.sound
+                    p.corner, p.max_cards, o.timeout_secs, o.sound, o.sticky
                 ));
+                true
+            },
+            dismiss: |id| {
+                log(format!("dismiss {id}"));
+                true
             },
             hide: || log("hide".into()),
             notify: |id, title, body| log(format!("notify {id}|{title}|{body}")),
@@ -81,7 +87,7 @@ impl Fixture {
 fn a_post_shows_the_panel_and_lands_in_history() {
     let (mut f, mut m) = (Fixture::new(), inbox(""));
     assert_eq!(f.run(&mut m, false, &["post", "**Done**:", "see", "PR"]), Ok("m1".into()));
-    assert_eq!(take_log(), ["show Messages|11:31||Done: see PR|None|false|TopRight|20|true"]);
+    assert_eq!(take_log(), ["show m1 Messages|11:31||Done: see PR|None|false|TopRight|4|20|true|false"]);
     let json = f.run(&mut m, true, &["ls"]).unwrap();
     let list: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(list[0]["id"], "m1");
@@ -93,7 +99,7 @@ fn a_post_shows_the_panel_and_lands_in_history() {
 fn a_reply_replaces_its_pending_post() {
     let (mut f, mut m) = (Fixture::new(), inbox("[message]\nname = \"KOTA\"\nstyle = \"both\""));
     f.run(&mut m, false, &["post", "--pending", "--id", "k1", "what's", "on", "today?"]).unwrap();
-    assert_eq!(take_log(), ["show KOTA|11:31||what's on today?|None|true|TopRight|20|true"]);
+    assert_eq!(take_log(), ["show k1 KOTA|11:31||what's on today?|None|true|TopRight|4|20|false|false"]);
     let posted = f
         .run(&mut m, true, &["post", "--reply-to", "k1", "--url", "https://cal.com/x", "--id", "r1", "Two", "calls."])
         .unwrap();
@@ -101,20 +107,31 @@ fn a_reply_replaces_its_pending_post() {
     assert_eq!(
         take_log(),
         [
-            "show KOTA|11:31|Re: what's on today?|Two calls.|Some(\"https://cal.com/x\")|false|TopRight|20|true",
+            "dismiss k1",
+            "show r1 KOTA|11:31|Re: what's on today?|Two calls.|Some(\"https://cal.com/x\")|false|TopRight|4|20|true|false",
             "notify r1|KOTA|Two calls.",
         ]
     );
     assert_eq!(f.run(&mut m, false, &["ls"]).unwrap(), "r1\t11:31\tTwo calls.");
     // A reply to a message that is not pending keeps it and quotes it.
     f.run(&mut m, false, &["post", "--reply-to", "r1", "--title", "Update", "One", "moved."]).unwrap();
-    assert!(take_log()[0].starts_with("show Update|11:31|Re: Two calls.|One moved."));
+    assert!(take_log()[0].starts_with("show m1 Update|11:31|Re: Two calls.|One moved."));
     assert_eq!(f.store.messages(10).len(), 2);
 }
 
 #[test]
+fn a_reply_under_its_placeholder_id_redraws_that_card() {
+    let (mut f, mut m) = (Fixture::new(), inbox(""));
+    f.run(&mut m, false, &["post", "--pending", "--id", "k1", "q?"]).unwrap();
+    f.run(&mut m, false, &["post", "--reply-to", "k1", "--id", "k1", "a."]).unwrap();
+    let log = take_log();
+    assert_eq!(log.len(), 2, "no dismiss: {log:?}");
+    assert!(log[1].starts_with("show k1 Messages|11:31|Re: q?|a.|"), "{log:?}");
+}
+
+#[test]
 fn style_and_placement_follow_config() {
-    let config = "[message]\nwidth = 400\nstyle = \"notification\"\nposition = \"bottom-left\"\ntimeout_secs = 0\nsound = false";
+    let config = "[message]\nwidth = 400\nstyle = \"notification\"\nposition = \"bottom-left\"\nmax_cards = 2\ntimeout_secs = 0\nsound = false";
     let (mut f, mut m) = (Fixture::new(), inbox(config));
     f.run(&mut m, false, &["post", "--pending", "waiting"]).unwrap();
     assert_eq!(take_log(), [""; 0], "a pending post is not a notification");
@@ -122,7 +139,7 @@ fn style_and_placement_follow_config() {
     assert_eq!(take_log(), ["notify n2|Messages|hi"]);
     // `show` always uses the panel.
     assert_eq!(f.run(&mut m, false, &["show", "n2"]), Ok("Showing n2".into()));
-    assert_eq!(take_log(), ["show Messages|11:31||hi|None|false|BottomLeft|0|false"]);
+    assert_eq!(take_log(), ["show n2 Messages|11:31||hi|None|false|BottomLeft|2|0|false|false"]);
     let none = inbox("[message]\nstyle = \"none\"");
     f.cx("", false, |cx| none.post(&["quiet".to_string()], cx)).unwrap();
     assert_eq!(take_log(), [""; 0]);
@@ -164,6 +181,7 @@ fn bad_tables_are_refused() {
     assert!(bad("[message]\nname = \" \"").contains("name"));
     assert!(bad("[message]\nwidth = 100.0").contains("width"));
     assert!(bad("[message]\nmax_history = 0").contains("max_history"));
+    assert!(bad("[message]\nmax_cards = 0").contains("max_cards"));
     assert!(bad("[message]\nstyle = \"toast\"").starts_with("[message]: "));
     assert!(bad("[message]\nposition = \"middle\"").starts_with("[message]: "));
     assert!(bad("[message]\ncolour = 1").starts_with("[message]: "));
@@ -228,7 +246,7 @@ fn rows_copy_reshow_and_open() {
     assert_eq!(kind(f.cx("", false, |cx| m.act(&link, "copy", cx))), "stay Some(\"Copied message\")");
     let log = take_log();
     assert_eq!(log[..2], ["launcher hide", "open https://x.y"]);
-    assert!(log[3].starts_with("show PR|"), "{log:?}");
+    assert!(log[3].starts_with("show a PR|"), "{log:?}");
     assert_eq!(kind(f.cx("", false, |cx| m.act(&view.items[1].id, "open", cx))), "stay None");
     let gone = ItemId::new("message", "gone");
     assert_eq!(kind(f.cx("", false, |cx| m.act(&gone, "show", cx))), "stay None");
