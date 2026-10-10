@@ -16,11 +16,11 @@ fn the_example_is_inert_until_uncommented() {
 }
 
 #[test]
-fn the_example_has_a_table_for_every_module_and_nothing_else() {
+fn the_example_has_a_table_for_every_module_and_the_launcher() {
     let text = uncommented(EXAMPLE);
     let top: toml::Table = toml::from_str(&text).unwrap();
     let mut keys: Vec<&str> = top.keys().map(String::as_str).collect();
-    let mut want: Vec<&str> = IDS.iter().copied().chain(["hotkey"]).collect();
+    let mut want: Vec<&str> = IDS.iter().copied().chain(["hotkey", "launcher"]).collect();
     keys.sort_unstable();
     want.sort_unstable();
     assert_eq!(keys, want);

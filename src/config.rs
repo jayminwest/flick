@@ -1,6 +1,6 @@
-//! `~/.config/flick/config.toml`: the launcher hotkey, then one `[<module>]` table per
-//! module (keyed by module id). Each module deserializes its own table; this file knows no
-//! module's settings, only the legacy flat keys it maps into those tables.
+//! `~/.config/flick/config.toml`: the launcher hotkey and `[launcher]`, then one `[<module>]`
+//! table per module (keyed by module id). Each module deserializes its own table; this file
+//! knows no module's settings, only the legacy flat keys it maps into those tables.
 
 use std::path::{Path, PathBuf};
 
@@ -11,9 +11,11 @@ use toml::{Table, Value};
 pub mod edit;
 pub mod example;
 mod host;
+pub mod launcher;
 pub mod overlay;
 
 pub use host::host_name;
+pub use launcher::Launcher;
 
 const DEFAULT_CONFIG: &str = r##"# Flick config. Edit, then run "Reload Flick Config" from Flick.
 # Every option, with its default: run "flick config example".
@@ -272,6 +274,11 @@ impl Config {
         }
         Ok(Some(Section { module: module.into(), table }))
     }
+
+    /// The `[launcher]` table, checked by `parse`; the controller owns it, not a module.
+    pub fn launcher(&self) -> Launcher {
+        Launcher::from_tables(&self.tables).unwrap_or_default()
+    }
 }
 
 /// `$FLICK_CONFIG`, else `~/.config/flick/config.toml`.
@@ -327,6 +334,7 @@ fn from_table(mut tables: Table) -> Result<Config, String> {
             map_legacy(&mut tables, old, module, key, value)?;
         }
     }
+    Launcher::from_tables(&tables)?;
     Ok(Config { hotkey, tables, overlay: None })
 }
 

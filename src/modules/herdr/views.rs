@@ -8,7 +8,7 @@
 use super::io::Preview;
 use super::model::{Agent, Fleet, MachineState, Status};
 use super::reply;
-use crate::core::{Icon, Item, ItemId, Tab};
+use crate::core::{Icon, Item, ItemId, Tab, Tone};
 
 pub const ID: &str = "herdr";
 
@@ -100,6 +100,15 @@ pub fn status_icon(status: Status) -> Icon {
     })
 }
 
+/// An agent's tint: green done, orange blocked (waiting on the user), else none.
+pub fn status_tone(status: Status) -> Tone {
+    match status {
+        Status::Done => Tone::Ok,
+        Status::Blocked => Tone::Warn,
+        Status::Idle | Status::Working | Status::Unknown => Tone::Neutral,
+    }
+}
+
 /// The last path component of `cwd`, `~` for the home directory.
 fn base(cwd: &str) -> &str {
     let trimmed = cwd.trim_end_matches('/');
@@ -129,6 +138,7 @@ pub fn agent_item(agent: &Agent, now: u64) -> Item {
         accessory: if agent.changed_at == 0 { String::new() } else { age(now.saturating_sub(agent.changed_at)) },
         keywords,
         tab: Tab::Act("output"),
+        tone: status_tone(agent.status),
         ..Item::new(
             ItemId::new(ID, agent_key(&agent.machine, &agent.pane_id)),
             format!("{} · {}", agent.label(), agent.machine),

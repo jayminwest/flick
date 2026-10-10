@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use super::cli::{Report, label};
 use super::store::{Status, Task};
-use crate::core::{Action, Icon, Item, ItemId, ListView, Ranker};
+use crate::core::{Action, Icon, Item, ItemId, ListView, Ranker, Tone};
 
 /// The view that starts or switches to a task.
 pub const PICK: &str = "pick";
@@ -193,12 +193,12 @@ pub fn list_items(
     let rows: Vec<Item> = tasks
         .iter()
         .map(|t| {
-            let symbol = match t.status {
-                Status::Done => "checkmark.circle",
-                _ if Some(t.id) == running => "play.circle",
-                _ => "circle",
+            let (symbol, tone) = match t.status {
+                Status::Done => ("checkmark.circle", Tone::Ok),
+                _ if Some(t.id) == running => ("play.circle", Tone::Ok),
+                _ => ("circle", Tone::Neutral),
             };
-            Item { icon: Icon::Symbol(symbol), ..task_row(t, secs.get(&t.id).copied().unwrap_or(0), running) }
+            Item { icon: Icon::Symbol(symbol), tone, ..task_row(t, secs.get(&t.id).copied().unwrap_or(0), running) }
         })
         .collect();
     let order: HashMap<String, f64> =
@@ -354,6 +354,7 @@ mod tests {
         assert_eq!(ids(&items), ["task:run/3", "task:run/1", "task:run/4"]);
         assert_eq!(items.iter().map(|i| &i.icon).collect::<Vec<_>>(), [&Icon::Symbol("play.circle"), &Icon::Symbol("circle"), &Icon::Symbol("checkmark.circle")]);
         assert_eq!((items[0].accessory.as_str(), items[2].accessory.as_str()), ("Running · 0:00", "Done · 0:01"));
+        assert_eq!(items.iter().map(|i| i.tone).collect::<Vec<_>>(), [Tone::Ok, Tone::Neutral, Tone::Ok]);
         // A done task that matches better still comes after the open ones.
         assert_eq!(ids(&list("ma", None)), ["task:run/4"]);
         assert_eq!(ids(&list("#kota", None)), ["task:run/3"]);

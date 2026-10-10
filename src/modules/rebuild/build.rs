@@ -19,6 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::git;
+use crate::core::Tone;
 
 /// Time for `git rev-parse` and `git archive` together.
 const GIT_BUDGET: Duration = Duration::from_secs(120);
@@ -106,6 +107,15 @@ impl Progress {
             Phase::Installed => format!("Installed {label}"),
             Phase::Failed(_) => "Build Failed (see log)".into(),
             Phase::Cancelled => "Build Cancelled".into(),
+        }
+    }
+
+    /// The status row's tint: green installed, red failed, else none.
+    pub fn tone(&self) -> Tone {
+        match self.phase {
+            Phase::Installed => Tone::Ok,
+            Phase::Failed(_) => Tone::Error,
+            Phase::Idle | Phase::Building | Phase::Installing | Phase::Cancelled => Tone::Neutral,
         }
     }
 }
