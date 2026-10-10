@@ -1,7 +1,15 @@
 //! The front tab URL of a running browser, through `AppleScript` (`/usr/bin/osascript`). Only
 //! Chromium browsers whose windows report `mode` ("normal" or "incognito") are supported, so
-//! a private window is never read: anything but "normal" gives no URL. Safari has no way to
-//! tell a private window, and Arc no `mode`, so neither is supported.
+//! a private window is never read: anything but "normal" gives no URL.
+//!
+//! Safari and Arc are not supported, because Flick cannot tell their private windows:
+//! - Safari's dictionary (`sdef`) has no private property on window, document or tab. The
+//!   known workaround reads the label of a Window menu item through System Events: it needs
+//!   Accessibility and a second Automation grant, works only while Safari is active, breaks
+//!   with each localization, and races the URL read. A wrong guess records a private URL.
+//! - Arc takes `incognito` only in `make new window with properties`; no source shows it as
+//!   a readable window property, and its windows have no `mode`. Not verified against a real
+//!   `sdef /Applications/Arc.app` (Arc was not installed), so it stays off.
 //!
 //! Each browser asks the user once for Automation permission (Privacy & Security >
 //! Automation), naming Flick, on the first read. `front_tab_url` blocks until the browser
@@ -135,9 +143,13 @@ mod tests {
     #[test]
     fn supports_chromium_browsers_only() {
         assert!(supports("com.brave.Browser") && supports("com.google.Chrome"));
-        assert!(!supports("com.apple.Safari") && !supports("company.thebrowser.Browser"));
         // Never runs a script for a browser it cannot check for private windows.
-        assert_eq!(front_tab_url("com.apple.Safari"), TabUrl::Failed);
+        for bundle in
+            ["com.apple.Safari", "com.apple.SafariTechnologyPreview", "company.thebrowser.Browser"]
+        {
+            assert!(!supports(bundle), "{bundle}");
+            assert_eq!(front_tab_url(bundle), TabUrl::Failed, "{bundle}");
+        }
     }
 
     #[test]
