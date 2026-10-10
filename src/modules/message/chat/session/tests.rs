@@ -44,7 +44,7 @@ fn only(kind: &str, log: &[String]) -> Vec<String> {
 }
 
 #[test]
-fn chat_keys_are_cmd_alone() {
+fn chat_keys_are_cmd_alone_or_cmd_shift_for_context() {
     let k = |c, shift, opt| Keystroke { key: Key::Char(c), cmd: true, shift, opt };
     assert_eq!(binding(key('n')), Some(Command::New));
     assert_eq!(binding(key('[')), Some(Command::Older));
@@ -53,6 +53,10 @@ fn chat_keys_are_cmd_alone() {
     assert_eq!(binding(key('w')), Some(Command::Close));
     assert_eq!(binding(key('x')), None);
     assert_eq!(binding(k('n', true, false)), None);
+    assert_eq!(binding(k('v', true, false)), Some(Command::Clipboard));
+    assert_eq!(binding(k('s', true, false)), Some(Command::Screenshot));
+    assert_eq!(binding(k('s', true, true)), None);
+    assert_eq!(binding(key('v')), None, "⌘V is paste");
     assert_eq!(binding(k('n', false, true)), None);
     assert_eq!(binding(Keystroke { cmd: false, ..key('n') }), None);
     assert_eq!(binding(Keystroke { key: Key::Return, ..key('n') }), None);
@@ -225,8 +229,8 @@ fn asks_run_one_at_a_time_in_order() {
     let (mut f, mut m) = (Fixture::new(), inbox("[message]\nkota_host = \"order@host\""));
     m.env.new_id = || format!("q{}", NEXT.fetch_add(1, Ordering::Relaxed));
     f.cx("", false, |cx| {
-        m.ask("t1", "order one", false, cx).unwrap();
-        m.ask("t1", "order two", false, cx).unwrap();
+        m.ask_with("t1", "order one", vec![], false, cx).unwrap();
+        m.ask_with("t1", "order two", vec![], false, cx).unwrap();
     });
     assert_eq!(m.chat.queue.len(), 1, "the second waits for the first");
     settle(&mut f, &mut m);

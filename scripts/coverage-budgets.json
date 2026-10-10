@@ -64,6 +64,7 @@
     "src/modules/message/chat/ask.rs": 100.0,
     "src/modules/message/chat/asks.rs": 99.0,
     "src/modules/message/chat/attach.rs": 100.0,
+    "src/modules/message/chat/context.rs": 100.0,
     "src/modules/message/chat/model.rs": 100.0,
     "src/modules/message/chat/session.rs": 100.0,
     "src/modules/message/chat/threads.rs": 100.0,

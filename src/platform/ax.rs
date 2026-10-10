@@ -147,7 +147,6 @@ pub fn focused_window_title(pid: i32) -> Option<String> {
 /// selected, and always in a secure (password) field. Each AX message waits at most
 /// `SUMMON_TIMEOUT`, so a hung app costs a bounded pause; still, never call it on a hot path.
 /// Reads only: no synthetic ⌘C, the clipboard is untouched.
-#[cfg_attr(not(test), expect(dead_code, reason = "context attach in chat (flick-65bd) calls it"))]
 pub fn selected_text(pid: i32) -> Option<String> {
     let app_el = app_element(pid);
     if app_el.0.is_null() {

@@ -32,7 +32,6 @@ pub struct Front {
 /// selected text. None when no app is in front or Flick itself is. Call it before showing a
 /// window of Flick's. AX reads are bounded by short messaging timeouts, so a hung app costs
 /// well under a second, but this still blocks: summon time only, never a hot path.
-#[cfg_attr(not(test), expect(dead_code, reason = "context attach in chat (flick-65bd) calls it"))]
 pub fn front(selection: bool) -> Option<Front> {
     let pid = rules::other_app(super::workspace::frontmost_pid(), own_pid())?;
     let (bundle_id, app) = super::workspace::app_identity(pid)?;
@@ -55,7 +54,6 @@ fn own_pid() -> i32 {
 /// main thread (e.g. `surface::show`) and call `work` with the result on that worker, where
 /// it may upload. `restore` runs only when `hide` ran, and before `work`, so an upload never
 /// keeps the window hidden. `work` owns the file and must delete it; a failed shot leaves none.
-#[expect(dead_code, reason = "context attach in chat (flick-65bd) calls it")]
 pub fn shoot_display(
     hide: impl FnOnce(),
     restore: impl FnOnce() + Send + 'static,

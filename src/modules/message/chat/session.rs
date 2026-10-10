@@ -11,18 +11,23 @@
 //!   `message/threads`), else the last shown, else the newest stored, else a new one (`t…`,
 //!   stored once the first question is). ⌘N starts a thread, ⌘[ / ⌘] move to the older /
 //!   newer one (`model::neighbor`), ⌘R resends the newest question that did not go out.
+//! - Context chips (`context.rs`, flick-65bd): the front app, its window and its selection at
+//!   summon; ⌘⇧V the clipboard, ⌘⇧S a screenshot; clicking a chip removes it.
 //! - Every surface handler only queues a `Note` and posts `ModuleChanged` (mx-fcbc43); the
 //!   module drains the notes on the main thread (`chat_drain`), then redraws the window if it
 //!   shows. Card presses go through the HUD cards' dispatch (`dispatch.rs`).
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use super::asks::{Ask, Asked};
+use super::context::Attached;
 use super::{model, view};
 use crate::core::Cx;
 use crate::modules::message::Inbox;
 use crate::modules::message::run::{self, Worker};
 use crate::modules::message::store::Messages;
+use crate::platform::context::Front;
 use crate::platform::surface::{self, Key, Keystroke};
 
 /// What the window needs from the system; `wire::HOOKS` is the real thing.
@@ -54,6 +59,16 @@ pub struct Hooks {
     pub new_thread: fn() -> String,
     /// Draw the window into a PNG at a path (`surface::snapshot`).
     pub snapshot: fn(&str) -> Result<(), String>,
+    /// The app in front, its window title and selection (`context::front`).
+    pub context: fn() -> Option<Front>,
+    /// The clipboard's text, unless concealed.
+    pub clipboard: fn() -> Option<String>,
+    /// Start a screenshot with the window out of the way; it arrives as `Note::Shot`.
+    pub shoot: fn(),
+    /// Replace the chips above the input.
+    pub chips: fn(&[surface::Chip]),
+    /// Run one upload (ssh, the PNG on stdin) on the worker thread.
+    pub upload: fn(&[String], &[u8]) -> run::Exit,
 }
 
 /// What a window handler queued.
@@ -67,6 +82,10 @@ pub enum Note {
     Closed,
     /// A card row's button: card id, action id, values JSON.
     Press { card: String, action: String, values: String },
+    /// Chip `n` was clicked.
+    Unchip(usize),
+    /// A screenshot's PNG (the temp file is gone), or why there is none.
+    Shot(Result<Arc<[u8]>, String>),
 }
 
 /// The chat's own ⌘ keys.
@@ -82,19 +101,25 @@ pub enum Command {
     Retry,
     /// ⌘W
     Close,
+    /// ⌘⇧V: attach the clipboard.
+    Clipboard,
+    /// ⌘⇧S: attach a screenshot.
+    Screenshot,
 }
 
-/// The command bound to `k`, if any: ⌘ alone with N, [, ], R or W.
+/// The command bound to `k`, if any: ⌘ alone with N, [, ], R or W; ⌘⇧ with V or S.
 pub fn binding(k: Keystroke) -> Option<Command> {
-    if !k.cmd || k.shift || k.opt {
+    if !k.cmd || k.opt {
         return None;
     }
-    match k.key {
-        Key::Char('n') => Some(Command::New),
-        Key::Char('[') => Some(Command::Older),
-        Key::Char(']') => Some(Command::Newer),
-        Key::Char('r') => Some(Command::Retry),
-        Key::Char('w') => Some(Command::Close),
+    match (k.shift, k.key) {
+        (false, Key::Char('n')) => Some(Command::New),
+        (false, Key::Char('[')) => Some(Command::Older),
+        (false, Key::Char(']')) => Some(Command::Newer),
+        (false, Key::Char('r')) => Some(Command::Retry),
+        (false, Key::Char('w')) => Some(Command::Close),
+        (true, Key::Char('v')) => Some(Command::Clipboard),
+        (true, Key::Char('s')) => Some(Command::Screenshot),
         _ => None,
     }
 }
@@ -116,6 +141,10 @@ pub struct Chat {
     pub(super) done: Worker<Asked>,
     /// The window's notice line (why the last ask failed).
     pub(super) notice: Option<String>,
+    /// The chips the next question carries.
+    pub(super) attached: Vec<Attached>,
+    /// The chips of questions that did not go out, by request id, oldest first.
+    pub(super) unsent: VecDeque<(String, Vec<Attached>)>,
 }
 
 impl Default for Chat {
@@ -135,6 +164,8 @@ impl Chat {
             busy: None,
             done: Worker::default(),
             notice: None,
+            attached: Vec::new(),
+            unsent: VecDeque::new(),
         }
     }
 
@@ -172,8 +203,10 @@ impl Inbox {
 
     /// Show the window on `thread` (else the one it showed, the newest, or a new one).
     pub fn summon(&mut self, thread: Option<String>, cx: &Cx) {
-        if !self.chat.visible() {
+        let fresh = !self.chat.visible();
+        if fresh {
             self.chat.front = (self.chat.hooks.front)();
+            self.attach_front();
         }
         if thread.is_some() {
             self.chat.thread = thread;
@@ -182,6 +215,9 @@ impl Inbox {
         if !self.chat.opened {
             (self.chat.hooks.open)();
             self.chat.opened = true;
+        }
+        if fresh {
+            self.chips();
         }
         self.chat_draw(cx);
         (self.chat.hooks.show)();
@@ -200,19 +236,15 @@ impl Inbox {
     pub fn chat_drain(&mut self, cx: &Cx) {
         for note in (self.chat.hooks.take)() {
             match note {
-                Note::Submit(text) => {
-                    let thread = self.current_thread(cx);
-                    if let Err(e) = self.ask(&thread, &text, false, cx) {
-                        (self.chat.hooks.set_input)(&text);
-                        self.chat.notice = Some(e);
-                    }
-                }
+                Note::Submit(text) => self.submit(&text, cx),
                 Note::Key(c) => self.chat_key(c, cx),
                 Note::Closed => self.chat.refocus(),
                 Note::Press { card, action, values } => {
                     // Errors show on the card.
                     let _ = self.press(&card, &action, values, cx);
                 }
+                Note::Unchip(n) => self.unchip(n),
+                Note::Shot(png) => self.shot(png),
             }
         }
         for done in self.chat.done.take() {
@@ -233,6 +265,8 @@ impl Inbox {
                 (self.chat.hooks.hide)();
                 return self.chat.refocus();
             }
+            Command::Clipboard => return self.attach_clipboard(),
+            Command::Screenshot => return self.attach_screenshot(),
             Command::Older => model::Step::Older,
             Command::Newer => model::Step::Newer,
         };

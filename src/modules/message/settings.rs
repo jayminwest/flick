@@ -80,6 +80,8 @@ pub(super) struct Settings {
     pub(super) kota_host: String,
     /// kota-ask on that host, relative to its home (as `[kota] kota_ask`).
     pub(super) kota_ask: String,
+    /// Where chat screenshots go on that host, relative to its home (`chat::attach::dir`).
+    pub(super) attach_dir: String,
 }
 
 impl Default for Settings {
@@ -103,6 +105,7 @@ impl Default for Settings {
             chat_hotkey: None,
             kota_host: super::chat::ask::DEFAULT_HOST.into(),
             kota_ask: super::chat::ask::DEFAULT_KOTA_ASK.into(),
+            attach_dir: super::chat::attach::DEFAULT_DIR.into(),
         }
     }
 }

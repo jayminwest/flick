@@ -8,7 +8,7 @@
 //! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
 //! keyboard into the newest card, or gives it back), `action_command`,
 //! `pending_timeout_secs`, `card_timeout_secs`, `chat_hotkey` (shows or hides the chat
-//! window), `kota_host`, `kota_ask` (where a chat question goes). Table `messages` holds the history. Each
+//! window), `kota_host`, `kota_ask` (where a chat question goes), `attach_dir` (where its screenshots go). Table `messages` holds the history. Each
 //! message shows as its own card, keyed by its id. `message card <verb>` posts and manages
 //! structured cards (`card.rs`, `core::card`), stored in the same table and drawn by the HUD's
 //! card renderer; presses and dismissals are handled in `dispatch.rs`, KOTA sends in `run.rs`,
@@ -340,6 +340,7 @@ impl Module for Inbox {
             return Err("[message]: action_command needs a program first".into());
         }
         chat::ask::argv(&s.kota_host, &s.kota_ask, "r", "t").map_err(|e| format!("[message]: {e}"))?;
+        chat::attach::dir(&s.attach_dir)?;
         self.settings = s;
         Ok(())
     }
