@@ -176,8 +176,8 @@ Sources:
   `activity` module follows the front app only while recording with `titles` or `urls` on and
   posts `WindowChanged` from the coalesced (1 s trailing) callback. `axwatch::stop` removes it.
 - `platform::browser::front_tab_url(bundle)` runs `osascript` and blocks on the browser (and
-  on its Automation prompt), so `activity` calls it only from its one URL worker thread,
-  which leaves the answer in the module's inbox and posts `ModuleChanged`.
+  on its Automation prompt, killed after 30 s as `Failed`), so `activity` calls it only from
+  its one URL worker thread, which leaves the answer in the module's inbox and posts `ModuleChanged`.
 - `platform::status_item::show(owner, symbol, tooltip, menu, on_pick)` puts one
   `NSStatusItem` per owner (a module id) in the menu bar (`activity`'s recording dot is owner
   `activity`, KOTA's presence is owner `kota`); `hide(owner)` removes only that owner's item.

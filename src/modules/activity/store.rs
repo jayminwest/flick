@@ -45,7 +45,8 @@ pub trait Spans {
     fn set_open_span(&self, id: Option<i64>);
     /// End the span stored as open at `at` and clear it (on quit, from a second connection).
     fn close_open(&self, at: i64);
-    /// Delete spans that end after `ts`; how many.
+    /// Forget the time after `ts`: delete spans that start at or after it and end after it,
+    /// and end the spans that began before it at `ts`; how many spans lost time.
     fn forget_since(&self, ts: i64) -> usize;
     /// Delete spans of app `app` (bundle id or name); how many.
     fn forget_app(&self, app: &str) -> usize;
@@ -130,7 +131,11 @@ impl Spans for Store {
     }
 
     fn forget_since(&self, ts: i64) -> usize {
-        self.conn().execute("DELETE FROM activity_spans WHERE end > ?1", [ts]).unwrap_or(0)
+        let conn = self.conn();
+        let clipped = conn
+            .execute("UPDATE activity_spans SET end = ?1 WHERE start < ?1 AND end > ?1", [ts])
+            .unwrap_or(0);
+        clipped + conn.execute("DELETE FROM activity_spans WHERE start >= ?1 AND end > ?1", [ts]).unwrap_or(0)
     }
 
     fn forget_app(&self, app: &str) -> usize {
@@ -254,6 +259,12 @@ mod tests {
         }
         assert_eq!(s.forget_since(200), 1);
         assert_eq!(s.forget_app("com.b"), 1);
+        // A span across `ts` keeps its part before `ts` (flick-6def).
+        let id = s.span_open(&Subject::new("com.c", "C", None, None), 300).unwrap();
+        s.span_end(id, 400);
+        assert_eq!(s.forget_since(350), 1);
+        assert_eq!(s.spans(0, 1000).iter().map(|r| (r.start, r.end)).collect::<Vec<_>>(), [(0, 50), (300, 350)]);
+        s.span_delete(id);
         s.set_recording(true);
         assert_eq!(s.forget_all(), 1);
         assert!(s.spans(0, 1000).is_empty() && !s.recording());
