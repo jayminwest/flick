@@ -126,6 +126,15 @@ fn the_child_loses_herdrs_pane_variables() {
 }
 
 #[test]
+fn any_other_herdr_variable_is_removed_too() {
+    let mut cmd = Command::new("herdr");
+    strip_herdr_env(&mut cmd, ["HERDR_NEW_THING", "PATH"].map(OsString::from));
+    let removed: Vec<_> = cmd.get_envs().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+    assert!(removed.iter().any(|r| r == "HERDR_NEW_THING"), "{removed:?}");
+    assert!(!removed.iter().any(|r| r == "PATH"), "{removed:?}");
+}
+
+#[test]
 fn resolve_finds_herdr_on_path_or_takes_a_path() {
     assert_eq!(resolve("/usr/local/bin/herdr"), PathBuf::from("/usr/local/bin/herdr"));
     let home = dirs::home_dir().unwrap();

@@ -17,6 +17,7 @@
 use super::model::{self, Agent};
 use serde::Deserialize;
 use serde_json::Value;
+use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -122,14 +123,7 @@ impl Remote {
     fn command(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(&self.herdr);
         cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        for name in HERDR_ENV {
-            cmd.env_remove(name);
-        }
-        for (name, _) in std::env::vars_os() {
-            if name.to_string_lossy().starts_with("HERDR_") {
-                cmd.env_remove(name);
-            }
-        }
+        strip_herdr_env(&mut cmd, std::env::vars_os().map(|(name, _)| name));
         cmd
     }
 
@@ -171,6 +165,19 @@ impl Remote {
         }
         let err = stderr.join().unwrap_or_default();
         Err(cli_error(&err).unwrap_or_else(|| format!("herdr exited with {exit}")))
+    }
+}
+
+/// Removes `HERDR_ENV` and every other `HERDR_*` name in `env` (Flick's environment) from
+/// `cmd`. Takes the names as an argument so tests cover it outside a herdr pane (flick-9041).
+fn strip_herdr_env(cmd: &mut Command, env: impl IntoIterator<Item = OsString>) {
+    for name in HERDR_ENV {
+        cmd.env_remove(name);
+    }
+    for name in env {
+        if name.to_string_lossy().starts_with("HERDR_") {
+            cmd.env_remove(name);
+        }
     }
 }
 

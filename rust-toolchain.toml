@@ -1,0 +1,5 @@
+# Pinned so local runs and CI lint with the same clippy (flick-475c).
+# Bump deliberately: update the dtolnay/rust-toolchain ref in .github/workflows/ci.yml to match.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt", "llvm-tools-preview"]
