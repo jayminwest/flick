@@ -2,7 +2,7 @@
 
 The `kota` module shows KOTA in the menu bar. KOTA is the always-on Claude Code session in a herdr pane on another Mac, here mbp-server. The menu bar item shows whether KOTA is thinking, waiting on an approval, idle, degraded or down, or whether this Mac is offline. It also shows how many cards are waiting on you. **Ask KOTA…** (a hotkey, the menu, or `flick kota ask`) sends KOTA a question. A pending KOTA card shows until the reply replaces it.
 
-The module is off until `[kota]` sets at least one key. Flick cannot tell an empty `[kota]` table from a missing one. Without a key, Flick runs no thread and no child process for this module, and shows no menu bar item. `flick kota refresh` still checks once on demand. The defaults below fit Jaymin's setup, so `hotkey` alone is enough to turn it on:
+The module is off until `[kota]` sets at least one key. An empty `[kota]` table counts as none. Without a key, Flick runs no thread and no child process for this module, and shows no menu bar item. `flick kota refresh` still checks once on demand. The defaults below fit Jaymin's setup, so `hotkey` alone is enough to turn it on:
 
 ```toml
 [kota]

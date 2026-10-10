@@ -304,7 +304,7 @@ budget) at a time; its result goes through a pure reducer under the lock, then i
 arms one timer thread that sleeps until it is due and posts. Arming bumps a counter, so an
 older timer that wakes exits; `Sleep`/`Locked` bump the round epoch too (a round in flight
 drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module polls only when
-its `[kota]` table sets a key: `Section` cannot tell an empty table from a missing one. When
+its `[kota]` table sets a key (`Section::is_set`; an empty table counts as none). When
 config.toml is shared across Macs, `[kota]` belongs in the KOTA Mac's per-host overlay.
 
 Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (started, a
@@ -571,7 +571,9 @@ writes a commented default (`DEFAULT_CONFIG`).
 - Top-level `hotkey` is the launcher hotkey. The controller owns it.
 - Every other top-level key is a module table, `[<module id>]`. `Config::section(id)` returns
   `Ok(None)` for `enabled = false`, else a `Section` without the `enabled` key (empty if the
-  table is missing). `enabled` that is not a boolean is an error.
+  table is missing). `enabled` that is not a boolean is an error. `Section::is_set` is true when
+  the table sets a key besides `enabled`; a module that stays off until configured (kota,
+  dictation) checks it, so a bare `[<module id>]` header turns nothing on.
 - A module reads its table with `section.get::<Settings>()` into a private type. Give the type
   `#[derive(Default, Deserialize)]` and `#[serde(default)]`. Errors start with `[<id>]: `.
 - `LEGACY` in `src/config.rs` is the only place that knows the old flat keys:

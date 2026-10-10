@@ -168,6 +168,16 @@ fn enabled_flag_turns_a_module_off() {
 }
 
 #[test]
+fn a_section_is_set_only_by_a_key_besides_enabled() {
+    let set = |text: &str| parse(text).unwrap().section("dictation").unwrap().unwrap().is_set();
+    assert!(!set(""), "no table");
+    assert!(!set("[dictation]"), "an empty table counts as none");
+    assert!(!set("[dictation]\nenabled = true"), "enabled alone is not a key");
+    assert!(set("[dictation]\nengine = \"whisper\""));
+    assert!(set("[dictation]\nenabled = true\nmin_hold_ms = 0"));
+}
+
+#[test]
 fn section_errors_name_the_table() {
     #[derive(Deserialize, Debug)]
     struct S {

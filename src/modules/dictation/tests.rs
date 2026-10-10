@@ -113,8 +113,12 @@ fn off_without_a_table() {
          microphone: not checked\n\
          insert: paste (clipboard restored after 250 ms)"
     );
-    // An empty table is the same as none.
-    assert!(!configured("[dictation]").unwrap().on);
+    // An empty table, or one with only `enabled = true`, is the same as none: no mic path.
+    for bare in ["[dictation]", "[dictation]\nenabled = true"] {
+        let mut d = configured(bare).unwrap();
+        assert!(!d.on, "{bare}");
+        assert_eq!(run(&mut d, &["start"]).unwrap_err(), "dictation: off: set a key in [dictation] to turn it on");
+    }
 }
 
 #[test]
