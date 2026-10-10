@@ -217,8 +217,19 @@ pub fn running_for_bundle(path: &Path) -> Vec<i32> {
         .collect()
 }
 
+/// The bundles of every running app (regular or not), symlinks resolved, in the system's
+/// order. Compare them with `canonical` paths.
+pub fn running_bundles() -> Vec<PathBuf> {
+    NSWorkspace::sharedWorkspace()
+        .runningApplications()
+        .iter()
+        .filter_map(|app| app.bundleURL()?.path())
+        .map(|p| canonical(Path::new(&p.to_string())))
+        .collect()
+}
+
 /// `path` with symlinks resolved, or as given when it cannot be resolved (e.g. it is gone).
-fn canonical(path: &Path) -> PathBuf {
+pub fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -323,6 +334,11 @@ mod tests {
     fn an_app_that_is_not_running_has_no_pids() {
         assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle"))).is_empty());
         assert!(running_for_bundle(Path::new("/nonexistent/flick/Nope.app")).is_empty());
+        let running = running_bundles();
+        assert!(!running.contains(&canonical(Path::new("/nonexistent/flick/Nope.app"))));
+        // Finder always runs, and its bundle path resolves to itself.
+        let finder = canonical(Path::new("/System/Library/CoreServices/Finder.app"));
+        assert!(running.contains(&finder), "{running:?}");
     }
 
     #[test]
