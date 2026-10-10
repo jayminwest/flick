@@ -270,6 +270,22 @@ fn forget_needs_yes() {
 }
 
 #[test]
+fn forget_today_keeps_the_part_of_a_span_before_midnight() {
+    with_cx(|cx| {
+        let midnight = T - T % 86_400;
+        let mut a = activity("");
+        at(midnight - 600);
+        run(&mut a, cx, "on").unwrap();
+        at(midnight + 600);
+        a.on_event(Event::AppActivated { pid: 2 }, cx);
+        at(midnight + 700);
+        assert_eq!(run(&mut a, cx, "forget today --yes").unwrap(), "Deleted 2 spans");
+        let safari = |s, e| (s, e, "Safari".to_owned());
+        assert_eq!(rows(cx), [safari(midnight - 600, midnight), safari(midnight + 700, midnight + 700)]);
+    });
+}
+
+#[test]
 fn root_items_view_and_hotkey() {
     with_cx(|cx| {
         let mut a = activity("");
