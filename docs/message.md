@@ -42,6 +42,20 @@ A post with `--pending` is a placeholder: an hourglass, a dimmed body, "Waiting 
 
 `k <text>` (Ask KOTA) uses this: the script posts `--pending` locally, sends the text and the id to KOTA, and KOTA answers with `flick --host <this Mac> message post --reply-to <id> ...`. A `--reply-to` naming a message that is not pending keeps that message and quotes it.
 
+## Cards
+
+A card is a message with structure, posted as JSON (schema in `src/core/card.rs`; the full spec, `docs/cards.md`, comes with the card renderer). Today it shows as a text card: the title as the header, then each block and the action labels in brackets as plain text. It is stored in the same history (the `message:<id>` row and `ls` show that text).
+
+```bash
+printf %s "$json" | flick --host my-laptop message card post --stdin   # or: message card post '<json>'
+```
+
+- Posting the same `id` again replaces the card in place. `reply_to` (a pending message id) replaces that placeholder, as `post --reply-to` does.
+- A card in state `open` with an enabled action stays until closed (Esc leaves it); other cards hide after `timeout_secs`. A `pending` card shows the hourglass, without sound or notification.
+- A card you dismissed with `card dismiss` comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently.
+- Invalid JSON, a card over 16 KiB, or a missing/invalid `id`, `title`, `v` or `state` is an error reply `invalid card: <reason>` (exit 1); nothing is shown or stored. Anything else is shown as well as it can be, with a warning.
+- Cards posted over the network are marked remote: a `flick` action naming a verb peers may not send is shown disabled.
+
 ## Launcher
 
 - **Messages** (or your `name`) in root search shows the latest message as its subtitle; Enter opens the list.
@@ -54,11 +68,18 @@ flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--
 flick message ls [--limit n]     # <id>\t<time>\t<title: >body, newest first (--json: the records)
 flick message show [id]          # show a message (default the latest) in the card again
 flick message hide               # dismiss every card
+flick message card post <json>|--stdin   # the card id, then one "warning: …" line per warning
+flick message card get <id>      # the stored (normalized) card JSON
+flick message card ls [--limit n]  # <id>\t<time>\t<state>\t<title>, newest first (--json: [{id,ts,remote,card}])
+flick message card show <id>     # show the card again
+flick message card dismiss <id>|--all  # remove the card (every card)
 ```
+
+`card post --json` answers `{"id":"…","replaced":true|false,"warnings":["…"]}`; `replaced` is true when a card with that id existed or `reply_to` took a pending message. The client exits 1 when Flick answered with an error (fix the card) and 3 when it got no reply (Flick unreachable).
 
 `post` prints the message id (generated unless `--id`; ids are 1-64 of `A-Z a-z 0-9 . _ -`); with `--json` it answers `{"id":"…","replaced":true|false}`. The body is the words after the flags joined by spaces, at most 16 KiB; put `--` before a body that starts with `--`.
 
-**Network.** Peers in `[remote] peers` may send every `message` verb: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
+**Network.** Peers in `[remote] peers` may send every `message` verb except `card press` and `card focus`: posting is the point of the module. A post can only show text and offer an http(s) link that you click.
 
 ## Manual tests
 
@@ -70,3 +91,4 @@ flick message hide               # dismiss every card
 6. Open **Messages** in the launcher, press Enter on a row: the footer says Copied message and the text is on the clipboard. ⌘K **Show in Panel** shows it again.
 7. Post five messages with different `--id`s: four cards stack from the corner, newest nearest it, with a `+1 more` pill; close one and the hidden card appears. Post one of the ids again: that card redraws in place, no sound.
 8. From a peer: `flick --host <this Mac> message post --title KOTA "from the server"` shows the card.
+9. `printf %s '{"id":"c1","title":"Deploy?","blocks":[{"type":"text","md":"Ship **v2**"}],"actions":[{"id":"go","label":"Ship"}]}' | flick message card post --stdin`: a card "Deploy?" with "Ship v2" and "[Ship]" stays (Esc does not close it). Post it again with `"state":"done"`: it redraws in place and hides after `timeout_secs`. `flick message card post '{"id":"x"}'` prints `flick: invalid card: …` and exits 1.

@@ -410,7 +410,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   prints the raw reply line, so `flick --json <module> <verb> | jq .ok` works. With
   `$FLICK_REMOTE` set and not empty, the client sends `--remote` before `--json` (`flick
   events` ignores it). Exit 0 for `ok`, 1 for
-  an error or no connection, 2 for usage errors. `flick events` prints the stream.
+  an error reply, 3 (`cli::client::UNREACHABLE`) when no reply came (no connection, host
+  unreachable, connection dropped), 2 for usage errors. `flick events` prints the stream.
   `flick snapshot`, `flick import-raycast` and `flick config example` do not use the socket.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac

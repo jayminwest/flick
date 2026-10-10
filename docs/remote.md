@@ -95,7 +95,7 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
    peer (with `events = true`). On the host, run `flick remote off` (or **Turn Off Network
    Access**). The stream on the peer ends; `lsof -nP -iTCP | grep -i flick` on the host
    shows no listener and no established connection; a new `flick --host <host> task ls`
-   prints `can't reach Flick at <host>:7419 (...); is its network access on?` and exits 1.
+   prints `can't reach Flick at <host>:7419 (...); is its network access on?` and exits 3.
 9. **Tailscale down.** On the host, quit Tailscale (or `tailscale down`), then
    `flick remote on`. `remote status` shows `network access: on`, `not listening` and an
    error such as `no Tailscale address to listen on (is Tailscale up?)` or the CLI's error.

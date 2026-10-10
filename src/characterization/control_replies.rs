@@ -255,3 +255,15 @@ fn network_requests_are_remote_even_without_the_flag() {
         r#"{"ok":{"error":null,"events":false,"last":null,"listening":[],"on":false,"peers":[],"port":7419}}"#
     );
 }
+
+#[test]
+fn peers_reach_the_card_verbs() {
+    // A peer's card reaches the module: a structural error is the verb's error (exit 1),
+    // and nothing is stored. (A valid card shows the panel, which needs AppKit.)
+    assert_eq!(
+        net_reply(&["message", "card", "post", "{\"id\":\"c1\"}"]),
+        r#"{"error":"invalid card: card needs a non-empty title string"}"#
+    );
+    assert_eq!(net_reply(&["message", "card", "ls", "--json"]), r#"{"ok":[]}"#);
+    assert_eq!(net_reply(&["message", "card", "get", "c1"]), r#"{"error":"No card c1"}"#);
+}
