@@ -91,6 +91,24 @@ pub struct Item {
     pub verb: &'static str,
     /// What Tab does on a list.
     pub tab: Tab,
+    /// The status the row's icon shows: a symbol icon is tinted green, orange or red.
+    pub tone: Tone,
+}
+
+/// A status color for an item, drawn as a tint on its SF Symbol icon (system green, orange
+/// or red, which follow light and dark mode). Only for state that is plainly good or bad;
+/// most items stay `Neutral`. A file icon (an app's) ignores it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tone {
+    /// The usual secondary-label tint.
+    #[default]
+    Neutral,
+    /// Green: running, done, healthy.
+    Ok,
+    /// Orange: needs a look (stale, warning, blocked).
+    Warn,
+    /// Red: failed, down.
+    Error,
 }
 
 /// What Tab does to a selected item in root search or a module list.
@@ -117,6 +135,7 @@ impl Item {
             keywords: vec![],
             verb,
             tab: Tab::None,
+            tone: Tone::Neutral,
         }
     }
 }
@@ -163,6 +182,7 @@ mod tests {
         assert_eq!(item.title, "Quit Flick");
         assert!(item.subtitle.is_empty() && item.accessory.is_empty() && item.keywords.is_empty());
         assert_eq!(item.tab, Tab::None);
+        assert_eq!((item.tone, Tone::default()), (Tone::Neutral, Tone::Neutral));
         assert_eq!(Tab::default(), Tab::None);
         assert_eq!(item.verb, "Run Command");
         assert_eq!(item.icon, Icon::Symbol("power"));

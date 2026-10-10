@@ -225,6 +225,7 @@ fn the_build_view_shows_status_cancel_and_log() {
     let rows: Vec<(String, String)> =
         view.items.iter().map(|i| (i.id.to_string(), i.title.clone())).collect();
     assert_eq!(rows[0], ("flick:build-status".into(), "Build Failed (see log)".into()));
+    assert_eq!(view.items[0].tone, crate::core::Tone::Error);
     assert_eq!(rows[1], ("flick:build-log".into(), "Open Build Log".into()));
     assert_eq!(rows.len(), 2, "no Cancel once it ended");
 

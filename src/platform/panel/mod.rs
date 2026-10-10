@@ -16,7 +16,7 @@ use objc2_app_kit::{
     NSBackingStoreType, NSBitmapImageFileType, NSColor, NSControl, NSControlTextEditingDelegate,
     NSEvent, NSEventModifierFlags, NSEventType, NSFocusRingType, NSFont, NSFontWeightMedium,
     NSImage, NSPanel, NSResponder, NSScreen, NSTextAlignment, NSTextField, NSTextFieldDelegate,
-    NSTextView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+    NSTextView, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
     NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
@@ -27,7 +27,7 @@ use objc2_foundation::{
 use super::edit::{self, command_only};
 pub use form::{FormField, FormFrame, field_value, focused_field, render_form};
 use form::{FormViews, make_form};
-pub use rows::{Frame, Icon, Row, render};
+pub use rows::{Frame, Icon, Row, Tone, render};
 use rows::{RowViews, label, make_row, make_text, ns, separator, top_rect};
 
 const W: f64 = 750.0;
@@ -226,6 +226,8 @@ fn key_for(sel: Sel) -> Option<Key> {
 
 struct Ui {
     panel: Retained<Panel>,
+    /// The blurred background; its alpha is the panel's opacity.
+    backdrop: Retained<NSVisualEffectView>,
     field: Retained<NSTextField>,
     rows: Vec<RowViews>,
     empty: Retained<NSTextField>,
@@ -271,15 +273,19 @@ pub fn init(handlers: Handlers) {
     unsafe { panel.setReleasedWhenClosed(false) };
     panel.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
 
-    let root = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), rect);
-    root.setMaterial(NSVisualEffectMaterial::Popover);
-    root.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
-    root.setState(NSVisualEffectState::Active);
+    // The blur is a sibling under the content, not its parent, so `set_opacity` fades the
+    // backdrop while the text stays fully opaque.
+    let root = NSView::initWithFrame(NSView::alloc(mtm), rect);
     root.setWantsLayer(true);
     if let Some(layer) = root.layer() {
         layer.setCornerRadius(12.0);
         layer.setMasksToBounds(true);
     }
+    let backdrop = NSVisualEffectView::initWithFrame(NSVisualEffectView::alloc(mtm), rect);
+    backdrop.setMaterial(NSVisualEffectMaterial::Popover);
+    backdrop.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    backdrop.setState(NSVisualEffectState::Active);
+    root.addSubview(&backdrop);
 
     let field = NSTextField::initWithFrame(
         NSTextField::alloc(mtm),
@@ -326,6 +332,7 @@ pub fn init(handlers: Handlers) {
 
     let ui = Ui {
         panel,
+        backdrop,
         field,
         rows,
         empty,
@@ -361,6 +368,12 @@ pub fn snapshot(path: &str) -> Result<(), String> {
             .ok_or(format!("can't write {path}"))
     })
     .unwrap_or(Err("UI not initialized".into()))
+}
+
+/// The background's opacity, 0.0 to 1.0: below 1.0 more of the desktop shows through the
+/// blur. Text and icons stay fully opaque. The caller keeps it in a legible range.
+pub fn set_opacity(opacity: f64) {
+    with_ui(|ui| ui.backdrop.setAlphaValue(opacity));
 }
 
 pub fn is_visible() -> bool {
