@@ -156,6 +156,7 @@ mod tests {
 
     use super::*;
     use crate::config::parse;
+    use crate::core::scratch::Scratch;
     use crate::core::{Module, test_cx};
 
     const CONFIG: &str = "# mine\n\
@@ -163,14 +164,20 @@ mod tests {
         [[quicklink.links]]\nname = \"Docs\"\nurl = \"https://docs.rs/{query}\"\nkeyword = \"d\"\n";
 
     /// A module configured from `text`, writing to its own temp copy (never ~/.config).
-    fn module(name: &str, text: &str) -> (Quicklinks, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("flk-{}-ql-{name}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+    struct Fixture {
+        m: Quicklinks,
+        path: PathBuf,
+        /// Removes the temp copy when the test ends.
+        _dir: Scratch,
+    }
+
+    fn module(name: &str, text: &str) -> Fixture {
+        let dir = Scratch::new(&format!("ql-{name}"));
         let path = dir.join("config.toml");
         fs::write(&path, text).unwrap();
         let mut m = Quicklinks { file: Some((path.clone(), None)), ..Quicklinks::default() };
         m.configure(&parse(text).unwrap().section("quicklink").unwrap().unwrap()).unwrap();
-        (m, path)
+        Fixture { m, path, _dir: dir }
     }
 
     fn run(m: &mut Quicklinks, words: &[&str]) -> Result<String, String> {
@@ -185,8 +192,7 @@ mod tests {
     /// The links a fresh load of `path` sees.
     fn reloaded(path: &PathBuf) -> Vec<String> {
         let text = fs::read_to_string(path).unwrap();
-        let (m, _) = module("reload", &text);
-        m.links.iter().map(|q| format!("{}={}", q.name, q.url)).collect()
+        module("reload", &text).m.links.iter().map(|q| format!("{}={}", q.name, q.url)).collect()
     }
 
     /// `Stay`'s status; panics on any other outcome.
@@ -197,7 +203,7 @@ mod tests {
 
     #[test]
     fn add_verb_appends_and_applies_at_once() {
-        let (mut m, path) = module("add", CONFIG);
+        let Fixture { mut m, path, _dir } = module("add", CONFIG);
         let out = run(&mut m, &["add", "Crates", "https://crates.io/search?q={query}"]);
         assert_eq!(out.unwrap(), "Added quicklink Crates");
         let args = ["add", "Rs", "https://rs.io/{query}", "--keyword", "r", "--app", "Safari"];
@@ -215,7 +221,7 @@ mod tests {
 
     #[test]
     fn list_and_remove_verbs() {
-        let (mut m, path) = module("remove", CONFIG);
+        let Fixture { mut m, path, _dir } = module("remove", CONFIG);
         let list = run(&mut m, &["list"]).unwrap();
         assert_eq!(list, "Docs\thttps://docs.rs/{query}\td\t\nOld\thttps://old.example\t\t");
         assert_eq!(run(&mut m, &["remove", "Docs"]).unwrap(), "Removed quicklink Docs");
@@ -227,7 +233,7 @@ mod tests {
 
     #[test]
     fn bad_verbs_say_how() {
-        let (mut m, _) = module("usage", CONFIG);
+        let Fixture { mut m, _dir, .. } = module("usage", CONFIG);
         let bad: [&[&str]; 3] =
             [&["add", "X"], &["add", "X", "/", "--keyword"], &["add", "X", "/", "--k", "v"]];
         for args in bad {
@@ -239,7 +245,7 @@ mod tests {
 
     #[test]
     fn forms_are_new_and_edit_slash_name() {
-        let (mut m, _) = module("forms", CONFIG);
+        let Fixture { mut m, _dir, .. } = module("forms", CONFIG);
         let new = test_cx("", |cx| m.form("new", cx)).unwrap();
         let keys: Vec<_> = new.fields.iter().map(|f| f.key).collect();
         assert_eq!(keys, ["name", "url", "keyword", "app"]);
@@ -253,7 +259,7 @@ mod tests {
 
     #[test]
     fn editing_renames_in_place() {
-        let (mut m, path) = module("edit", CONFIG);
+        let Fixture { mut m, path, _dir } = module("edit", CONFIG);
         let mut edit = test_cx("", |cx| m.form("edit/Docs", cx)).unwrap();
         edit.set_value(0, " Rust Docs ");
         edit.set_value(2, "rd");
@@ -275,7 +281,7 @@ mod tests {
 
     #[test]
     fn submit_errors_keep_the_form() {
-        let (mut m, _) = module("errors", CONFIG);
+        let Fixture { mut m, _dir, .. } = module("errors", CONFIG);
         let mut bad = test_cx("", |cx| m.form("new", cx)).unwrap();
         bad.set_value(0, "old");
         bad.set_value(1, "/");
@@ -290,7 +296,7 @@ mod tests {
 
     #[test]
     fn actions_are_open_edit_delete() {
-        let (mut m, _) = module("actions", CONFIG);
+        let Fixture { mut m, _dir, .. } = module("actions", CONFIG);
         let id = ItemId::new("quicklink", "Docs");
         let keys: Vec<_> = test_cx("", |cx| m.actions(&id, cx)).iter().map(|a| a.key).collect();
         assert_eq!(keys, ["open", "edit", "delete"]);
@@ -306,7 +312,7 @@ mod tests {
 
     #[test]
     fn delete_asks_first_then_removes() {
-        let (mut m, path) = module("delete", CONFIG);
+        let Fixture { mut m, path, _dir } = module("delete", CONFIG);
         let id = ItemId::new("quicklink", "Docs");
         let Outcome::Confirm(c) = test_cx("", |cx| m.act(&id, "delete", cx)) else { panic!() };
         assert_eq!((c.token.as_str(), c.label.as_str()), ("delete/Docs", "Delete Quicklink"));
@@ -323,7 +329,7 @@ mod tests {
 
     #[test]
     fn a_failed_write_changes_nothing() {
-        let (mut m, path) = module("badfile", CONFIG);
+        let Fixture { mut m, path, _dir } = module("badfile", CONFIG);
         fs::write(&path, "not = [valid").unwrap();
         assert!(run(&mut m, &["add", "X", "/"]).unwrap_err().contains("does not load"));
         assert_eq!(names(&m), ["Docs", "Old"]);
@@ -332,7 +338,7 @@ mod tests {
     #[test]
     fn edits_go_to_the_overlay_that_sets_the_links() {
         let over = "[[quicklink.links]]\nname = \"Here\"\nurl = \"/\"\n";
-        let (mut m, path) = module("overlay", over);
+        let Fixture { mut m, path, _dir } = module("overlay", over);
         let overlay = path.with_file_name("config.mbp.toml");
         fs::write(&overlay, over).unwrap();
         fs::write(&path, CONFIG).unwrap();

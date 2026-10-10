@@ -265,6 +265,7 @@ pub fn hide_frontmost() -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::scratch::Scratch;
 
     #[test]
     fn app_path_takes_only_paths() {
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn app_in_matches_any_case_one_folder_deep() {
-        let root = std::env::temp_dir().join(format!("flk-{}-ws-find", std::process::id()));
+        let root = Scratch::new("ws-find");
         let (first, second) = (root.join("first"), root.join("second"));
         for dir in [first.join("Top.app"), first.join("Vendor/Deep.app"), second.join("Deep.app")] {
             std::fs::create_dir_all(dir).unwrap();
@@ -300,12 +301,12 @@ mod tests {
         for name in ["Deeper", "File", "Vendor/Deep", ".app", "Nope"] {
             assert_eq!(app_in(&dirs, name), None, "{name}");
         }
-        std::fs::remove_dir_all(root).unwrap();
     }
 
-    /// A minimal `.app` bundle with id `bid` in a fresh temp folder.
-    fn fake_bundle(name: &str, bid: Option<&str>) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("flk-{}-ws-{name}", std::process::id()));
+    /// A minimal `.app` bundle with id `bid` in a fresh temp folder, removed when the
+    /// folder drops.
+    fn fake_bundle(name: &str, bid: Option<&str>) -> (Scratch, PathBuf) {
+        let dir = Scratch::new(&format!("ws-{name}"));
         let app = dir.join(format!("{name}.app"));
         let contents = app.join("Contents");
         std::fs::create_dir_all(&contents).unwrap();
@@ -317,22 +318,22 @@ mod tests {
              <key>CFBundleName</key><string>{name}</string>{key}</dict></plist>"
         );
         std::fs::write(contents.join("Info.plist"), plist).unwrap();
-        app
+        (dir, app)
     }
 
     #[test]
     fn bundle_id_reads_the_info_plist() {
         assert_eq!(
-            bundle_id(&fake_bundle("WithId", Some("dev.flick.ws-test"))).as_deref(),
+            bundle_id(&fake_bundle("WithId", Some("dev.flick.ws-test")).1).as_deref(),
             Some("dev.flick.ws-test")
         );
-        assert_eq!(bundle_id(&fake_bundle("NoId", None)), None);
+        assert_eq!(bundle_id(&fake_bundle("NoId", None).1), None);
         assert_eq!(bundle_id(Path::new("/nonexistent/flick/Nope.app")), None);
     }
 
     #[test]
     fn an_app_that_is_not_running_has_no_pids() {
-        assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle"))).is_empty());
+        assert!(running_for_bundle(&fake_bundle("Idle", Some("dev.flick.ws-idle")).1).is_empty());
         assert!(running_for_bundle(Path::new("/nonexistent/flick/Nope.app")).is_empty());
         let running = running_bundles();
         assert!(!running.contains(&canonical(Path::new("/nonexistent/flick/Nope.app"))));
@@ -376,7 +377,7 @@ mod tests {
     fn canonical_resolves_symlinks_and_keeps_missing_paths() {
         let missing = Path::new("/nonexistent/flick/X.app");
         assert_eq!(canonical(missing), missing);
-        let app = fake_bundle("Linked", Some("dev.flick.ws-linked"));
+        let (_dir, app) = fake_bundle("Linked", Some("dev.flick.ws-linked"));
         let link = app.with_file_name("Link.app");
         std::os::unix::fs::symlink(&app, &link).unwrap();
         assert_eq!(canonical(&link), canonical(&app));
