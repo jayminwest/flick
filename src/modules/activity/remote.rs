@@ -115,6 +115,12 @@ impl Activity {
         }
     }
 
+    /// The `remote:` line of `activity status`: "off", or "on" with the time left.
+    pub(super) fn remote_line(&self, store: &Store) -> String {
+        let (now, until) = ((self.env.now)(), store.remote_until());
+        if until > now { format!("on · {}", left(until, now)) } else { "off".into() }
+    }
+
     /// The root item `activity:remote`: allow for an hour, or revoke a live grant.
     pub(super) fn remote_item(&self, store: &Store) -> Item {
         let now = (self.env.now)();

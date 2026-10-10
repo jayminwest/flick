@@ -113,7 +113,7 @@ fn nothing_is_recorded_until_recording_is_on() {
         assert!(!a.on_event(Event::Started, cx));
         assert!(!a.on_event(Event::AppActivated { pid: 2 }, cx));
         assert!(rows(cx).is_empty());
-        assert_eq!(run(&mut a, cx, "status").unwrap(), "recording: off\ntitles: off\nurls: off\nopen span: none");
+        assert_eq!(run(&mut a, cx, "status").unwrap(), "recording: off\ntitles: off\nurls: off\nremote: off\nopen span: none");
     });
 }
 
