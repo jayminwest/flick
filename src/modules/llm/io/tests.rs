@@ -115,8 +115,8 @@ fn a_reply_streams_into_the_inbox_and_the_prompt_goes_over_stdin_only() {
 fn reasoning_arrives_before_the_answer() {
     let (pieces, status) = reply("reason", "2+2");
     assert_eq!(status, Status::Done);
-    assert_eq!(pieces[0], Piece::Reasoning("Two plus two".into()));
-    assert_eq!(pieces[2], Piece::Text("4".into()));
+    assert_eq!(pieces[0], Piece::Reasoning("The user".into()));
+    assert!(pieces.contains(&Piece::Text("Four".into())));
 }
 
 #[test]

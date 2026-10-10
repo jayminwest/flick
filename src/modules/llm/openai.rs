@@ -229,9 +229,11 @@ pub fn models(body: &str) -> Result<Vec<Model>, String> {
 mod tests {
     use super::*;
 
-    const STREAM: &str = include_str!("fixtures/chat_stream.txt");
-    const REASONING: &str = include_str!("fixtures/chat_reasoning.txt");
-    const MLX_MODELS: &str = include_str!("fixtures/models_mlx.json");
+    // Real mlx-serve captures (fixtures/README.md); the ollama list is still synthetic.
+    const STREAM: &str = include_str!("fixtures/mlx_serve_stream.txt");
+    const REASONING: &str = include_str!("fixtures/mlx_serve_reasoning.txt");
+    const MLX_MODELS: &str = include_str!("fixtures/mlx_serve_models.json");
+    const MLX_ERROR: &str = include_str!("fixtures/mlx_serve_error.json");
     const OLLAMA_MODELS: &str = include_str!("fixtures/models_ollama.json");
 
     fn all(stream: &str) -> Vec<Piece> {
@@ -277,24 +279,23 @@ mod tests {
 
     #[test]
     fn a_stream_reads_into_text_finish_usage_and_done() {
-        let want = vec![
-            Piece::Text("Hello".into()),
-            Piece::Text(", world".into()),
-            Piece::Text(".".into()),
-            Piece::Finish("stop".into()),
-            Piece::Usage(Usage { prompt: 12, completion: 4 }),
-            Piece::Done,
-        ];
-        assert_eq!(all(STREAM), want);
+        // mlx-serve sends `"usage":null` on every chunk, a `: keepalive` comment during prefill
+        // and `timings` beside the final usage.
+        let p = all(STREAM);
+        let text: String = p.iter().filter_map(|p| if let Piece::Text(t) = p { Some(t.as_str()) } else { None }).collect();
+        assert_eq!(text, "2+2 equals 4.");
+        assert_eq!(p.iter().filter(|p| matches!(p, Piece::Usage(_))).count(), 1);
+        assert_eq!(p[p.len() - 3..], [Piece::Finish("stop".into()), Piece::Usage(Usage { prompt: 25, completion: 7 }), Piece::Done]);
     }
 
     #[test]
     fn reasoning_deltas_come_before_the_answer() {
         let p = all(REASONING);
-        assert_eq!(p[0], Piece::Reasoning("Two plus two".into()));
-        assert_eq!(p[1], Piece::Reasoning(" is four.".into()));
-        assert_eq!(p[2], Piece::Text("4".into()));
-        assert_eq!(p[3..], [Piece::Finish("length".into()), Piece::Usage(Usage { prompt: 9, completion: 7 }), Piece::Done]);
+        let answer = p.iter().position(|p| matches!(p, Piece::Text(_))).unwrap();
+        assert!(answer > 0 && p[..answer].iter().all(|p| matches!(p, Piece::Reasoning(_))));
+        let thought: String = p[..answer].iter().filter_map(|p| if let Piece::Reasoning(r) = p { Some(r.as_str()) } else { None }).collect();
+        assert_eq!(thought, "The user asks a simple math question and wants a one-word answer.\n");
+        assert_eq!(p[answer..], [Piece::Text("Four".into()), Piece::Finish("stop".into()), Piece::Usage(Usage { prompt: 56, completion: 18 }), Piece::Done]);
         let alt = r#"data: {"choices":[{"delta":{"reasoning":"hm","content":null}}]}"#;
         assert_eq!(sse_line(alt), Line::Data(vec![Piece::Reasoning("hm".into())]));
     }
@@ -316,6 +317,7 @@ mod tests {
     fn errors_in_a_stream_and_in_plain_bodies() {
         let nested = r#"data: {"error":{"message":"model not loaded","type":"x"}}"#;
         assert_eq!(sse_line(nested), Line::Data(vec![Piece::Error("model not loaded".into())]));
+        assert_eq!(error_body(MLX_ERROR).as_deref(), Some("Invalid JSON in request body"));
         assert_eq!(error_body(r#"{"error":"boom"}"#).as_deref(), Some("boom"));
         assert_eq!(error_body(r#" {"detail":"Not Found"} "#).as_deref(), Some("Not Found"));
         assert_eq!(error_body(r#"{"error":{"code":5},"message":"bad model"}"#).as_deref(), Some("bad model"));
@@ -359,12 +361,15 @@ mod tests {
     #[test]
     fn model_lists_from_mlx_serve_and_ollama() {
         let mlx = models(MLX_MODELS).unwrap();
-        assert_eq!(mlx.len(), 2);
-        assert_eq!(mlx[0].id, "qwen3-30b-a3b-4bit");
-        assert_eq!(mlx[0].state.as_deref(), Some("loaded"));
-        assert_eq!(mlx[0].context_length, Some(40_960));
-        assert_eq!(mlx[0].capabilities, ["chat", "reasoning"]);
-        assert_eq!((mlx[1].state.as_deref(), mlx[1].context_length), (Some("unloaded"), None));
+        let want = Model {
+            id: "kota-local".into(),
+            state: Some("ready".into()),
+            context_length: Some(262_144),
+            capabilities: ["chat", "tool_use", "streaming", "vision", "reasoning", "json_schema"].map(String::from).to_vec(),
+        };
+        assert_eq!(mlx, [want]);
+        let sparse = models(r#"{"data":[{"id":"g","state":"unloaded","context_length":null}]}"#).unwrap();
+        assert_eq!((sparse[0].state.as_deref(), sparse[0].context_length), (Some("unloaded"), None));
         let ollama = models(OLLAMA_MODELS).unwrap();
         let ids: Vec<&str> = ollama.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["llama3.2:3b", "gemma3:12b"]);
