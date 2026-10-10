@@ -2,7 +2,7 @@
 //! the fake `pending` hook records.
 
 use super::dispatch::Note;
-use super::tests::{Fixture, TS, inbox, queue, take_log, take_pending};
+use super::tests::{Fixture, TS, inbox, queue, take_log, take_pending, take_unread};
 use super::tests_press::{ASK, posted, press, settle};
 use super::*;
 
@@ -32,7 +32,8 @@ fn started_sends_the_first_count_and_changes_only_after() {
     ] {
         f.run(&mut m, false, &["card", "post", other]).unwrap();
     }
-    assert_eq!(take_pending(), [0; 0]);
+    // The action-less c3 is unread (flick-8ce3): the event goes again, the card count still 1.
+    assert_eq!((take_pending(), take_unread().pop()), (vec![1], Some(1)));
     f.cx("", false, |cx| assert_eq!(m.waiting(cx), 1));
     // A failed verb still re-counts (nothing changed, so nothing is sent).
     assert!(f.run(&mut m, false, &["card", "dismiss", "nope"]).is_err());

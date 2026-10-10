@@ -47,13 +47,14 @@ All keys are optional; the values above are the defaults except `name` (default 
 
 ## Unread posts
 
-A post nobody asked for, `message post` without `--reply-to` (and not `--pending`, `--partial` or in a chat thread), is unread until you see it. KOTA's unprompted nudges are such posts.
+A post nobody asked for, `message post` without `--reply-to` (and not `--pending`, `--partial` or in a chat thread), is unread until you see it. KOTA's unprompted nudges are such posts. So is a [card](#cards) without `reply_to`, `thread` or actions that is not `pending` (a card with actions counts in the badge as a card waiting on you instead).
 
 - Its card stays until you close it (`unprompted_timeout_secs`, default 0). Esc closes it like any message card.
-- Closing its card (x, a click, Esc) reads it. So does opening the message list (the launcher item or `hotkey`) or the cards view (Inbox in the KOTA menu, view `message/cards`: cards and unread posts only): rows read that way show `Unread` in that list, and their corner cards close. A timeout, `message hide` or a restart leave it unread.
+- Closing its card (x, a click, Esc) reads it. So does opening the message list (the launcher item or `hotkey`) or the cards view (Inbox in the KOTA menu, view `message/cards`: cards and unread posts only): rows read that way show `Unread` in that list, and their corner cards close. `message read <id>` reads one post and closes its card; `message read --all` reads every unread post, as opening the list does. A timeout, `message hide` or a restart leave it unread.
 - The KOTA menu bar badge counts unread posts with the cards waiting on you. `flick events` sends `{"event":"cards_pending","count":<cards>,"unread":<posts>}`.
-- `message ls` marks it `(unread)`; `ls --json` has `"unread": true` (absent when read). A peer can check whether its post was seen.
+- `message ls` marks it `(unread)`; `ls --json` has `"unread": true` (absent when read). `ls --unread` lists only the unread posts. A peer can check whether its post was seen, and take back a nudge with `message read <id>`.
 - Replies (`--reply-to`), placeholders and chat posts behave as before: `timeout_secs`, never unread.
+- Not tested by hand: whether the card of an unread post keeps its timeout across a screen lock or display sleep (the timeout waits for input; with the default `unprompted_timeout_secs = 0` it does not apply).
 
 ## Pending posts and replies
 
@@ -72,6 +73,7 @@ printf %s "$json" | flick --host my-laptop message card post --stdin   # or: mes
 ```
 
 - Posting the same `id` again replaces the card in place. `reply_to` (a pending message id) replaces that placeholder, as `post --reply-to` does.
+- A card nobody asked for (no `reply_to`, `thread` or actions, not `pending`) is [unread](#unread-posts) and stays `unprompted_timeout_secs` (default: until closed).
 - A card in state `open` with an enabled action stays for `card_timeout_secs` (default: until closed; Esc leaves it); a `pending` card (the hourglass, without sound or notification) stays until it is updated or closed; other cards hide after `timeout_secs`.
 - A card you dismissed (`card dismiss`, its x or Esc) comes back only when re-posted as `open` or `error`; a `done` or `pending` update of it goes to history silently. A card that only timed out shows any update. Dismissals are stored, so they hold across a restart (and a dismissed card stays out of the KOTA badge).
 
@@ -295,7 +297,8 @@ On the laptop against live KOTA, with `chat_hotkey` set and Flick reloaded.
 
 ```bash
 flick message post [--title t] [--url https://…] [--reply-to id] [--id id] [--thread t] [--pending|--partial] [--] <body...>
-flick message ls [--limit n]     # <id>\t<time>\t<title: >body[ (pending|partial|failed)], newest first (--json: the records)
+flick message ls [--unread] [--limit n]  # <id>\t<time>\t<title: >body[ (pending|partial|failed|unread)], newest first (--json: the records); --unread: unread posts only
+flick message read <id>|--all    # mark a post (every unread post) read and close its card: "Read <id>", "Read <n> posts" (--json: {"read":[ids that were unread]})
 flick message threads [--limit n]  # <thread>\t<time of last>\t<n> messages\t<first body>, newest first (--json: [{id,messages,first_ts,last_ts,first_body}])
 flick message thread <t> [--limit n]  # the thread's newest n messages, oldest first, as ls prints them (--json: the records)
 flick message chat [--thread t] [--snapshot <png>]  # show the chat window (on thread t); --snapshot draws it into a PNG (this Mac only)

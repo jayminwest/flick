@@ -5,7 +5,7 @@
 //! `--reply-to <its id>` replaces. Ids are `message:list` (root item, view `recent`) and
 //! `message:<message id>` (rows of `recent` and `cards`; Enter copies the body, ⌘K Show / Open Link /
 //! Copy). Table `[message]`: `name`, `style`, `position`, `width`, `timeout_secs`,
-//! `unprompted_timeout_secs` (a post nobody asked for: unread until seen, `seen.rs`),
+//! `unprompted_timeout_secs` (a post nobody asked for: unread until seen, `seen.rs`; `ls` and `read` in `history.rs`),
 //! `max_cards`, `max_history`, `chat_history`, `chat_threads`, `sound`, `hotkey` (opens `recent`), `card_hotkey` (moves the
 //! keyboard into the newest card, or gives it back), `action_command`,
 //! `pending_timeout_secs`, `card_timeout_secs`, `chat_hotkey` (shows or hides the chat
@@ -24,6 +24,7 @@ mod card;
 mod cards;
 mod chat;
 mod dispatch;
+mod history;
 mod local;
 mod pending;
 mod run;
@@ -223,24 +224,6 @@ impl Inbox {
         }
     }
 
-    /// `ls` text: one line per message, `id  time  [title: ]body[ (pending|partial|failed|unread)]`.
-    fn ls(&self, list: &[Message], now: i64) -> String {
-        let line = |m: &Message| {
-            let time = text::stamp(m.ts, now, (self.env.utc_offset)(m.ts));
-            let title = m.title.as_ref().map(|t| format!("{t}: ")).unwrap_or_default();
-            let mark = match (m.pending, m.state) {
-                (true, _) => " (pending)",
-                (_, Progress::Partial) => " (partial)",
-                (_, Progress::Failed) => " (failed)",
-                (_, Progress::Done) if m.unread => " (unread)",
-                (_, Progress::Done) => "",
-            };
-            let body = text::preview(&text::plain(&m.body), 100);
-            format!("{}\t{time}\t{title}{body}{mark}", m.id)
-        };
-        list.iter().map(line).collect::<Vec<_>>().join("\n")
-    }
-
     fn run_verb(&mut self, args: &[String], cx: &Cx) -> Result<String, String> {
         let words: Vec<&str> = args.iter().map(String::as_str).collect();
         match words.as_slice() {
@@ -254,18 +237,8 @@ impl Inbox {
                 }
                 Ok(id)
             }
-            ["ls", rest @ ..] => {
-                let limit = match rest {
-                    [] => 20,
-                    ["--limit", n] => n.parse().map_err(|_| format!("--limit {n}: not a number"))?,
-                    _ => return Err("usage: flick message ls [--limit n]".into()),
-                };
-                let list = cx.store.messages(limit);
-                if cx.json {
-                    return serde_json::to_string(&list).map_err(|e| e.to_string());
-                }
-                Ok(self.ls(&list, (self.env.now)()))
-            }
+            ["ls", rest @ ..] => self.ls_verb(rest, cx),
+            ["read", rest @ ..] => self.read_verb(rest, cx),
             ["show", rest @ ..] if rest.len() <= 1 => {
                 let m = match rest.first() {
                     Some(id) => cx.store.message(id).ok_or(format!("No message {id}"))?,
@@ -494,6 +467,6 @@ impl Module for Inbox {
     }
 
     fn verbs(&self) -> &'static str {
-        "message post [--title t] [--url u] [--reply-to id] [--id id] [--thread t] [--pending|--partial] <body...> | message ls [--limit n] | message threads [--limit n] | message thread <t> [--limit n] | message chat [--thread t] [--snapshot <png>] | message ask [--thread t] <text...> | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
+        "message post [--title t] [--url u] [--reply-to id] [--id id] [--thread t] [--pending|--partial] <body...> | message ls [--unread] [--limit n] | message read <id>|--all | message threads [--limit n] | message thread <t> [--limit n] | message chat [--thread t] [--snapshot <png>] | message ask [--thread t] <text...> | message show [id] | message hide | message card post <json>|--stdin | message card get|show <id> | message card ls [--limit n] | message card dismiss <id>|--all | message card spec | message card press <id> <action> [values-json] | message card focus"
     }
 }

@@ -3,11 +3,13 @@
 //!
 //! - A post nobody asked for (`unprompted`: `message post` without `--reply-to`, not
 //!   `--pending` or `--partial`, outside chat threads; KOTA's nudges) is stored unread, and
-//!   its card stays `unprompted_timeout_secs` (default 0: until the user closes it). Replies,
-//!   placeholders, chat posts and cards keep their own timeouts.
+//!   its card stays `unprompted_timeout_secs` (default 0: until the user closes it). So is a
+//!   card without `reply_to`, thread or actions that is not `pending` (flick-8ce3). Replies,
+//!   placeholders, chat posts and other cards keep their own timeouts.
 //! - Unread clears when the user closes its card (x, a click, Esc) or opens the message list
 //!   (view `recent`: the launcher item, `hotkey`; view `cards`: the KOTA menu's Inbox). Opening the list
-//!   marks the rows it read `Unread` in that view and closes their corner cards. A timeout,
+//!   marks the rows it read `Unread` in that view and closes their corner cards; the `cards`
+//!   view and `message read <id>|--all` (`history.rs`) read the same way. A timeout,
 //!   `message hide` or a restart leave it unread.
 //! - How a card left the corner is stored: 'user' (x, Esc, a click, `card dismiss`, a
 //!   `dismiss` action) or 'timeout'. A re-post that shows clears it, as `card show` does.
@@ -18,9 +20,10 @@ use std::collections::HashSet;
 
 use rusqlite::params;
 
-use super::Inbox;
 use super::store::{Message, Progress, Role};
+use super::{Inbox, card};
 use crate::core::Cx;
+use crate::core::card::{Card, State};
 use crate::core::store::Store;
 
 /// How a card left the corner.
@@ -50,14 +53,21 @@ impl Dismissal {
     }
 }
 
-/// A post nobody asked for: it waits to be read.
+/// A post nobody asked for: it waits to be read. A card counts when `unprompted_card`.
 pub fn unprompted(m: &Message) -> bool {
     m.reply_to.is_none()
         && !m.pending
         && m.state == Progress::Done
         && m.thread.is_none()
-        && m.card.is_none()
         && m.role == Role::Peer
+        && (m.card.is_none() || card::stored(m).is_some_and(|c| unprompted_card(&c)))
+}
+
+/// A card nobody asked for (flick-8ce3): no `reply_to`, no thread, no actions, not
+/// `pending`. It is unread as a text post is and stays `unprompted_timeout_secs`; a card with
+/// actions waits on the user through the badge's card count instead.
+pub fn unprompted_card(c: &Card) -> bool {
+    c.reply_to.is_none() && c.thread.is_none() && c.actions.is_empty() && c.state != State::Pending
 }
 
 /// Unread and dismissal state on the shared store.
@@ -66,6 +76,8 @@ pub trait Seen {
     fn set_dismissed(&self, id: &str, how: Option<Dismissal>);
     /// Mark every unread message read; returns their ids.
     fn read_all(&self) -> Vec<String>;
+    /// Mark message `id` read; true when it was unread.
+    fn read_one(&self, id: &str) -> bool;
     fn unread_count(&self) -> u32;
 }
 
@@ -83,6 +95,10 @@ impl Seen for Store {
             .unwrap_or_default();
         let _ = conn.execute("UPDATE messages SET unread = 0 WHERE unread", []);
         ids
+    }
+
+    fn read_one(&self, id: &str) -> bool {
+        self.conn().execute("UPDATE messages SET unread = 0 WHERE id = ?1 AND unread", [id]).is_ok_and(|n| n > 0)
     }
 
     fn unread_count(&self) -> u32 {
@@ -156,6 +172,14 @@ mod tests {
     fn only_a_post_nobody_asked_for_is_unprompted() {
         let post = Message { id: "p".into(), ..Message::default() };
         assert!(unprompted(&post));
+        let card = |json: &str| Message { card: Some(json.into()), ..post.clone() };
+        assert!(unprompted(&card(r#"{"v":1,"id":"p","title":"FYI","state":"done"}"#)));
+        for other in [
+            card(r#"{"v":1,"id":"p","title":"Go?","actions":[{"id":"go","label":"Go"}]}"#),
+            card(r#"{"v":1,"id":"p","title":"Busy","state":"pending"}"#),
+        ] {
+            assert!(!unprompted(&other), "{other:?}");
+        }
         for other in [
             Message { reply_to: Some("k1".into()), ..post.clone() },
             Message { pending: true, ..post.clone() },

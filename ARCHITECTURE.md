@@ -255,8 +255,10 @@ Sources:
   for it, and the user has not dismissed it (a timeout does not count as a dismissal).
   Dismissals are stored (`messages.dismissed`, flick-07cd), so a restart does not count a
   dismissed card again. `unread` counts posts nobody asked for (`message post` without
-  `--reply-to`, not pending or partial, outside threads) that the user has not seen: closing
-  the card or opening the message list reads them (`src/modules/message/seen.rs`, flick-cb7d).
+  `--reply-to`, not pending or partial, outside threads; a card without `reply_to`, thread
+  or actions that is not pending, flick-8ce3) that the user has not seen: closing the card,
+  opening the message list or `message read <id>|--all` reads them
+  (`src/modules/message/seen.rs`, flick-cb7d).
   The JSON adds the `unread` key; `count` keeps its meaning. Consumer: `kota` keeps both
   (`view::Badge`), shows their sum next to its menu bar glyph and both in the Inbox row and
   `kota status`. `flick events` publishes it.
