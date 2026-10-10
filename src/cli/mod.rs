@@ -4,8 +4,10 @@
 //! `$FLICK_HOST`) to another Mac's Flick over TCP.
 
 mod client;
+mod stdin;
 
 use std::ffi::OsStr;
+use std::io::{self, IsTerminal};
 
 use client::{Host, Target};
 
@@ -19,6 +21,8 @@ const USAGE: &str = "usage: flick                              run the launcher
                                           FLICK_REMOTE set: marks the request --remote)
        flick --host <name[:port]> ...     ask the Flick on another Mac over Tailscale
                                           (or FLICK_HOST; always --remote)
+       flick <module> <verb> ... --stdin ...  the --stdin word is replaced by stdin
+                                          (at most once, up to 16 KiB)
        flick reload                       reload config.toml
        flick config example               print every config.toml option, commented
        flick events                       stream events as JSON lines
@@ -149,7 +153,17 @@ pub fn run(command: Command) -> i32 {
             2
         }
         Command::Events(host) => client::events(&target(host)),
-        Command::Request { words, flags, host } => client::request(&target(host), &words, flags),
+        Command::Request { words, flags, host } => {
+            let input = io::stdin();
+            let terminal = input.is_terminal();
+            match stdin::fill(words, &mut input.lock(), terminal) {
+                Ok(words) => client::request(&target(host), &words, flags),
+                Err(e) => {
+                    eprintln!("flick: {}", e.message);
+                    e.code
+                }
+            }
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 {
   "$comment": "check:coverage (scripts/checks/coverage.sh). Line-coverage floors (percent) for the pure modules. A key ending in / covers every .rs file under it. Raise a floor when coverage rises; never lower one without a human-reviewed reason. A key that matches no file fails the gate.",
   "floors": {
+    "src/cli/stdin.rs": 100.0,
     "src/config.rs": 88.6,
     "src/config/edit.rs": 97.3,
     "src/control/net.rs": 90.0,

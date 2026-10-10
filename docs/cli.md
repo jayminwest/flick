@@ -22,6 +22,8 @@ flick events | jq .            # app_activated, pasteboard_changed, wake, idle, 
 
 The protocol is one JSON array of strings per line, `["<module>","<verb>",args...]`, answered by one JSON line. An error reply exits with status 1.
 
+A request word that is exactly `--stdin` is replaced by everything the client reads from stdin, verbatim (no trimming), before the request is sent, locally or with `--host`. It keeps large or sensitive arguments off the command line: `printf %s "$json" | flick --host mac-studio message card post --stdin`. It may appear once, in any position; twice, or with stdin a terminal, is a usage error (exit 2). Empty stdin is an empty argument. More than 16 KiB (16384 bytes) or input that is not UTF-8 exits 1 without sending anything. Without the word, stdin is not read.
+
 To ask the Flick on another Mac in your tailnet, put `--host <name[:port]>` first (MagicDNS name or Tailscale IP; port default 7419), or set `FLICK_HOST`; `--host` wins. That Mac must have [network access](remote.md) on with this Mac in its `peers`.
 
 ```bash
