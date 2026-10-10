@@ -446,7 +446,11 @@ child per call on a named thread (`transport.rs`, `io.rs`); Flick links no HTTP 
 - argv: `/usr/bin/curl -q` (first, so `~/.curlrc` is skipped), fixed flags (`-sS -N
   --fail-with-body --noproxy * --proto =http,https --connect-timeout 5 --max-time <s>`)
   and `--url <url>`; a request body goes over stdin (`--data-binary @-`), so prompt text
-  is never in argv. The spawn is an `io::Hooks` fn pointer; tests use `testkit`'s fake
+  is never in argv. A server's `api_key` (flick-d73a) is never in argv either: `-K <file>`
+  (after `-q`) names a curl config holding only `header = "Authorization: Bearer <key>"`,
+  created new with mode 0600 in `$TMPDIR/flick-llm` (0700, refused if a symlink or open to
+  others) by `keyfile::KeyFile`, which removes it on drop once curl is reaped, on a spawn
+  failure or a panic. `Server`'s `Debug` prints only whether a key is set. The spawn is an `io::Hooks` fn pointer; tests use `testkit`'s fake
   curls, never a server.
 - A streamed reply's SSE lines become `openai::Piece`s (text, reasoning, finish, usage,
   done, error) in the stream's inbox in `io::Shared`; the main thread drains it with

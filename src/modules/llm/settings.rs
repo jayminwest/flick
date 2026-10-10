@@ -4,6 +4,8 @@
 
 use serde::Deserialize;
 
+use super::keyfile::good_key;
+
 /// The longest `timeout_secs` (one hour).
 pub const MAX_TIMEOUT: u64 = 3_600;
 /// The most `max_threads`.
@@ -52,7 +54,7 @@ impl Default for Settings {
 }
 
 /// One server: an OpenAI-compatible base URL (mlx-serve, ollama).
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Server {
     pub name: String,
@@ -62,6 +64,23 @@ pub struct Server {
     /// assertion that the server keeps nothing; Flick cannot check it.
     #[serde(default)]
     pub private: bool,
+    /// Sent as `Authorization: Bearer <key>` (`""`: none), through a 0600 curl config file,
+    /// never curl's argv (`keyfile`).
+    #[serde(default)]
+    pub api_key: String,
+}
+
+/// The key never shows in a `Debug` print.
+impl std::fmt::Debug for Server {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.api_key.is_empty() { "none" } else { "set" };
+        f.debug_struct("Server")
+            .field("name", &self.name)
+            .field("url", &self.url)
+            .field("private", &self.private)
+            .field("api_key", &key)
+            .finish()
+    }
 }
 
 impl Server {
@@ -70,6 +89,11 @@ impl Server {
         let base = self.url.trim_end_matches('/');
         let base = base.strip_suffix("/v1").unwrap_or(base);
         format!("{base}/v1/{path}")
+    }
+
+    /// The API key for a call, if one is set.
+    pub fn key(&self) -> Option<String> {
+        Some(self.api_key.clone()).filter(|k| !k.is_empty())
     }
 }
 
@@ -91,6 +115,10 @@ impl Settings {
             }
             if !good_url(&s.url) {
                 return Err(format!("[llm]: server \"{}\": url must be http(s)://host[:port], not \"{}\"", s.name, s.url));
+            }
+            if !s.api_key.is_empty() && !good_key(&s.api_key) {
+                let why = "must be printable ASCII without spaces, quotes or backslashes";
+                return Err(format!("[llm]: server \"{}\": api_key {why}", s.name));
             }
         }
         if !self.default_server.is_empty() {
@@ -183,6 +211,21 @@ mod tests {
         assert_eq!(s.servers[0].endpoint("models"), "https://mac:11234/v1/models");
         assert_eq!(s.servers[1].endpoint("chat/completions"), "https://mac:11235/v1/chat/completions");
         assert!(!s.servers[0].private && s.servers[1].private);
+        assert_eq!(s.servers[0].key(), None);
+    }
+
+    #[test]
+    fn an_api_key_is_checked_and_never_debug_printed() {
+        let keyed = |key: &str| settings(&format!("[[llm.servers]]\nname = \"a\"\nurl = \"http://h\"\napi_key = \"{key}\"\n"));
+        let s = keyed("sk-123").unwrap();
+        assert_eq!(s.servers[0].key().as_deref(), Some("sk-123"));
+        let printed = format!("{s:?}");
+        assert!(!printed.contains("sk-123") && printed.contains("api_key: \"set\""), "{printed}");
+        assert!(format!("{:?}", settings(TWO).unwrap()).contains("api_key: \"none\""));
+        for bad in ["a b", "a\\\"b", "a\\\\b"] {
+            let want = "[llm]: server \"a\": api_key must be printable ASCII without spaces, quotes or backslashes";
+            assert_eq!(keyed(bad).unwrap_err(), want, "{bad}");
+        }
     }
 
     #[test]

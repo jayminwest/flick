@@ -2,10 +2,10 @@
 
 use super::*;
 use crate::modules::llm::openai::{Chat, Role, Turn, Usage, chat_body};
-use crate::modules::llm::testkit::{HOOKS, PATIENT, sent};
+use crate::modules::llm::testkit::{self, HOOKS, PATIENT, sent};
 
 fn server(host: &str) -> Server {
-    Server { name: host.into(), url: format!("http://{host}"), private: false }
+    Server { name: host.into(), url: format!("http://{host}"), private: false, api_key: String::new() }
 }
 
 fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
@@ -154,6 +154,38 @@ fn cancel_keeps_what_arrived() {
     assert!(!cancel(&shared, id));
     assert!(!cancel(&shared, 999));
     assert_eq!(shared.take(id), Some((vec![], Status::Cancelled)));
+}
+
+/// `host` with an API key.
+fn keyed(host: &str) -> Server {
+    Server { api_key: format!("sk-{host}-key"), ..server(host) }
+}
+
+/// The key file `sent` saw: the Bearer header only, and gone by now.
+fn assert_key_file_gone(sent: &testkit::Sent, key: &str) {
+    assert!(!sent.argv.iter().any(|w| w.contains(key)), "the key is never in argv");
+    let (path, text) = sent.config.clone().unwrap();
+    assert_eq!(text, format!("header = \"Authorization: Bearer {key}\"\n"));
+    wait_until("the key file to go", || !std::path::Path::new(&path).exists());
+}
+
+#[test]
+fn a_key_goes_through_a_removed_file_never_argv() {
+    let shared = Arc::<Shared>::default();
+    let seq = fetch_models(&shared, &keyed("keylist"), HOOKS);
+    wait_until("list", || shared.lock().models.get("keylist").is_some_and(|m| m.seq >= seq));
+    assert_key_file_gone(&sent("http://keylist/v1/models")[0], "sk-keylist-key");
+    // A cancelled stream removes its file too; the prompt never goes in it.
+    let id = chat(&shared, &keyed("half"), body("the canary 51c2"), 30, PATIENT);
+    wait_until("child", || shared.lock().stream(id).is_some_and(|s| s.child.is_some()));
+    assert!(cancel(&shared, id));
+    let calls = sent("http://half/v1/chat/completions");
+    let call = calls.iter().find(|s| String::from_utf8_lossy(&s.stdin).contains("the canary 51c2")).unwrap();
+    assert!(!call.config.as_ref().unwrap().1.contains("canary"));
+    assert_key_file_gone(call, "sk-half-key");
+    // Without a key there is no file.
+    list(&shared, "plainlist");
+    assert_eq!(sent("http://plainlist/v1/models")[0].config, None);
 }
 
 #[test]

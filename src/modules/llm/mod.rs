@@ -4,10 +4,11 @@
 //! (flick-633e), the private session core (flick-56dc), the normal chat (flick-6a0d). Never
 //! imports the `message` module's chat.
 //!
-//! - `settings.rs`: `[llm]` and `[[llm.servers]]` (`name`, `url`, `private`). With no
-//!   server the module runs nothing.
+//! - `settings.rs`: `[llm]` and `[[llm.servers]]` (`name`, `url`, `private`,
+//!   `api_key`). With no server the module runs nothing.
 //! - `openai.rs`: the chat request body, the SSE line parser, error bodies, `/v1/models`.
-//! - `transport.rs`: one curl per call, body on stdin, never prompt text in argv.
+//! - `transport.rs`: one curl per call, body on stdin, never prompt text in argv; an
+//!   `api_key` goes in a 0600 curl config file that `keyfile.rs` writes and removes.
 //! - `io.rs`: the threads: model lists, streamed replies into an inbox, cancel, watchdog.
 //! - `chat.rs`: the normal chat window (surface "llm"): summon, send, stream, stop, history;
 //!   `view.rs` draws it, pure; `store.rs` keeps it (`llm_threads`, `llm_messages`).
@@ -32,6 +33,7 @@
 
 mod chat;
 mod io;
+mod keyfile;
 mod openai;
 mod private;
 mod private_chat;
