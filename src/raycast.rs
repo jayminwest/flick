@@ -1,11 +1,10 @@
 //! Import quicklinks from Raycast's "Export Quicklinks" JSON.
 
-use std::io::Write;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::config;
+use crate::config::{self, edit, edit::Edit};
 use crate::modules::quicklinks::{self, Quicklink};
 
 #[derive(Deserialize)]
@@ -65,27 +64,14 @@ fn convert(json: &str, existing: &[Quicklink]) -> Result<Import, String> {
     Ok(import)
 }
 
-/// `[[quicklink.links]]` entries, as appended to config.toml.
-#[derive(Serialize)]
-struct Appended<'a> {
-    quicklink: Links<'a>,
-}
-
-#[derive(Serialize)]
-struct Links<'a> {
-    links: &'a [Quicklink],
-}
-
-/// The text to append to config file `text` for `links`, checked to leave a loadable file
-/// (an inline `links = [...]` array can't take `[[quicklink.links]]` after it).
-fn appendix(text: &str, links: &[Quicklink]) -> Result<String, String> {
-    let toml =
-        toml::to_string(&Appended { quicklink: Links { links } }).map_err(|e| e.to_string())?;
-    let extra = format!("\n# Imported from Raycast\n{toml}");
-    config::parse(&format!("{text}{extra}"))
-        .and_then(|c| quicklinks::links(&c))
-        .map_err(|e| format!("can't add the imported quicklinks: {e}"))?;
-    Ok(extra)
+/// Add `links` to config file `path` as `[[quicklink.links]]` entries, after its last one.
+/// Each write leaves a file that loads; a file whose links can't take more is left alone.
+fn append(path: &Path, links: &[Quicklink]) -> Result<(), String> {
+    for link in links {
+        edit::edit_file(path, "quicklink", "links", &Edit::Append(link.entry()))
+            .map_err(|e| format!("can't add the imported quicklinks: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Append the quicklinks in Raycast export `path` to the config file.
@@ -95,17 +81,7 @@ pub fn import_file(path: &Path) -> Result<String, String> {
     let import = convert(&json, &quicklinks::links(&config)?)?;
 
     let config_path = config::config_path();
-    if !import.added.is_empty() {
-        let text = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("{}: {e}", config_path.display()))?;
-        let extra = appendix(&text, &import.added)
-            .map_err(|e| format!("{}: {e}", config_path.display()))?;
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&config_path)
-            .map_err(|e| format!("{}: {e}", config_path.display()))?;
-        file.write_all(extra.as_bytes()).map_err(|e| e.to_string())?;
-    }
+    append(&config_path, &import.added)?;
 
     let mut report = format!(
         "Added {} quicklinks to {} ({} duplicates skipped).",
@@ -159,9 +135,8 @@ mod tests {
         assert!(import.added[1].takes_query());
     }
 
-    #[test]
-    fn appends_module_table_entries_that_load() {
-        let added = vec![
+    fn links() -> Vec<Quicklink> {
+        vec![
             Quicklink {
                 name: "Search".into(),
                 url: "https://x.com/?q={query}".into(),
@@ -174,21 +149,60 @@ mod tests {
                 keyword: Some("h".into()),
                 app: None,
             },
-        ];
+        ]
+    }
+
+    /// Config file `text` after importing `links()` into it, and the link names it then loads.
+    fn import_into(name: &str, text: &str) -> (Result<(), String>, String, Vec<String>) {
+        let dir = std::env::temp_dir().join(format!("flick-raycast-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.toml");
+        std::fs::write(&path, text).unwrap();
+        let result = append(&path, &links());
+        let out = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let names = config::parse(&out)
+            .and_then(|c| quicklinks::links(&c))
+            .map(|links| links.into_iter().map(|q| q.name).collect())
+            .unwrap_or_default();
+        (result, out, names)
+    }
+
+    #[test]
+    fn appends_module_table_entries_that_load() {
+        let (result, out, _) = import_into("empty", "");
+        result.unwrap();
         assert_eq!(
-            appendix("", &added).unwrap(),
-            "\n# Imported from Raycast\n\
-             [[quicklink.links]]\nname = \"Search\"\nurl = \"https://x.com/?q={query}\"\n\n\
+            out,
+            "[[quicklink.links]]\nname = \"Search\"\nurl = \"https://x.com/?q={query}\"\n\n\
              [[quicklink.links]]\nname = \"Home\"\nurl = \"~/\"\nkeyword = \"h\"\n"
         );
+        // After the file's own links, ahead of any later table.
+        let own = "[[quicklink.links]]\nname = \"Mine\"\nurl = \"/\"\n\n[clip]\nenabled = false\n";
+        let (result, out, names) = import_into("own", own);
+        result.unwrap();
+        assert!(out.ends_with("keyword = \"h\"\n\n[clip]\nenabled = false\n"), "{out}");
+        assert_eq!(names, ["Mine", "Search", "Home"]);
         // Legacy files still load, with the imported links after their own.
         let legacy = "hotkey = \"cmd+K\"\n[[quicklinks]]\nname = \"Old\"\nurl = \"/\"\n";
-        let config = config::parse(&format!("{legacy}{}", appendix(legacy, &added).unwrap()));
-        let names: Vec<_> =
-            quicklinks::links(&config.unwrap()).unwrap().into_iter().map(|q| q.name).collect();
+        let (result, out, names) = import_into("legacy", legacy);
+        result.unwrap();
+        assert!(out.starts_with(legacy));
         assert_eq!(names, ["Search", "Home", "Old"]);
-        // A file whose links can't take more is left alone.
-        let inline = "[quicklink]\nlinks = []\n";
-        assert!(appendix(inline, &added).unwrap_err().starts_with("can't add the imported"));
+        // An inline array takes the links inline.
+        let (result, _, names) = import_into("inline", "[quicklink]\nlinks = []\n");
+        result.unwrap();
+        assert_eq!(names, ["Search", "Home"]);
+    }
+
+    #[test]
+    fn a_file_whose_links_cant_take_more_is_left_alone() {
+        for (name, text) in [("number", "[quicklink]\nlinks = 1\n"), ("broken", "hotkey = [")] {
+            let (result, out, _) = import_into(name, text);
+            let err = result.unwrap_err();
+            assert!(err.starts_with("can't add the imported quicklinks: "), "{err}");
+            assert_eq!(out, text);
+        }
     }
 }
