@@ -22,7 +22,7 @@ use wire::Wire;
 
 use crate::config::Section;
 use crate::core::keys::names::{KeyName, keycode, parse_chord, parse_mods};
-use crate::core::keys::{self, CAPS_LOCK, F18, Rules};
+use crate::core::keys::{self, CAPS_LOCK, RIGHT_CTRL_KEY, Rules, flags};
 use crate::core::{Cx, Event, Icon, Item, ItemId, Module, Outcome, unknown_verb};
 
 /// Table `[keys]`. `hyper` names the key that acts as Hyper (`caps_lock`, or any key name;
@@ -88,7 +88,7 @@ pub struct Keys {
     chords: Vec<Chord>,
     /// What the key tap matches: `hyper` and `chords` compiled, chords in the same order.
     rules: Rules,
-    /// `hyper = "caps_lock"`: Caps Lock must send F18 (the HID remap).
+    /// `hyper = "caps_lock"`: Caps Lock must send Right Control (the HID remap).
     remap: bool,
     worker: Worker,
     wire: Wire,
@@ -117,16 +117,16 @@ fn chords(specs: Vec<ChordSpec>) -> Result<Vec<Chord>, String> {
     Ok(chords)
 }
 
-/// `[keys] hyper`, compiled: a non-modifier source key (`caps_lock` means F18, which the HID
-/// remap turns Caps Lock into), `hyper_mods` flags and an optional `hyper_tap` key.
+/// `[keys] hyper`, compiled: a non-modifier source key (`caps_lock` means Right Control, which
+/// the HID remap turns Caps Lock into), `hyper_mods` flags and an optional `hyper_tap` key.
 fn hyper(s: &Settings) -> Result<Option<(Hyper, keys::Hyper)>, String> {
     let key = s.hyper.trim();
     if key.is_empty() {
         return Ok(None);
     }
-    let source = match key.parse::<KeyName>().map_err(|e| format!("[keys] hyper: {e}"))? {
-        KeyName::Key(CAPS_LOCK) => F18,
-        KeyName::Key(code) => code,
+    let (source, held_bit) = match key.parse::<KeyName>().map_err(|e| format!("[keys] hyper: {e}"))? {
+        KeyName::Key(CAPS_LOCK) => (RIGHT_CTRL_KEY, flags::RIGHT_CTRL),
+        KeyName::Key(code) => (code, 0),
         KeyName::Mod(_) => {
             return Err(format!("[keys] hyper: `{key}` is a modifier; name a key such as caps_lock"));
         }
@@ -143,7 +143,7 @@ fn hyper(s: &Settings) -> Result<Option<(Hyper, keys::Hyper)>, String> {
         tap: tap.map(|_| tap_name.into()),
         tap_ms: s.hyper_tap_ms,
     };
-    Ok(Some((shown, keys::Hyper { source, flags, tap, tap_ms: s.hyper_tap_ms })))
+    Ok(Some((shown, keys::Hyper { source, held_bit, flags, tap, tap_ms: s.hyper_tap_ms })))
 }
 
 impl Keys {
@@ -203,7 +203,12 @@ impl Keys {
             parts.push(format!("hyper on {}", h.key));
         }
         if self.hyper.is_some() && self.wire.secure_input() {
-            parts.push("Secure input is on: hyper paused".into());
+            // Caps Lock (a modifier) still drives the control layer; another key is unseen.
+            parts.push(if self.remap {
+                "Secure input is on: hyper fires Flick hotkeys only".into()
+            } else {
+                "Secure input is on: hyper paused".into()
+            });
         } else {
             parts.push(self.wire.tap_state().into());
         }

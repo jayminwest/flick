@@ -5,7 +5,7 @@ use super::wire::tests::{HOTKEYS, REMAP_SET, SECURE, STUB, calls, run_later};
 use super::*;
 use crate::config::parse;
 use crate::core::test_cx;
-use crate::core::keys::{HYPER_FLAGS, flags};
+use crate::core::keys::{F18, HYPER_FLAGS, RIGHT_CTRL_KEY, flags};
 
 thread_local! {
     /// The requests `fake_local` was handed, in order.
@@ -99,6 +99,11 @@ fn secure_input_pauses_hyper() {
     assert!(!keys.remap);
     SECURE.with(|s| s.replace(true));
     assert_eq!(keys.summary(), "0 chords · hyper on F18 · Secure input is on: hyper paused");
+    let keys = configured("[keys]\nhyper = \"caps_lock\"").unwrap();
+    assert_eq!(
+        keys.summary(),
+        "0 chords · hyper on caps_lock · Secure input is on: hyper fires Flick hotkeys only"
+    );
     assert!(keys.status().contains("secure input: on"));
     SECURE.with(|s| s.replace(false));
 }
@@ -107,8 +112,15 @@ fn secure_input_pauses_hyper() {
 fn compiles_rules_for_the_tap() {
     let text = format!("[keys]\nhyper = \"caps_lock\"\n{PTT}").replace("PORT", "8600");
     let keys = configured(&text).unwrap();
-    // caps_lock compiles to F18 (the HID remap's target); chords keep their order.
-    let rule = keys::Hyper { source: F18, flags: HYPER_FLAGS, tap: Some(53), tap_ms: 300 };
+    // caps_lock compiles to Right Control (the HID remap's target), held while its device bit
+    // is set; chords keep their order.
+    let rule = keys::Hyper {
+        source: RIGHT_CTRL_KEY,
+        held_bit: flags::RIGHT_CTRL,
+        flags: HYPER_FLAGS,
+        tap: Some(53),
+        tap_ms: 300,
+    };
     let mods = flags::CMD | flags::RIGHT_CMD | flags::ALT | flags::RIGHT_ALT;
     let chord = keys::Chord { mods, key: None };
     assert_eq!(keys.rules, Rules { hyper: Some(rule), chords: vec![chord] });
@@ -205,6 +217,8 @@ fn started_keys_install_the_rules_and_run_chords() {
     send(&mut keys, Event::Wake);
     send(&mut keys, Event::Chord { index: 7, down: false });
     send(&mut keys, Event::Chord { index: 0, down: false });
+    // Wake turns the hyper key's control layer off (the engine forgot the hold).
+    assert_eq!(calls(), ["layer false 0x0"]);
     let heads = serve(&l, 2, "200 OK");
     let lines: Vec<_> = heads.iter().map(|h| h.lines().next().unwrap()).collect();
     assert_eq!(lines, ["POST /pipeline/listen/start HTTP/1.1", "POST /pipeline/listen/stop HTTP/1.1"]);
@@ -212,9 +226,9 @@ fn started_keys_install_the_rules_and_run_chords() {
     // A reload to F18 keeps the tap and clears the remap; turning keys off stops the tap.
     let table = |text: &str| parse(text).unwrap().section("keys").unwrap().unwrap();
     keys.configure(&table("[keys]\nhyper = \"F18\"")).unwrap();
-    assert_eq!(calls(), ["clear_remap"]);
+    assert_eq!(calls(), ["layer false 0x0", "clear_remap"]);
     keys.configure(&table("")).unwrap();
-    assert_eq!(calls(), ["stop", "clear_remap"]);
+    assert_eq!(calls(), ["layer false 0x0", "stop", "clear_remap"]);
     assert_eq!(keys.status(), "keys: off");
     drop(keys);
     // The stub's clear fails, so dropping the module tries once more.

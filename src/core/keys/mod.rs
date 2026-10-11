@@ -29,8 +29,11 @@ pub mod flags {
 pub const HYPER_FLAGS: u64 = flags::CMD | flags::CTRL | flags::ALT | flags::SHIFT;
 /// Virtual keycode of Caps Lock.
 pub const CAPS_LOCK: u16 = 57;
-/// Virtual keycode of F18, what the HID remap turns Caps Lock into.
+/// Virtual keycode of F18.
+#[cfg(test)]
 pub const F18: u16 = 79;
+/// Virtual keycode of Right Control, what the HID remap turns Caps Lock into.
+pub const RIGHT_CTRL_KEY: u16 = 62;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TapKind {
@@ -63,8 +66,12 @@ pub struct Chord {
 /// `tap_ms`, with no other key pressed meanwhile, sends `tap` instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Hyper {
-    /// A non-modifier key (it arrives as key down/up, not as a flags change).
+    /// The key's virtual keycode.
     pub source: u16,
+    /// 0: `source` is a plain key (key down/up). Else `source` is a modifier, held while
+    /// this device bit is set in its flags-changed events (`RIGHT_CTRL_KEY` with
+    /// `flags::RIGHT_CTRL`). Secure input hides key down/up from the tap, not flag changes.
+    pub held_bit: u64,
     pub flags: u64,
     pub tap: Option<u16>,
     pub tap_ms: u32,
@@ -101,6 +108,8 @@ pub struct Output {
     pub inject: Option<u16>,
     /// `(chord index, down)` edges, in order.
     pub transitions: Vec<(u16, bool)>,
+    /// The hyper key went down (`true`) or up (`false`) with this event.
+    pub hyper: Option<bool>,
 }
 
 /// One bit per virtual keycode below 128 (all keyboard keycodes are).
@@ -158,27 +167,43 @@ impl Engine {
         ups
     }
 
+    /// The flags the hyper key adds, 0 without one.
+    pub fn hyper_flags(&self) -> u64 {
+        self.rules.hyper.map_or(0, |h| h.flags)
+    }
+
     pub fn process(&mut self, ev: TapEvent, now_ms: u64) -> Output {
-        let mut out = Output { verdict: Verdict::Pass, inject: None, transitions: Vec::new() };
+        let mut out =
+            Output { verdict: Verdict::Pass, inject: None, transitions: Vec::new(), hyper: None };
         if ev.injected {
             return out;
         }
         self.flags = ev.flags;
         let key = ev.kind != TapKind::FlagsChanged;
-        if let Some(hyper) = self.rules.hyper.filter(|h| key && h.source == ev.keycode) {
-            out.verdict = Verdict::Drop;
-            match (ev.kind, self.hyper) {
-                (TapKind::Down, None) => {
-                    self.hyper = Some(Held { since_ms: now_ms, other_key: false });
+        if let Some(hyper) = self.rules.hyper.filter(|h| h.source == ev.keycode) {
+            let down = match (ev.kind, hyper.held_bit) {
+                (TapKind::FlagsChanged, 0) => None,
+                (TapKind::FlagsChanged, bit) => Some(ev.flags & bit != 0),
+                (kind, 0) => Some(kind == TapKind::Down),
+                _ => None,
+            };
+            if let Some(down) = down {
+                out.verdict = Verdict::Drop;
+                match (down, self.hyper) {
+                    (true, None) => {
+                        self.hyper = Some(Held { since_ms: now_ms, other_key: false });
+                        out.hyper = Some(true);
+                    }
+                    (false, Some(held)) => {
+                        self.hyper = None;
+                        out.hyper = Some(false);
+                        let quick = now_ms.saturating_sub(held.since_ms) < u64::from(hyper.tap_ms);
+                        out.inject = hyper.tap.filter(|_| quick && !held.other_key);
+                    }
+                    _ => {}
                 }
-                (TapKind::Up, Some(held)) => {
-                    self.hyper = None;
-                    let quick = now_ms.saturating_sub(held.since_ms) < u64::from(hyper.tap_ms);
-                    out.inject = hyper.tap.filter(|_| quick && !held.other_key);
-                }
-                _ => {}
+                return out;
             }
-            return out;
         }
         if key && !ev.autorepeat {
             self.down.set(ev.keycode, ev.kind == TapKind::Down);
@@ -285,7 +310,7 @@ mod tests {
     }
 
     fn hyper(tap: Option<u16>) -> Engine {
-        let hyper = Hyper { source: F18, flags: HYPER_FLAGS, tap, tap_ms: 300 };
+        let hyper = Hyper { source: F18, held_bit: 0, flags: HYPER_FLAGS, tap, tap_ms: 300 };
         Engine::new(Rules { hyper: Some(hyper), chords: Vec::new() })
     }
 
@@ -341,6 +366,9 @@ mod tests {
         );
         assert_eq!(e.process(up(H), 70).verdict, Verdict::SetFlags(HYPER_FLAGS));
         assert_eq!(e.process(flags_ev(CMD), 80).verdict, Verdict::SetFlags(HYPER_FLAGS));
+        // A flags change with a key source's keycode is not the key: it gets the hyper flags.
+        let odd = ev(TapKind::FlagsChanged, F18, 0);
+        assert_eq!(e.process(odd, 90).verdict, Verdict::SetFlags(HYPER_FLAGS));
         let out = e.process(up(F18), 100);
         assert_eq!((out.verdict, out.inject), (Verdict::Drop, None));
         assert_eq!(e.process(down(H), 110).verdict, Verdict::Pass);
@@ -358,6 +386,35 @@ mod tests {
         let mut e = hyper(None);
         e.process(down(F18), 0);
         assert_eq!(e.process(up(F18), 10).inject, None);
+    }
+
+    #[test]
+    fn a_modifier_hyper_follows_its_device_bit() {
+        let hyper = Hyper {
+            source: RIGHT_CTRL_KEY,
+            held_bit: flags::RIGHT_CTRL,
+            flags: HYPER_FLAGS,
+            tap: Some(ESC),
+            tap_ms: 300,
+        };
+        let mut e = Engine::new(Rules { hyper: Some(hyper), chords: Vec::new() });
+        let rctrl = |f| ev(TapKind::FlagsChanged, RIGHT_CTRL_KEY, f);
+        let held = CTRL | flags::RIGHT_CTRL;
+        let out = e.process(rctrl(held), 0);
+        assert_eq!((out.verdict, out.hyper), (Verdict::Drop, Some(true)));
+        assert_eq!(e.process(rctrl(held), 5).hyper, None);
+        let out = e.process(ev(TapKind::Down, H, held), 10);
+        assert_eq!((out.verdict, out.hyper), (Verdict::SetFlags(held | HYPER_FLAGS), None));
+        // Left control is another key: it passes with the hyper flags.
+        let left = ev(TapKind::FlagsChanged, 59, held | LEFT_CTRL);
+        assert_eq!(e.process(left, 20).verdict, Verdict::SetFlags(held | LEFT_CTRL | HYPER_FLAGS));
+        let out = e.process(rctrl(0), 30);
+        assert_eq!((out.verdict, out.hyper, out.inject), (Verdict::Drop, Some(false), None));
+        assert_eq!(e.process(rctrl(0), 40).hyper, None);
+        e.process(rctrl(held), 1000);
+        assert_eq!(e.process(rctrl(0), 1100).inject, Some(ESC));
+        // Key down/up with the modifier's keycode never moves it.
+        assert_eq!(e.process(down(RIGHT_CTRL_KEY), 1200).hyper, None);
     }
 
     #[test]

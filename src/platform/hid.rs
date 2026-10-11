@@ -1,8 +1,10 @@
-//! Caps Lock as F18 at the HID layer (`hidutil property UserKeyMapping`).
+//! Caps Lock as Right Control at the HID layer (`hidutil property UserKeyMapping`).
 //!
 //! An event tap cannot stop the Caps Lock toggle: the lock state and LED change below it. So,
 //! like Hyperkey and Karabiner, Flick remaps the key before macOS sees it, and the key engine
-//! treats F18 (keycode 79) as the hyper source. `UserKeyMapping` is one global list shared with
+//! treats Right Control (keycode 62) as the hyper source. A modifier, not F18: under secure
+//! input the tap still sees its flag changes, and Carbon hotkeys still match it (flick-1271).
+//! Built-in Mac keyboards have no Right Control key. `UserKeyMapping` is one global list shared with
 //! every other tool, so both directions read, merge and write: other mappings survive, and
 //! `clear` removes only Flick's entry. The mapping outlives Flick; quit clears it
 //! (`app::on_terminate`), and `hidutil property --set '{"UserKeyMapping":[]}'` resets it by hand.
@@ -11,8 +13,10 @@ use std::process::Command;
 
 /// HID usage page 7 (keyboard), usage 0x39: Caps Lock.
 pub const CAPS_LOCK: u64 = 0x7_0000_0039;
-/// HID usage page 7 (keyboard), usage 0x6D: F18 (macOS virtual keycode 79).
-pub const F18: u64 = 0x7_0000_006D;
+/// HID usage page 7 (keyboard), usage 0x6D: F18, the remap's target before flick-1271.
+const F18: u64 = 0x7_0000_006D;
+/// HID usage page 7 (keyboard), usage 0xE4: Right Control (macOS virtual keycode 62).
+pub const RIGHT_CTRL: u64 = 0x7_0000_00E4;
 
 const HIDUTIL: &str = "/usr/bin/hidutil";
 const SRC: &str = "HIDKeyboardModifierMappingSrc";
@@ -26,25 +30,27 @@ pub struct Mapping {
 }
 
 /// Flick's entry.
-const OURS: Mapping = Mapping { src: CAPS_LOCK, dst: F18 };
+const OURS: Mapping = Mapping { src: CAPS_LOCK, dst: RIGHT_CTRL };
+/// Flick's entry before flick-1271: `clear` removes it too, `set` replaces it.
+const OLD: Mapping = Mapping { src: CAPS_LOCK, dst: F18 };
 
 /// Runs `hidutil` with these arguments; `Ok` holds stdout. Tests pass a stub.
 type Run<'a> = &'a mut dyn FnMut(&[&str]) -> Result<String, String>;
 
-/// Map Caps Lock to F18, keeping every other mapping. Replaces another tool's Caps Lock entry
+/// Map Caps Lock to Right Control, keeping every other mapping. Replaces another tool's Caps Lock entry
 /// (two entries for one key are ambiguous). Writes nothing when the mapping is already set.
-pub fn set_caps_to_f18() -> Result<(), String> {
+pub fn set_caps_remap() -> Result<(), String> {
     set_with(&mut hidutil)
 }
 
-/// Remove Flick's Caps Lock to F18 entry, keeping every other mapping. Writes nothing when it
-/// is not set.
-pub fn clear_caps_to_f18() -> Result<(), String> {
+/// Remove Flick's Caps Lock entry (either target), keeping every other mapping. Writes nothing
+/// when it is not set.
+pub fn clear_caps_remap() -> Result<(), String> {
     clear_with(&mut hidutil)
 }
 
-/// Caps Lock currently sends F18 (for `flick keys status`).
-pub fn caps_to_f18_is_set() -> Result<bool, String> {
+/// Caps Lock currently sends Right Control (for `flick keys status`).
+pub fn caps_remap_is_set() -> Result<bool, String> {
     is_set_with(&mut hidutil)
 }
 
@@ -58,7 +64,7 @@ fn set_with(run: Run) -> Result<(), String> {
 
 fn clear_with(run: Run) -> Result<(), String> {
     let current = get(run)?;
-    if !current.contains(&OURS) {
+    if !current.iter().any(|m| [OURS, OLD].contains(m)) {
         return Ok(());
     }
     put(run, &without_ours(&current))
@@ -98,9 +104,9 @@ fn with_ours(current: &[Mapping]) -> Vec<Mapping> {
     out
 }
 
-/// `current` without Flick's entry (another tool's Caps Lock mapping stays).
+/// `current` without Flick's entry, old or new (another tool's Caps Lock mapping stays).
 fn without_ours(current: &[Mapping]) -> Vec<Mapping> {
-    current.iter().copied().filter(|m| *m != OURS).collect()
+    current.iter().copied().filter(|m| ![OURS, OLD].contains(m)).collect()
 }
 
 /// The `--set` argument. Values are decimal: plain JSON, no hex extension needed.
@@ -241,8 +247,9 @@ mod tests {
     }
 
     #[test]
-    fn usages_are_caps_lock_and_f18() {
+    fn usages_are_caps_lock_right_ctrl_and_f18() {
         assert_eq!(CAPS_LOCK, 30_064_771_129);
+        assert_eq!(RIGHT_CTRL, 30_064_771_300);
         assert_eq!(F18, 30_064_771_181);
     }
 
@@ -252,7 +259,7 @@ mod tests {
         assert_eq!(parse(""), Some(vec![]));
         assert_eq!(parse("(\n)\n"), Some(vec![]));
         assert_eq!(parse(&listing(&[OTHER, OURS])), Some(vec![OTHER, OURS]));
-        let hex = "({HIDKeyboardModifierMappingSrc = 0x700000039; HIDKeyboardModifierMappingDst = 0X70000006D;})";
+        let hex = "({HIDKeyboardModifierMappingSrc = 0x700000039; HIDKeyboardModifierMappingDst = 0X7000000E4;})";
         assert_eq!(parse(hex), Some(vec![OURS]));
         let table = "RegistryID  Key                   Value\n10000075d   UserKeyMapping   (null)\n100000a4e   UserKeyMapping   (null)\n";
         assert_eq!(parse(table), Some(vec![]));
@@ -290,6 +297,8 @@ mod tests {
         assert_eq!(with_ours(&[]), vec![OURS]);
         assert_eq!(with_ours(&[OTHER, foreign]), vec![OTHER, OURS]);
         assert_eq!(without_ours(&[OTHER, OURS]), vec![OTHER]);
+        assert_eq!(without_ours(&[OLD, OTHER]), vec![OTHER]);
+        assert_eq!(with_ours(&[OLD]), vec![OURS]);
         assert_eq!(without_ours(&[foreign]), vec![foreign]);
     }
 
@@ -324,6 +333,14 @@ mod tests {
     }
 
     #[test]
+    fn clear_removes_the_old_f18_entry() {
+        let mut stub = Stub::new(&[OLD, OTHER]);
+        assert!(!is_set_with(&mut |a| stub.run(a)).unwrap());
+        clear_with(&mut |a| stub.run(a)).unwrap();
+        assert_eq!(stub.mappings(), vec![OTHER]);
+    }
+
+    #[test]
     fn clear_without_ours_writes_nothing() {
         let mut stub = Stub::new(&[OTHER]);
         clear_with(&mut |a| stub.run(a)).unwrap();
@@ -347,7 +364,7 @@ mod tests {
     #[test]
     fn the_live_mapping_parses() {
         // Read-only: `--get` on this machine, whatever other tools have set.
-        caps_to_f18_is_set().unwrap();
+        caps_remap_is_set().unwrap();
     }
 
     #[test]

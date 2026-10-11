@@ -49,7 +49,7 @@ hotkey = "alt+shift+Space"
 
 # Key triggers. Off until set: no [keys] table means no key tap and no Caps Lock remap.
 # hyper = "caps_lock" makes Caps Lock add hyper_mods to every key held with it (it then
-# sends F18 until Flick quits); a quick tap sends hyper_tap. Needs Accessibility.
+# sends Right Control until Flick quits); a quick tap sends hyper_tap. Needs Accessibility.
 # A chord runs on_down when all its keys are held and on_up when one is released:
 # { http = "POST http://host:port/path" } (http:// only) or { shell = "command" }.
 # Keys: cmd, alt, ctrl, shift, fn, right_cmd, left_alt, ... plus one key such as KeyA.
