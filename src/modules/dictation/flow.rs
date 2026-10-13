@@ -19,7 +19,7 @@ use super::recorder::{self, BYTES_PER_SEC, Recorder};
 use super::session::{Effect, Input, State};
 use super::settings::Insert;
 use super::worker::{self, Done, Job, Outcome};
-use super::{Dictation, Mic, Pill, Probe, clip, engine};
+use super::{Dictation, Mic, Pill, Probe, Secure, clip, engine};
 
 /// Shift, control, option and command (`CGEventFlags`).
 pub const MODIFIERS: u64 = 0x1e_0000;
@@ -213,7 +213,14 @@ impl Dictation {
             (self.hooks.later)(RELEASE_POLL);
             return;
         }
-        let refused = if (self.hooks.secure_input)() {
+        // Secure input held by another app (often leaked by one in the background) does
+        // not guard the target's fields; an unknown holder or target still refuses.
+        let guarded = match (self.hooks.secure_input)() {
+            Secure::Off => false,
+            Secure::By(pid) => self.live.target.is_none_or(|t| t == pid),
+            Secure::Unknown => true,
+        };
+        let refused = if guarded {
             Some("Secure input is on")
         } else if (self.hooks.frontmost)() != self.live.target {
             Some("Another app is in front")

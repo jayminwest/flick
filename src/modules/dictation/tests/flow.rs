@@ -25,7 +25,7 @@ fn setup(test: &str, extra: &str) -> (Dictation, Cache) {
     CLOCK.set(0);
     FLAGS.set(0);
     FRONT.set(Some(1));
-    SECURE.set(false);
+    SECURE.set(Secure::Off);
     ESC.set(false);
     LATER.set(0);
     seen();
@@ -132,15 +132,26 @@ fn insertion_waits_for_the_modifiers_to_come_up() {
 #[test]
 fn secure_input_and_a_new_frontmost_app_keep_the_text() {
     let (mut d, _cache) = setup("guards", "");
+    // Held by another app (pid 7, not the target 1): the text goes in.
+    SECURE.set(Secure::By(7));
     hold(&mut d, 1000).unwrap();
-    SECURE.set(true);
+    settle(&mut d);
+    assert!(seen().contains(&"paste \"Hello world. \" restore 250".to_string()));
+    // Held by an unknown pid: refused.
+    SECURE.set(Secure::Unknown);
+    hold(&mut d, 1000).unwrap();
+    settle(&mut d);
+    assert!(seen().contains(&"pill error Secure input is on: kept, see flick dictation last".to_string()));
+    // Held by the target: refused.
+    SECURE.set(Secure::By(1));
+    hold(&mut d, 1000).unwrap();
     settle(&mut d);
     let seen1 = seen();
     assert!(seen1.contains(&"pill error Secure input is on: kept, see flick dictation last".to_string()), "{seen1:?}");
     assert!(seen1.iter().all(|l| !l.starts_with("paste")));
     assert_eq!(run(&mut d, &["last"]), Ok("Hello world.".into()));
     assert!(run(&mut d, &["status"]).unwrap().ends_with("last error: not inserted: Secure input is on"));
-    SECURE.set(false);
+    SECURE.set(Secure::Off);
     hold(&mut d, 1000).unwrap();
     FRONT.set(Some(2));
     settle(&mut d);

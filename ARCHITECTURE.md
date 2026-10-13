@@ -456,8 +456,9 @@ checklist: `docs/dictation.md`.
   by itself, and the inbox. Results carry the session epoch; a cancelled run's late result
   is stale. Insertion waits, never blocking, for the chord's modifiers to come up
   (`keytap::current_flags`, re-polled by `timer::after(0.02)` posting `ModuleChanged`, at
-  most 500 ms), then refuses under `keytap::secure_input` or when the frontmost pid differs
-  from the one at chord-up (the text stays in `last`, memory only, and the pill says why);
+  most 500 ms), then refuses under `keytap::secure_input` unless `keytap::secure_input_owner`
+  names a pid other than the target (a background app that leaked it), or when the frontmost
+  pid differs from the one at chord-up (the text stays in `last`, memory only, and the pill says why);
   else `insert = "paste"`: `pasteboard::snapshot`, `set_transient_text`, `keytap::paste`,
   and after `restore_ms` `restore` only if the change count is still the one
   `set_transient_text` returned; `insert = "type"`: `keytap::type_text`.

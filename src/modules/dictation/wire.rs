@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Instant;
 
 use super::proc::{Child, Spawned};
-use super::{Hooks, Mic, Pill, Probe};
+use super::{Hooks, Mic, Pill, Probe, Secure};
 use crate::core::Event;
 use crate::platform::mic::{self, Access};
 use crate::platform::pill::{self, Phase};
@@ -32,7 +32,7 @@ pub static REAL: Hooks = Hooks {
     pill: show,
     frontmost: workspace::frontmost_pid,
     flags: keytap::current_flags,
-    secure_input: keytap::secure_input,
+    secure_input,
     paste,
     type_text: keytap::type_text,
     log: |line| eprintln!("flick: {line}"),
@@ -145,6 +145,14 @@ fn show(p: Pill<'_>) {
 
 /// Paste `text` as a transient, concealed pasteboard item with cmd+V, and put the old
 /// contents back after `restore_ms`, unless something else wrote the pasteboard meanwhile.
+fn secure_input() -> Secure {
+    match (keytap::secure_input(), keytap::secure_input_owner()) {
+        (false, _) => Secure::Off,
+        (true, Some(pid)) => Secure::By(pid),
+        (true, None) => Secure::Unknown,
+    }
+}
+
 fn paste(text: &str, restore_ms: u32) {
     let saved = pasteboard::snapshot();
     let ours = pasteboard::set_transient_text(text);

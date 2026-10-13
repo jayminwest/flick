@@ -91,7 +91,7 @@ flick dictation last     # the last transcript (memory only), also one that was 
 
 1. **Chord down** (`dictation start`). Flick checks the microphone grant, the recorder, the engine and the model. It starts `rec` (16 kHz mono 16-bit, kept in memory, no file) and shows the pill with a level bar.
 2. **Chord up** (`dictation stop`). A hold shorter than `min_hold_ms` is discarded. Otherwise Flick notes the app in front and stops `rec`. A clip with no sound above `silence_rms` is not transcribed (`No speech heard`). This stops whisper's "Thank you." on silence. Otherwise Flick writes the clip to `~/Library/Caches/Flick/dictation/` (folder 0700, file 0600), runs the engine within `timeout_secs`, and deletes the clip on every outcome. Whisper's non-speech tokens (`[BLANK_AUDIO]`, `(music)`, `*laughs*`, `♪`) are removed.
-3. **Insert.** Flick waits until the chord's keys are up (at most 500 ms), so cmd+V is not read as cmd+shift+V. It does not insert while secure input is on (a password field) or when another app is in front than at chord-up. The pill then says why, and `flick dictation last` has the text. Otherwise it pastes or types the text.
+3. **Insert.** Flick waits until the chord's keys are up (at most 500 ms), so cmd+V is not read as cmd+shift+V. It does not insert while the app in front holds secure input (a password field), or while secure input is on and macOS does not say which app holds it, or when another app is in front than at chord-up. Secure input held by a different app, such as one in the background that never turned it off, does not stop it. The pill then says why, and `flick dictation last` has the text. Otherwise it pastes or types the text.
 
 ## Privacy
 

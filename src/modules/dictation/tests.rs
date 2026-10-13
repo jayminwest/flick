@@ -23,7 +23,7 @@ thread_local! {
     static CLOCK: Cell<u64> = const { Cell::new(0) };
     static FLAGS: Cell<u64> = const { Cell::new(0) };
     static FRONT: Cell<Option<i32>> = const { Cell::new(Some(1)) };
-    static SECURE: Cell<bool> = const { Cell::new(false) };
+    static SECURE: Cell<Secure> = const { Cell::new(Secure::Off) };
     static CACHE: RefCell<PathBuf> = RefCell::new(PathBuf::from("/nonexistent/flick-dictation"));
     /// Everything the fakes were asked to show, insert and log, in order.
     static SEEN: RefCell<Vec<String>> = const { RefCell::new(vec![]) };

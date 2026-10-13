@@ -115,13 +115,21 @@ pub struct Hooks {
     pub frontmost: fn() -> Option<i32>,
     /// The physical modifier flags (`CGEventFlags`).
     pub flags: fn() -> u64,
-    pub secure_input: fn() -> bool,
+    pub secure_input: fn() -> Secure,
     /// Paste the text (transient pasteboard item, cmd+V), restoring the pasteboard after
     /// this many milliseconds.
     pub paste: fn(&str, u32),
     pub type_text: fn(&str),
     /// One log line (never a transcript).
     pub log: fn(&str),
+}
+
+/// Whether secure input is on, and which pid holds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Secure {
+    Off,
+    By(i32),
+    Unknown,
 }
 
 pub struct Dictation {

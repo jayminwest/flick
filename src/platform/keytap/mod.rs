@@ -21,6 +21,9 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, Thread};
 
+use objc2::rc::Retained;
+use objc2_foundation::{NSDictionary, NSNumber, NSString};
+
 /// `kCGHIDEventTap`: posted events enter where hardware events do, so the tap sees them.
 const HID_TAP: u32 = 0;
 /// `kCGEventSourceStateHIDSystemState`: the physical key state, without synthetic events.
@@ -44,6 +47,7 @@ unsafe extern "C" {
     fn CGEventKeyboardSetUnicodeString(event: *mut c_void, len: usize, chars: *const u16);
     fn CGEventPost(tap: u32, event: *mut c_void);
     fn CGEventSourceFlagsState(state: i32) -> u64;
+    fn CGSessionCopyCurrentDictionary() -> *mut NSDictionary<NSString>;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -278,6 +282,18 @@ pub fn secure_input() -> bool {
     unsafe { IsSecureEventInputEnabled() }
 }
 
+/// The pid of the process that holds secure input, if the login session names one
+/// (`kCGSSessionSecureInputPID`). It can be stale while secure input is off.
+pub fn secure_input_owner() -> Option<i32> {
+    // SAFETY: plain C call without arguments.
+    let raw = unsafe { CGSessionCopyCurrentDictionary() };
+    // SAFETY: the result is a CFDictionary with CFString keys, toll-free bridged to
+    // NSDictionary; "Copy" returns +1, which Retained takes over. Null maps to None.
+    let session = unsafe { Retained::from_raw(raw) }?;
+    let key = NSString::from_str("kCGSSessionSecureInputPID");
+    session.objectForKey(&key)?.downcast::<NSNumber>().ok().map(|n| n.intValue())
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -297,6 +313,7 @@ mod tests {
         // CGEventFlags fit in 32 bits; anything above means a wrong call.
         assert_eq!(current_flags() >> 32, 0);
         let _ = secure_input();
+        let _ = secure_input_owner();
     }
 
     #[test]
