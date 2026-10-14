@@ -15,8 +15,8 @@ or the control socket. Update it in the same commit when one of those contracts 
 ## Quality gates
 
 `scripts/check-all.sh` runs every gate in order: lint (rustfmt + clippy), check:layers,
-check:agents, check:deps, check:size, check:debt, check:binary-size, check:coverage
-(the tests), check:ci-parity. CI and the pre-commit hook run only this script. Warnings fail.
+check:agents, check:deps, check:size, check:debt, check:privacy, check:binary-size,
+check:coverage (the tests), check:ci-parity. CI and the pre-commit hook run only this script. Warnings fail.
 
 - `scripts/check-all.sh --bail` stops at the first failure; `CHECK_ALL_VERBOSE=1` streams output.
 - Re-run one gate: `scripts/checks/lint.sh`, `scripts/checks/layers.sh`, and so on.
@@ -27,6 +27,9 @@ check:agents, check:deps, check:size, check:debt, check:binary-size, check:cover
   `scripts/binary-size-budget.json`, `scripts/debt-allowlist.json`. Layer rules and their
   allow entries: `scripts/layer-rules.toml`. The scripts never edit these files.
 - TODO/FIXME/HACK/XXX must cite a seed (`flick-xxxx`), an issue (`#N`) or a URL.
+- Public repo: never write real tailnet names (`tail<hex>.ts.net`), Tailscale IPs, personal machine names,
+  ssh users or home paths into code, docs, tests, seeds or mulch. Use placeholders
+  (`server.example.ts.net`, 100.64.0.x, `my-macbook-pro`, `me@server`). `check:privacy` enforces it.
 
 <!-- seeds:start -->
 ## Issue Tracking (Seeds)

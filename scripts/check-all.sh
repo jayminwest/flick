@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Cheap static gates first, tests + coverage second to last, CI parity last.
-GATES="lint check:layers check:agents check:deps check:size check:debt check:binary-size
+GATES="lint check:layers check:agents check:deps check:size check:debt check:privacy check:binary-size
 check:coverage check:ci-parity"
 
 gate_script() { echo "scripts/checks/${1#check:}.sh"; }
