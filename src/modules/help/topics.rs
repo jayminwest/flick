@@ -64,6 +64,15 @@ pub const TOPICS: [Topic; 24] = [
 ];
 
 /// The topic named `slug`.
+/// Topics about a module that may be off, with that module's id. Other topics always show.
+const MODULES: [(&str, &str); 4] = [("kota", "kota"), ("chat", "kota"), ("llm", "llm"), ("dictation", "dictation")];
+
+/// The module topic `slug` is about, when that module may be off.
+pub fn module(slug: &str) -> Option<&'static str> {
+    MODULES.iter().find(|(s, _)| *s == slug).map(|(_, m)| *m)
+}
+
+#[cfg(test)]
 pub fn find(slug: &str) -> Option<&'static Topic> {
     TOPICS.iter().find(|t| t.slug == slug)
 }

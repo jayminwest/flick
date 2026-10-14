@@ -109,9 +109,9 @@ While `script`, `flick` or `shell` runs, the card shows a spinner and `Running s
 | `state` | Shows | Actions |
 |---|---|---|
 | `open` | speech-bubble symbol | enabled |
-| `pending` | hourglass, spinner, "Sent to KOTA…" | disabled; presses are ignored |
+| `pending` | hourglass, spinner, "Sent to the agent…" | disabled; presses are ignored |
 | `done` | check mark, "Done" | disabled |
-| `error` | warning symbol, "KOTA reported an error" | enabled (retry) |
+| `error` | warning symbol, "The agent reported an error" | enabled (retry) |
 
 - **Update a card by re-posting the same `id`** with the full card (a post replaces, it never merges). It redraws in place, keeps its slot, plays no sound, and clears Flick's own press state (pending, error line, confirm, running). What the user typed or picked survives the redraw unless the update changed that input's initial `value`/`selected`.
 - An `open` card with an enabled action stays until acted on or closed (`card_timeout_secs`, default 0 = forever; Esc from another app does not close it). A `pending` card stays until updated. A card without `reply_to`, `thread` or actions that is not `pending` is one nobody asked for: it is unread until the user closes or reads it (`flick message read <id>` reads it for them), and stays `unprompted_timeout_secs` (default 0 = until closed). Other cards hide after `timeout_secs` (default 20 s) unless the pointer rests on them; the time runs only while the user is at the Mac (no input since the card showed: it waits).
@@ -126,7 +126,7 @@ While `script`, `flick` or `shell` runs, the card shows a spinner and `Running s
 
 ## Presses reach KOTA
 
-The user's Mac config holds the command (unset, a press shows "Set [message] action_command to send presses to KOTA"):
+The user's Mac config holds the command (unset, a press shows "Set [message] action_command to send presses to the agent"):
 
 ```toml
 [message]
@@ -142,11 +142,11 @@ stdin: {"env":"prod","note":"ship it","tags":["a","b"]}   then EOF
 ```
 
 - Stdin is the values JSON: one key per input, a string for a `field`, an option id or `null` for a single `choice`, a list of option ids for a `multi` choice; `{}` without inputs. At most 4000 chars (a larger press is not sent); key order is not meaningful. Stdout is ignored.
-- The card shows "Sent to KOTA…" with its actions off.
-- **Exit 0**: accepted. The card stays pending until KOTA re-posts the same `id` (any state). After `pending_timeout_secs` (default 120 s; 0 waits forever) without one, the card shows "No update from KOTA" and its actions come back. Re-posting before the command exits is fine.
+- The card shows "Sent to the agent…" with its actions off.
+- **Exit 0**: accepted. The card stays pending until KOTA re-posts the same `id` (any state). After `pending_timeout_secs` (default 120 s; 0 waits forever) without one, the card shows "No update from the agent" and its actions come back. Re-posting before the command exits is fine.
 - **Exit 2**: rejected. The last non-empty stderr line (≤ 200 chars) shows as `KOTA rejected: <line>`; actions come back.
-- **Anything else** (another code, a signal, a spawn failure): `Sending to KOTA failed (exit n): <last stderr line>`; actions come back.
-- **20 s budget** from spawn to exit, then the command is killed: "No answer from KOTA in 20 s". Queue the work and exit; do the work after.
+- **Anything else** (another code, a signal, a spawn failure): `Sending to the agent failed (exit n): <last stderr line>`; actions come back.
+- **20 s budget** from spawn to exit, then the command is killed: "No answer from the agent in 20 s". Queue the work and exit; do the work after.
 - A press on a `pending` or `done` card, or on one whose press still runs, is ignored (`card press` answers `Card <id> is done: its actions are off`), so a press is never sent twice and a finished card never runs its actions again. A card dismissed while its press runs drops the result.
 
 The KOTA side (`kota-ask --action`) should: read the values, queue a tick that names the card and action, exit 0 at once, then re-post the card (`done` with the outcome, `open` with the next question, or `error` with what failed).
@@ -268,9 +268,9 @@ Run by Jaymin with the laptop awake, `[remote]` on there with mbp-server in `pee
 2. On mbp-server: post the approval example with `printf %s "$json" | flick --host my-macbook-pro --json message card post --stdin`. The reply is `{"ok":{"id":"pr-128","replaced":false,"warnings":[]}}`; the card shows top right on the laptop without taking focus; `flick --host my-macbook-pro message card ls` lists it as `open`.
 3. Post `{"id":"x"}` the same way: exit 1, `invalid card: card needs a non-empty title string`, nothing shows. Stop Flick or use a wrong host: exit 3.
 4. On the laptop, click **Open PR**: the browser opens, the card says "Opened the link" and stays.
-5. Press **Approve** (or `card_hotkey` then ⌘↵): the card shows "Sent to KOTA…". On mbp-server, `kota-ask` got `--action --card pr-128 --action-id approve` and `{}` on stdin, and KOTA got a tick.
+5. Press **Approve** (or `card_hotkey` then ⌘↵): the card shows "Sent to the agent…". On mbp-server, `kota-ask` got `--action --card pr-128 --action-id approve` and `{}` on stdin, and KOTA got a tick.
 6. KOTA re-posts the `done` card: it redraws in place, "Done", no sound, and hides after 20 s.
 7. Post the form example; pick Wed, tick sam, type a note, press **Book**: stdin holds `{"note":"…","slot":"wed-14","with":["sam"]}`.
-8. Press a reply action and have KOTA not answer: after 120 s the card shows "No update from KOTA" and the buttons come back. Make `kota-ask` print a reason to stderr and exit 2: the card shows `KOTA rejected: <reason>`.
+8. Press a reply action and have KOTA not answer: after 120 s the card shows "No update from the agent" and the buttons come back. Make `kota-ask` print a reason to stderr and exit 2: the card shows `The agent rejected it: <reason>`.
 9. Post a card with `{"do":{"flick":["script","run","x"]}}` from mbp-server: its button is disabled with `flick: script run: not allowed over the network`. A `shell` action shows the exact command and runs only on Run.
 10. `flick --host my-macbook-pro message card press pr-128 approve` is refused (exit 1); `message card dismiss --all` clears the corner.

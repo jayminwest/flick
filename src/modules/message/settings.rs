@@ -78,7 +78,7 @@ pub(super) struct Settings {
     pub(super) card_timeout_secs: u64,
     /// Shows or hides the KOTA chat window (plan pl-75d3); unbound: chat stays inert.
     pub(super) chat_hotkey: Option<String>,
-    /// The ssh target a chat ask runs kota-ask on (as `[kota] ssh`).
+    /// The ssh target a chat ask runs kota-ask on (as `[kota] ssh`); none by default.
     pub(super) kota_host: String,
     /// kota-ask on that host, relative to its home (as `[kota] kota_ask`).
     pub(super) kota_ask: String,

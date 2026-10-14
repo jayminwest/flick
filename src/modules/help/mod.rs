@@ -2,7 +2,8 @@
 //! (the root item **Flick Help**, view `topics`), `help:topic/<slug>` (rows of `topics`) and
 //! `help:key/<slug>/<n>` (rows of `keys/<slug>`, a topic's keys). ↵ on a topic opens its
 //! `docs/` page on GitHub, or its key view when it has keys; ⌘K: Open Docs, Copy How-To. Views do
-//! not record use. Table `[help]` has only `enabled`.
+//! not record use. Table `[help]` has only `enabled`. Topics of the modules the config leaves
+//! out (`topics::MODULES`, e.g. KOTA on a Mac that never names it) are not listed.
 
 mod topics;
 mod wire;
@@ -19,12 +20,8 @@ const KEYS_VIEW: &str = "keys/";
 #[derive(Default)]
 pub struct Help {
     hooks: Hooks,
-}
-
-/// The topic a `topic/<slug>` or `key/<slug>/<n>` id names.
-fn topic_of(key: &str) -> Option<&'static Topic> {
-    let slug = key.strip_prefix(TOPIC).or_else(|| key.strip_prefix(KEY)?.split('/').next())?;
-    topics::find(slug)
+    /// Module ids the config leaves out: their topics are hidden.
+    off: Vec<&'static str>,
 }
 
 fn topic_item(t: &Topic) -> Item {
@@ -49,6 +46,26 @@ fn key_items(t: &Topic) -> Vec<Item> {
 }
 
 impl Help {
+    /// Help for a registry that leaves out modules `off`.
+    pub fn new(off: Vec<&'static str>) -> Help {
+        Help { off, ..Help::default() }
+    }
+
+    /// The topics listed: every one whose module is on.
+    fn topics(&self) -> Vec<&'static Topic> {
+        TOPICS.iter().filter(|t| topics::module(t.slug).is_none_or(|m| !self.off.contains(&m))).collect()
+    }
+
+    fn find(&self, slug: &str) -> Option<&'static Topic> {
+        self.topics().into_iter().find(|t| t.slug == slug)
+    }
+
+    /// The topic a `topic/<slug>` or `key/<slug>/<n>` id names.
+    fn topic_of(&self, key: &str) -> Option<&'static Topic> {
+        let slug = key.strip_prefix(TOPIC).or_else(|| key.strip_prefix(KEY)?.split('/').next())?;
+        self.find(slug)
+    }
+
     fn open_docs(&self, t: &Topic, cx: &mut Cx) -> Outcome {
         cx.hide();
         (self.hooks.open)(&topics::url(t));
@@ -63,7 +80,7 @@ impl Module for Help {
 
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
         // Every topic title is a keyword, so "draw help" finds this.
-        let titles = TOPICS.iter().map(|t| t.title).collect::<Vec<_>>().join(" ");
+        let titles = self.topics().into_iter().map(|t| t.title).collect::<Vec<_>>().join(" ");
         vec![Item {
             subtitle: "How each feature works, and the draw keys".into(),
             accessory: "Command".into(),
@@ -81,7 +98,7 @@ impl Module for Help {
                 ..ListView::new(ID, view)
             });
         }
-        let t = topics::find(view.strip_prefix(KEYS_VIEW)?).filter(|t| t.keys.is_some())?;
+        let t = self.find(view.strip_prefix(KEYS_VIEW)?).filter(|t| t.keys.is_some())?;
         Some(ListView {
             placeholder: format!("{} keys…", t.title),
             footer: format!("{}  ·  ? shows these keys on screen  ·  esc to go back", t.title),
@@ -90,9 +107,9 @@ impl Module for Help {
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
-        let items = match view.name.strip_prefix(KEYS_VIEW).and_then(topics::find) {
+        let items = match view.name.strip_prefix(KEYS_VIEW).and_then(|s| self.find(s)) {
             Some(t) => key_items(t),
-            None => TOPICS.iter().map(topic_item).collect(),
+            None => self.topics().into_iter().map(topic_item).collect(),
         };
         // Keep the listed order for equal scores.
         let n = items.len();
@@ -104,7 +121,7 @@ impl Module for Help {
         if key == "index" {
             return Outcome::Push(ListView::new(ID, "topics"));
         }
-        match topic_of(key) {
+        match self.topic_of(key) {
             Some(t) if t.keys.is_some() && key.starts_with(TOPIC) => {
                 Outcome::Push(ListView::new(ID, format!("{KEYS_VIEW}{}", t.slug)))
             }
@@ -114,7 +131,7 @@ impl Module for Help {
     }
 
     fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
-        if topic_of(id.key()).is_none() {
+        if self.topic_of(id.key()).is_none() {
             return vec![];
         }
         vec![
@@ -124,7 +141,7 @@ impl Module for Help {
     }
 
     fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
-        let Some(t) = topic_of(id.key()) else { return Outcome::Stay(None) };
+        let Some(t) = self.topic_of(id.key()) else { return Outcome::Stay(None) };
         match key {
             "docs" => self.open_docs(t, cx),
             "copy" => {

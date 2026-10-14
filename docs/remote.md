@@ -50,7 +50,7 @@ Flags may come in any order, each once. `--json` is optional and must be the las
 | `{"ok":{"device":"my-iphone","id":"6F1C...","stored":true}}` | Stored. | Drop it from the queue. |
 | `{"ok":{...,"stored":false}}` | The same event (same device and id, same fields) was already stored: an earlier send got through but its reply did not. | Drop it. |
 | `{"error":"activity phone: ..."}` | Refused for good: a bad field (`activity phone: bad --at: ...`), or the id is stored with other fields. A retry gives the same answer. | Drop it and log the error. |
-| any other `{"error":...}` | The receiver cannot take it now: an older Flick (`activity: unknown command "phone"`), activity disabled (`unknown module "activity"`), a database error (`activity: could not store the phone open: ...`). | Keep it; retry later. |
+| any other `{"error":...}` | The receiver cannot take it now: an older Flick (`activity: unknown command "phone"`), activity disabled (`activity is off: turn it on in its [activity] table in config.toml`), a database error (`activity: could not store the phone open: ...`). | Keep it; retry later. |
 | no reply (cannot connect, closed, timeout) | Network access off, Tailscale down, receiver asleep, not in `peers`. | Keep it; retry later. |
 
 To test from a Mac peer: `flick --host mac-pro activity phone add --id t1 --device test --app flick-test --at $(date +%s)`, then `flick activity forget app flick-test --yes` on the receiver.

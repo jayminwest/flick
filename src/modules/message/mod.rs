@@ -329,7 +329,9 @@ impl Module for Inbox {
         if s.action_command.first().is_some_and(|p| p.trim().is_empty()) {
             return Err("[message]: action_command needs a program first".into());
         }
-        chat::ask::argv(&s.kota_host, &s.kota_ask, "r", "t").map_err(|e| format!("[message]: {e}"))?;
+        // An unset `kota_host` is fine: the chat says so when asked.
+        let host = if s.kota_host.is_empty() { "h" } else { s.kota_host.as_str() };
+        chat::ask::argv(host, &s.kota_ask, "r", "t").map_err(|e| format!("[message]: {e}"))?;
         chat::attach::dir(&s.attach_dir)?;
         self.settings = s;
         Ok(())

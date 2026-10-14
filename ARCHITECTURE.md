@@ -351,8 +351,8 @@ budget) at a time; its result goes through a pure reducer under the lock, then i
 `ModuleChanged`. On that event the main thread either starts the next round, if due, or
 arms one timer thread that sleeps until it is due and posts. Arming bumps a counter, so an
 older timer that wakes exits; `Sleep`/`Locked` bump the round epoch too (a round in flight
-drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module polls only when
-its `[kota]` table sets a key (`Section::is_set`; an empty table counts as none). When
+drops its result) and stop timed rounds until `Wake`/`Unlocked`. The module exists only when
+its `[kota]` table sets a key (`modules::OPT_IN`; an empty table counts as none). When
 config.toml is shared across Macs, `[kota]` belongs in the KOTA Mac's per-host overlay.
 
 Menu bar item (`src/modules/kota/item.rs`): shown only while the module polls (started, a
@@ -678,8 +678,13 @@ writes a commented default (`DEFAULT_CONFIG`).
 - Every other top-level key, `[launcher]` aside, is a module table, `[<module id>]`. `Config::section(id)` returns
   `Ok(None)` for `enabled = false`, else a `Section` without the `enabled` key (empty if the
   table is missing). `enabled` that is not a boolean is an error. `Section::is_set` is true when
-  the table sets a key besides `enabled`; a module that stays off until configured (kota,
-  dictation) checks it, so a bare `[<module id>]` header turns nothing on.
+  the table sets a key besides `enabled`. `modules::OPT_IN` (kota, llm, dictation: KOTA and
+  the local models) are registered only when it is true, so a bare `[<module id>]` header
+  turns nothing on and a Mac that never names them runs none of their code (flick-0c67). The
+  registry keeps the ids the config leaves out (`Registry::off`): a verb to one answers
+  `<id> is off: ...`, and `help` hides their topics. `help` is rebuilt on every reload
+  (`modules::REBUILT`) for that, without `Started`. No opt-in module has a default that names
+  a machine: `[kota]` requires `machine`, `cwd` and `dash`.
 - A module reads its table with `section.get::<Settings>()` into a private type. Give the type
   `#[derive(Default, Deserialize)]` and `#[serde(default)]`. Errors start with `[<id>]: `.
 - `LEGACY` in `src/config.rs` is the only place that knows the old flat keys:

@@ -47,9 +47,10 @@ pub const CONTEXT_MAX: usize = 8 * 1024;
 /// Bytes kota-ask reads from stdin (`head -c 16384`); a composed ask always fits (tested).
 #[cfg(test)]
 pub const STDIN_MAX: usize = 16 * 1024;
-/// The default ssh target and kota-ask path, as the kota module's (`[kota] ssh`, `kota_ask`).
-pub const DEFAULT_HOST: &str = "me@mbp-server";
-pub const DEFAULT_KOTA_ASK: &str = ".dotfiles/home/.local/bin/kota-ask";
+/// The default ssh target (none: the chat cannot ask until `kota_host` is set) and kota-ask
+/// path, as the kota module's (`[kota] ssh`, `kota_ask`).
+pub const DEFAULT_HOST: &str = "";
+pub const DEFAULT_KOTA_ASK: &str = "kota-ask";
 
 /// The least of a cut text item worth sending, in bytes.
 const MIN_CUT: usize = 64;
@@ -189,7 +190,10 @@ fn clip(s: &str, max: usize) -> &str {
 
 /// ssh's argv up to the remote command: batch mode, an 8 s connect timeout, `host`.
 pub fn ssh(host: &str) -> Result<Vec<String>, String> {
-    if host.is_empty() || host.starts_with('-') || host.chars().any(|c| c.is_whitespace() || c.is_control()) {
+    if host.is_empty() {
+        return Err("no ssh host: set [message] kota_host".into());
+    }
+    if host.starts_with('-') || host.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(format!("{host:?}: not an ssh host"));
     }
     Ok(["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host].map(String::from).to_vec())

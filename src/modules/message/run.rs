@@ -176,7 +176,7 @@ pub fn exec_bytes(command: &[String], input: Vec<u8>, budget: Duration) -> Exit 
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Exit::Failed(format!("No answer from KOTA in {} s", budget.as_secs()));
+                return Exit::Failed(format!("No answer from the agent in {} s", budget.as_secs()));
             }
             Err(e) => return Exit::Failed(format!("action_command: {e}")),
         }
@@ -193,10 +193,10 @@ pub fn classify(code: Option<i32>, stderr: &str) -> Exit {
         Some(0) => Exit::Sent,
         Some(2) => Exit::Rejected(line.unwrap_or_else(|| "no reason given".into())),
         Some(n) => Exit::Failed(match line {
-            Some(l) => format!("Sending to KOTA failed (exit {n}): {l}"),
-            None => format!("Sending to KOTA failed (exit {n})"),
+            Some(l) => format!("Sending to the agent failed (exit {n}): {l}"),
+            None => format!("Sending to the agent failed (exit {n})"),
         }),
-        None => Exit::Failed("Sending to KOTA failed: killed by a signal".into()),
+        None => Exit::Failed("Sending to the agent failed: killed by a signal".into()),
     }
 }
 
@@ -231,9 +231,9 @@ mod tests {
         assert_eq!(classify(Some(0), "noise"), Exit::Sent);
         assert_eq!(classify(Some(2), "a\n  card is gone  \n\n"), Exit::Rejected("card is gone".into()));
         assert_eq!(classify(Some(2), ""), Exit::Rejected("no reason given".into()));
-        assert_eq!(classify(Some(1), "boom"), Exit::Failed("Sending to KOTA failed (exit 1): boom".into()));
-        assert_eq!(classify(Some(255), " "), Exit::Failed("Sending to KOTA failed (exit 255)".into()));
-        assert_eq!(classify(None, ""), Exit::Failed("Sending to KOTA failed: killed by a signal".into()));
+        assert_eq!(classify(Some(1), "boom"), Exit::Failed("Sending to the agent failed (exit 1): boom".into()));
+        assert_eq!(classify(Some(255), " "), Exit::Failed("Sending to the agent failed (exit 255)".into()));
+        assert_eq!(classify(None, ""), Exit::Failed("Sending to the agent failed: killed by a signal".into()));
         let long = last_line(&"x".repeat(300)).unwrap();
         assert_eq!(long.chars().count(), LINE_MAX + 1);
         assert!(long.ends_with('…'));
@@ -246,8 +246,8 @@ mod tests {
         let echo = sh(r#"read -r v; [ "$v" = '{"x":"y"}' ] && [ "$*" = '--action --card c1 --action-id go' ] && exit 0; exit 1"#, budget);
         assert_eq!(exec(&echo), Exit::Sent);
         assert_eq!(exec(&sh("echo first >&2; echo 'not now' >&2; exit 2", budget)), Exit::Rejected("not now".into()));
-        assert_eq!(exec(&sh("exit 3", budget)), Exit::Failed("Sending to KOTA failed (exit 3)".into()));
-        assert_eq!(exec(&sh("kill -9 $$", budget)), Exit::Failed("Sending to KOTA failed: killed by a signal".into()));
+        assert_eq!(exec(&sh("exit 3", budget)), Exit::Failed("Sending to the agent failed (exit 3)".into()));
+        assert_eq!(exec(&sh("kill -9 $$", budget)), Exit::Failed("Sending to the agent failed: killed by a signal".into()));
         // Not reading stdin is fine.
         assert_eq!(exec(&sh("exit 0", budget)), Exit::Sent);
     }
@@ -256,7 +256,7 @@ mod tests {
     fn exec_kills_at_the_budget_and_reports_spawn_failures() {
         let started = Instant::now();
         let slow = Job { budget: Duration::from_millis(200), ..sh("sleep 5", Duration::ZERO) };
-        assert_eq!(exec(&slow), Exit::Failed("No answer from KOTA in 0 s".into()));
+        assert_eq!(exec(&slow), Exit::Failed("No answer from the agent in 0 s".into()));
         assert!(started.elapsed() < Duration::from_secs(4));
         let missing = Job::new(&["/nonexistent/kota-ask".into()], "c1", "go", 1, String::new());
         let Exit::Failed(e) = exec(&missing) else { panic!("spawned") };
@@ -275,7 +275,7 @@ mod tests {
         // Far more than a pipe holds, to a child that never reads: the budget still holds.
         let started = Instant::now();
         let stuck = exec_bytes(&argv("sleep 5"), png, Duration::from_millis(200));
-        assert_eq!(stuck, Exit::Failed("No answer from KOTA in 0 s".into()));
+        assert_eq!(stuck, Exit::Failed("No answer from the agent in 0 s".into()));
         assert!(started.elapsed() < Duration::from_secs(4));
     }
 

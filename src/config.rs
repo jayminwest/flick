@@ -238,7 +238,7 @@ impl Section {
     }
 
     /// The table sets a key besides `enabled`. A bare `[<module>]` header counts as no table:
-    /// modules that stay off until configured (kota, dictation) turn on only on a key.
+    /// the `OPT_IN` modules (kota, llm, dictation) are registered only on a key.
     pub fn is_set(&self) -> bool {
         !self.table.is_empty()
     }

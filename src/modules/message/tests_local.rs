@@ -193,7 +193,7 @@ fn card_press_answers_what_happened() {
 fn card_press_sends_values_and_reports_refusals() {
     let (mut f, mut m) = posted("[message]\naction_command = [\"echo\"]");
     // A reply press sends the card's initial values unless given.
-    assert_eq!(cli(&mut f, &mut m, &["c1", "go"]), Ok("Sent go to KOTA; the card waits for its update".into()));
+    assert_eq!(cli(&mut f, &mut m, &["c1", "go"]), Ok("Sent go to the agent; the card waits for its update".into()));
     settle(&mut f, &mut m);
     let log = take_log();
     assert!(log[1].contains(r#"--action-id go <{\"why\":\"\"}"#), "{log:?}");

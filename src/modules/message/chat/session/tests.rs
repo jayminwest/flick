@@ -211,7 +211,7 @@ fn a_failed_ask_is_marked_and_retried_under_its_id() {
     queue(Note::Key(Command::Retry));
     settle(&mut f, &mut m);
     let notice = only("chat notice", &take_log()).pop().unwrap();
-    assert_eq!(notice, "Not sent: .dotfiles/home/.local/bin/kota-ask --id m1 --thread t1 <ping");
+    assert_eq!(notice, "Not sent: kota-ask --id m1 --thread t1 <ping");
     m.settings.kota_host = "reject@host".into();
     queue(Note::Key(Command::Retry));
     settle(&mut f, &mut m);
@@ -349,7 +349,7 @@ fn card_presses_in_the_window_go_through_the_card_dispatch() {
     event(&mut f, &mut m);
     let rows = only("chat rows", &take_log());
     // No action_command: the error shows on the card in the transcript.
-    assert_eq!(rows.last().unwrap(), "-- Today / c1 card|false|Some(\"Set [message] action_command to send presses to KOTA\")");
+    assert_eq!(rows.last().unwrap(), "-- Today / c1 card|false|Some(\"Set [message] action_command to send presses to the agent\")");
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn kota_host_and_path_are_checked() {
         assert_eq!(m.configure(&table.section("message").unwrap().unwrap()), Err(want.into()));
     }
     let m = inbox("");
-    assert_eq!((m.settings.kota_host.as_str(), m.settings.kota_ask.as_str()), ("me@mbp-server", ".dotfiles/home/.local/bin/kota-ask"));
+    assert_eq!((m.settings.kota_host.as_str(), m.settings.kota_ask.as_str()), ("", "kota-ask"));
     assert_eq!(m.settings.chat_hotkey, None);
 }
 

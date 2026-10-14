@@ -57,7 +57,7 @@ pub struct CardUi<'a> {
     /// with Cancel and Run instead of its actions.
     pub confirm: Option<&'a str>,
     /// A muted line under the body: what a local action did ("Copied", a command's last
-    /// output line), or, while `pending`, what runs instead of "Sent to KOTA…".
+    /// output line), or, while `pending`, what runs instead of "Sent to the agent…".
     pub note: Option<&'a str>,
 }
 
@@ -82,10 +82,10 @@ pub struct Status {
 }
 
 /// The status of a card in `state` with `ui`: pending wins (its line is the note, else "Sent
-/// to KOTA…"), then an error from the module, then a note, then the card's own state.
+/// to the agent…"), then an error from the module, then a note, then the card's own state.
 pub fn status(state: State, ui: &CardUi) -> Status {
     let (symbol, line, spinner, enabled) = if ui.pending || state == State::Pending {
-        let line = ui.note.filter(|_| ui.pending).unwrap_or("Sent to KOTA…");
+        let line = ui.note.filter(|_| ui.pending).unwrap_or("Sent to the agent…");
         ("hourglass", Some((Tone::Muted, line.to_string())), true, false)
     } else if let Some(e) = ui.error {
         ("exclamationmark.triangle.fill", Some((Tone::Error, e.to_string())), false, true)
@@ -93,7 +93,7 @@ pub fn status(state: State, ui: &CardUi) -> Status {
         match state {
             State::Error => (
                 "exclamationmark.triangle.fill",
-                Some((Tone::Error, "KOTA reported an error".to_string())),
+                Some((Tone::Error, "The agent reported an error".to_string())),
                 false,
                 true,
             ),

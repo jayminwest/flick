@@ -1,5 +1,5 @@
-//! Table `[kota]`. Defaults fit Jaymin's setup: KOTA runs in a herdr pane on mbp-server,
-//! kota-dash serves `/ok` on its tailnet name.
+//! Table `[kota]`. No default names a machine: `machine`, `cwd` and `dash` are required
+//! (the module is registered only when the table sets a key), and quick ask needs `ssh`.
 
 use serde::Deserialize;
 
@@ -22,7 +22,7 @@ pub struct Settings {
     pub herdr: String,
     /// kota-dash's base URL; presence reads `<dash>/ok`.
     pub dash: String,
-    /// The ssh target for quick ask (flick-039d).
+    /// The ssh target for quick ask (flick-039d); `""`: quick ask says to set it.
     pub ssh: String,
     /// `kota-ask` on that machine, relative to its home (flick-039d).
     pub kota_ask: String,
@@ -41,13 +41,13 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            machine: "mbp-server".into(),
-            cwd: "/Users/me/kota".into(),
+            machine: String::new(),
+            cwd: String::new(),
             pane: String::new(),
             herdr: "herdr".into(),
-            dash: "https://mbp-server.example.ts.net:8310".into(),
-            ssh: "me@mbp-server".into(),
-            kota_ask: ".dotfiles/home/.local/bin/kota-ask".into(),
+            dash: String::new(),
+            ssh: String::new(),
+            kota_ask: "kota-ask".into(),
             poll_secs: 60,
             fast_secs: 180,
             status_item: true,
@@ -60,19 +60,32 @@ impl Default for Settings {
 impl Settings {
     pub fn check(self) -> Result<Settings, String> {
         let blank = |v: &str| v.trim().is_empty();
-        if blank(&self.machine) || self.machine.contains(char::is_whitespace) {
+        if self.machine.contains(char::is_whitespace) {
             return Err(format!("[kota]: bad machine \"{}\"", self.machine));
         }
-        if blank(&self.cwd) || blank(&self.herdr) {
+        if blank(&self.herdr) || (blank(&self.cwd) && !self.cwd.is_empty()) {
             return Err("[kota]: cwd and herdr must not be empty".into());
         }
-        if !(self.dash.starts_with("http://") || self.dash.starts_with("https://")) {
+        if !(self.dash.is_empty() || self.dash.starts_with("http://") || self.dash.starts_with("https://")) {
             return Err(format!("[kota]: dash must be an http(s) URL, not \"{}\"", self.dash));
         }
         if (1..FAST_SECS).contains(&self.poll_secs) {
             return Err(format!("[kota]: poll_secs must be 0 or at least {FAST_SECS}"));
         }
         Ok(self)
+    }
+
+    /// The keys with no default that a polling module needs: `machine`, `cwd`, `dash`.
+    pub fn required(&self) -> Result<(), String> {
+        let missing: Vec<&str> = [("machine", &self.machine), ("cwd", &self.cwd), ("dash", &self.dash)]
+            .into_iter()
+            .filter(|(_, v)| v.is_empty())
+            .map(|(k, _)| k)
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(format!("[kota]: set {} (docs/kota.md)", missing.join(", ")))
     }
 
     /// Whether `machine` is this Mac's server, given this Mac's short host name.
@@ -101,22 +114,24 @@ mod tests {
     }
 
     #[test]
-    fn defaults_fit_the_kota_server() {
+    fn defaults_name_no_machine() {
         let s = settings("").unwrap();
         assert_eq!(s, Settings::default());
-        assert_eq!((s.machine.as_str(), s.cwd.as_str(), s.pane.as_str()), ("mbp-server", "/Users/me/kota", ""));
-        assert_eq!((s.ssh.as_str(), s.kota_ask.as_str()), ("me@mbp-server", ".dotfiles/home/.local/bin/kota-ask"));
+        assert_eq!((s.machine.as_str(), s.cwd.as_str(), s.pane.as_str(), s.dash.as_str()), ("", "", "", ""));
+        assert_eq!((s.ssh.as_str(), s.kota_ask.as_str(), s.herdr.as_str()), ("", "kota-ask", "herdr"));
         assert_eq!((s.poll_secs, s.fast_secs, s.status_item, s.notify_down), (60, 180, true, true));
         assert_eq!(s.hotkey, None);
-        assert_eq!(s.ok_url(), "https://mbp-server.example.ts.net:8310/ok");
-        assert_eq!(settings("[kota]\ndash = \"http://h:1/\"").unwrap().ok_url(), "http://h:1/ok");
+        assert_eq!(s.required(), Err("[kota]: set machine, cwd, dash (docs/kota.md)".into()));
+        let s = settings("[kota]\nmachine = \"m\"\ncwd = \"/k\"\ndash = \"http://h:1/\"").unwrap();
+        assert_eq!((s.required(), s.ok_url()), (Ok(()), "http://h:1/ok".into()));
+        assert_eq!(settings("[kota]\nmachine = \"m\"").unwrap().required(), Err("[kota]: set cwd, dash (docs/kota.md)".into()));
     }
 
     #[test]
     fn bad_values_are_refused() {
         let err = |t: &str| settings(t).unwrap_err();
         assert_eq!(err("[kota]\nmachine = \"a b\""), "[kota]: bad machine \"a b\"");
-        assert_eq!(err("[kota]\nmachine = \"\""), "[kota]: bad machine \"\"");
+        assert_eq!(err("[kota]\nmachine = \" \""), "[kota]: bad machine \" \"");
         assert_eq!(err("[kota]\ncwd = \" \""), "[kota]: cwd and herdr must not be empty");
         assert_eq!(err("[kota]\nherdr = \"\""), "[kota]: cwd and herdr must not be empty");
         assert_eq!(err("[kota]\ndash = \"ftp://x\""), "[kota]: dash must be an http(s) URL, not \"ftp://x\"");

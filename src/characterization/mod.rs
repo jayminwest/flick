@@ -8,6 +8,7 @@
 //! - launcher ranking order (fuzzy score plus frecency)
 //! - window switcher order
 //! - control socket reply shapes (text, `--json` values, errors)
+//! - opt-in modules (KOTA, local models) stay out of a config that never names them
 //!
 //! Each test reaches the code only through the `use` lines at the top of its file. When
 //! code moves, fix those paths and nothing else; a changed assertion is a behavior change.
@@ -18,6 +19,7 @@ mod control_replies;
 mod item_ids;
 mod legacy_config;
 mod legacy_view;
+mod opt_in;
 mod ranking;
 mod store_fixture;
 mod store_schema;

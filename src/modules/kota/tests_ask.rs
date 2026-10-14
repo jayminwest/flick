@@ -5,7 +5,7 @@ use super::tests::{command, configured, event, wait};
 use super::*;
 use crate::core::test_cx;
 
-const ASKS: &str = "[kota]\nssh = \"ok\"\nmachine = \"server\"\ndash = \"http://ok\"\n";
+const ASKS: &str = "[kota]\nssh = \"ok\"\nmachine = \"server\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"\n";
 
 /// The ask's final answer, as the control socket waits for it.
 fn answer(now: Result<String, String>) -> Result<String, String> {
@@ -37,7 +37,7 @@ fn the_verb_answers_once_kota_has_the_question() {
 
 #[test]
 fn a_failed_ask_is_the_verbs_error() {
-    let mut k = configured("[kota]\nssh = \"down\"").unwrap();
+    let mut k = configured("[kota]\nmachine = \"server\"\ncwd = \"/k\"\ndash = \"http://ok\"\nssh = \"down\"").unwrap();
     let now = command(&mut k, &["ask", "hi"], false);
     assert_eq!(answer(now), Err("kota ask: ssh: connect to host down port 22: Connection refused".into()));
     wait("settled", || sent(&k));
@@ -79,10 +79,10 @@ fn an_ask_with_a_timer_makes_the_next_round_fast() {
 
 #[test]
 fn the_hotkey_opens_the_ask_view() {
-    let mut k = configured("[kota]\nhotkey = \"cmd+shift+K\"").unwrap();
+    let mut k = configured("[kota]\nmachine = \"server\"\ncwd = \"/k\"\ndash = \"http://ok\"\nhotkey = \"cmd+shift+K\"").unwrap();
     let bound = k.hotkeys();
     assert_eq!(bound, [Binding { spec: "cmd+shift+K".into(), key: Ok("ask".into()) }]);
-    assert!(configured("[kota]\nhotkey = \" \"").unwrap().hotkeys().is_empty());
+    assert!(configured("[kota]\nmachine = \"server\"\ncwd = \"/k\"\ndash = \"http://ok\"\nhotkey = \" \"").unwrap().hotkeys().is_empty());
     assert!(configured("").unwrap().hotkeys().is_empty());
     let view = test_cx("", |cx| k.hotkey("ask", cx)).unwrap();
     assert!(view.is(ID, "ask") && view.escape_hides);
@@ -129,4 +129,14 @@ fn the_view_sends_the_typed_question() {
     let mut other = ListView::new(ID, "other");
     test_cx("hi", |cx| k.refresh(&mut other, cx));
     assert!(other.items.is_empty() && other.footer.is_empty());
+}
+
+#[test]
+fn an_ask_without_ssh_names_the_key() {
+    let mut k = configured("[kota]\nmachine = \"server\"\ncwd = \"/k\"\ndash = \"http://ok\"").unwrap();
+    let want = "kota ask: set [kota] ssh, the host that runs kota-ask";
+    assert_eq!(command(&mut k, &["ask", "hi"], false), Err(want.into()));
+    assert!(k.shared.lock().asks.is_empty());
+    // A key but no machine: the table is refused.
+    assert_eq!(configured("[kota]\nhotkey = \"cmd+K\"").err().unwrap(), "[kota]: set machine, cwd, dash (docs/kota.md)");
 }

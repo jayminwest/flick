@@ -267,9 +267,12 @@ fn network_requests_are_remote_even_without_the_flag() {
         let req = ["message", "card", verb].map(String::from);
         assert_eq!(net_policy(&req), Ok(()), "{verb}");
     }
-    // Dictation answers locally (status reads only this Mac's settings and files).
+    // Dictation is opt-in (flick-0c67): without a [dictation] key it is not registered.
     let local = run(vec!["dictation".into(), "status".into()], Flags::default()).to_line();
-    assert!(local.starts_with(r#"{"ok":"dictation: off"#), "{local}");
+    assert_eq!(
+        local,
+        r#"{"error":"dictation is off: turn it on in its [dictation] table in config.toml"}"#
+    );
     // Scripts run only locally: the same request that peers are refused answers here.
     assert_eq!(
         run(vec!["script".into(), "run".into(), "Lock".into()], Flags::default()).to_line(),
@@ -391,9 +394,9 @@ fn peers_may_read_kota_presence() {
         assert!(flags.json);
         assert_eq!(net_policy(&words), Ok(()), "{verb} --json");
     }
-    // Without a [kota] key the presence is unknown and nothing polls.
+    // KOTA is opt-in (flick-0c67): without a [kota] key the module is not registered.
     assert_eq!(
         net_reply(&["kota", "status", "--json"]),
-        r#"{"ok":{"checked_at":null,"errors":[],"failing":[],"pane":null,"pending":0,"polling":"off (set a key in [kota] to poll)","since":null,"stale":false,"state":"unknown","unread":0}}"#
+        r#"{"error":"kota is off: turn it on in its [kota] table in config.toml"}"#
     );
 }

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
 fn settings(machine: &str, dash: &str) -> Settings {
-    Settings { machine: machine.into(), dash: dash.into(), ..Settings::default() }
+    Settings { machine: machine.into(), cwd: "/Users/me/kota".into(), dash: dash.into(), ..Settings::default() }
 }
 
 /// Wait up to 15 s for `cond`.

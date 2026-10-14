@@ -7,6 +7,8 @@ use super::{Binding, Cx, Event, Item, ItemId, ListView, Module, Outcome};
 
 pub struct Registry {
     modules: Vec<Box<dyn Module>>,
+    /// Module ids the config leaves out, for a clearer error than "unknown".
+    off: Vec<&'static str>,
 }
 
 impl Registry {
@@ -16,7 +18,17 @@ impl Registry {
             modules.iter().enumerate().all(|(i, m)| modules[..i].iter().all(|o| o.id() != m.id())),
             "duplicate module id"
         );
-        Registry { modules }
+        Registry { modules, off: vec![] }
+    }
+
+    /// The same registry, knowing that the config left out modules `off`.
+    pub fn with_off(self, off: Vec<&'static str>) -> Registry {
+        Registry { off, ..self }
+    }
+
+    /// The module ids the config leaves out.
+    pub fn off(&self) -> &[&'static str] {
+        &self.off
     }
 
     /// The modules in order, to build another registry from (on config reload).
@@ -110,7 +122,14 @@ impl Registry {
     pub fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
         let (module, rest) = args.split_first().ok_or("empty request")?;
         let ids: Vec<&str> = self.modules.iter().map(|m| m.id()).collect();
-        let unknown = || format!("unknown module \"{module}\" (modules: {})", ids.join(", "));
+        let unknown = || {
+            if self.off.contains(&module.as_str()) {
+                return format!(
+                    "{module} is off: turn it on in its [{module}] table in config.toml"
+                );
+            }
+            format!("unknown module \"{module}\" (modules: {})", ids.join(", "))
+        };
         let m = self.modules.iter_mut().find(|m| m.id() == module).ok_or_else(unknown)?;
         panic::catch_unwind(AssertUnwindSafe(|| m.command(rest, cx)))
             .unwrap_or_else(|_| Err(format!("{module}: command panicked")))

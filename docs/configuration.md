@@ -32,7 +32,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Three modules are opt-in: `kota`, `llm` and `dictation` (KOTA and the local models). Flick registers them only when their table sets a key, so a Mac whose config never names them runs none of their code and shows no item, hotkey, help topic or verb of theirs. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 ## Per-host overlay
 
@@ -42,7 +42,7 @@ Flick merges the overlay over config.toml:
 
 - Tables merge key by key, at every depth: `[kota] hotkey` in the overlay replaces only that key of the base `[kota]`.
 - Any other value replaces the base value whole: strings, numbers, arrays, and arrays of tables such as `[[sys.machine]]` or `[[quicklink.links]]`. The overlay's list is the list; it does not add to the base's.
-- An overlay cannot remove a key. A module that a table in config.toml turns on stays on, unless the module has its own switch (`enabled = false` turns any module off). Some modules turn on as soon as their table has a key (`[kota]`, `[keys]`, `[dictation]`): put those tables only in the overlays of the Macs that use them, never in the shared file.
+- An overlay cannot remove a key. A module that a table in config.toml turns on stays on, unless the module has its own switch (`enabled = false` turns any module off). Some modules turn on as soon as their table has a key (`[kota]`, `[llm]`, `[keys]`, `[dictation]`): put those tables only in the overlays of the Macs that use them, never in the shared file.
 - Old flat keys (`[[quicklinks]]`, ...) map in each file before the merge.
 - No overlay file: Flick reads config.toml alone, as before. An error in the overlay names the overlay file, and like a bad config.toml it means defaults at startup and no change on reload.
 - Reload (**Reload Flick Config**, `flick reload`) reads both files again, so a new overlay applies on the next reload. Flick does not watch either file.

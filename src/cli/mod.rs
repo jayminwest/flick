@@ -33,9 +33,14 @@ const USAGE: &str = "usage: flick                              run the launcher
        flick snapshot <out.png> [query]
        flick import-raycast <Quicklinks.json>";
 
-/// `USAGE` plus every module's verbs (`Module::verbs`), one module per line.
+/// `USAGE` plus the verbs (`Module::verbs`) of every module this Mac's config enables, one
+/// module per line.
 fn usage() -> String {
-    let verbs = crate::modules::verbs().join("\n       ");
+    usage_for(&crate::config::Config::default())
+}
+
+fn usage_for(config: &crate::config::Config) -> String {
+    let verbs = crate::modules::verbs(config).join("\n       ");
     format!("{USAGE}\n\nverbs: {verbs}")
 }
 
@@ -369,7 +374,7 @@ mod tests {
 
     #[test]
     fn usage_lists_module_verbs_in_registration_order() {
-        let text = usage();
+        let text = usage_for(&crate::config::Config::default());
         let (head, verbs) = text.split_once("\n\nverbs: ").unwrap();
         assert_eq!(head, USAGE);
         // Only the modules pinned here; a new module's verb line is its own.

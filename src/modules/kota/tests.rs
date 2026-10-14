@@ -34,7 +34,7 @@ pub(super) fn wait(what: &str, mut cond: impl FnMut() -> bool) {
     }
 }
 
-const SERVER: &str = "[kota]\nmachine = \"server\"\ndash = \"http://ok\"\n";
+const SERVER: &str = "[kota]\nmachine = \"server\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"\nssh = \"u@server\"\n";
 
 #[test]
 fn without_a_kota_key_nothing_runs() {
@@ -109,7 +109,7 @@ fn sleep_marks_stale_and_wake_arms_a_round() {
 
 #[test]
 fn on_demand_polls_on_launcher_open_only() {
-    let mut k = configured("[kota]\npoll_secs = 0\nmachine = \"server\"\ndash = \"http://ok\"").unwrap();
+    let mut k = configured("[kota]\npoll_secs = 0\nmachine = \"server\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"").unwrap();
     event(&mut k, Event::Started);
     assert_eq!(k.shared.lock().started_at, None);
     assert!(command(&mut k, &["status"], false).unwrap().ends_with("polling: on demand"));
@@ -134,7 +134,7 @@ fn reload_resets_on_a_new_target_and_stops_when_emptied() {
     assert_eq!(k.shared.lock().presence.state, State::Thinking);
     assert_eq!(k.shared.lock().epoch, epoch);
     // A new machine: forget it and check again at once.
-    k.configure(&parse("[kota]\nmachine = \"empty\"\ndash = \"http://ok\"").unwrap().section(ID).unwrap().unwrap()).unwrap();
+    k.configure(&parse("[kota]\nmachine = \"empty\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"").unwrap().section(ID).unwrap().unwrap()).unwrap();
     assert_eq!(k.shared.lock().epoch, epoch + 1);
     wait("new round", || k.shared.lock().ended_at.is_some());
     wait("new round end", || !k.shared.lock().running);
@@ -144,7 +144,7 @@ fn reload_resets_on_a_new_target_and_stops_when_emptied() {
     assert!(k.shared.lock().timer_due.is_none());
     assert!(command(&mut k, &["status"], false).unwrap().ends_with("polling: off (set a key in [kota] to poll)"));
     // And a key again starts it.
-    k.configure(&parse("[kota]\nmachine = \"empty\"\ndash = \"http://ok\"").unwrap().section(ID).unwrap().unwrap()).unwrap();
+    k.configure(&parse("[kota]\nmachine = \"empty\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"").unwrap().section(ID).unwrap().unwrap()).unwrap();
     assert!(k.active);
     let p = k.shared.lock();
     assert!(p.timer_due.is_some() || p.running);

@@ -9,7 +9,7 @@ use crate::modules::kota::testkit::{queue, take_ui};
 use crate::modules::kota::tests::{configured, event, wait};
 use crate::modules::kota::{ID, Kota};
 
-const SERVER: &str = "[kota]\nmachine = \"server\"\ndash = \"http://ok\"\n";
+const SERVER: &str = "[kota]\nmachine = \"server\"\ncwd = \"/Users/me/kota\"\ndash = \"http://ok\"\nssh = \"u@server\"\n";
 const THINKING: &str = "show K… | KOTA: thinking · <1m\nFlick KOTA cards design brainstorm | 9 rows";
 
 fn reconfigure(k: &mut Kota, text: &str) {

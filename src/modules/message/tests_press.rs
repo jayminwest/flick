@@ -103,7 +103,7 @@ fn rejections_and_failures_show_on_the_card_with_actions_on() {
     press("go");
     settle(&mut f, &mut m);
     let log = take_log();
-    assert_eq!(log[1], "update c1 Open|false|Some(\"KOTA rejected: card is gone\")|None|0|true");
+    assert_eq!(log[1], "update c1 Open|false|Some(\"The agent rejected it: card is gone\")|None|0|true");
     // The argv gets the card and action; the values go on stdin.
     let (mut f, mut m) = posted("[message]\naction_command = [\"echo\", \"-x\"]");
     press("go");

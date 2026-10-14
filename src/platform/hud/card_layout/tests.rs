@@ -23,17 +23,17 @@ fn pending_wins_then_the_module_error_then_the_card_state() {
 
     let pending = CardUi { pending: true, error: Some("boom"), ..ui };
     let s = status(State::Open, &pending);
-    assert_eq!(s.line, Some((Tone::Muted, "Sent to KOTA…".into())));
+    assert_eq!(s.line, Some((Tone::Muted, "Sent to the agent…".into())));
     assert!(s.spinner && !s.enabled);
     assert_eq!(status(State::Pending, &ui), s);
 
-    let failed = CardUi { error: Some("KOTA rejected: no"), ..ui };
+    let failed = CardUi { error: Some("The agent rejected it: no"), ..ui };
     let s = status(State::Done, &failed);
-    assert_eq!(s.line, Some((Tone::Error, "KOTA rejected: no".into())));
+    assert_eq!(s.line, Some((Tone::Error, "The agent rejected it: no".into())));
     assert!(s.enabled && !s.spinner);
 
     let s = status(State::Error, &ui);
-    assert_eq!(s.line, Some((Tone::Error, "KOTA reported an error".into())));
+    assert_eq!(s.line, Some((Tone::Error, "The agent reported an error".into())));
     assert!(s.enabled);
     let s = status(State::Done, &ui);
     assert_eq!(s.line, Some((Tone::Muted, "Done".into())));
@@ -65,7 +65,7 @@ fn a_note_shows_muted_and_names_what_runs() {
     assert!(s.spinner && !s.enabled);
     // KOTA's own pending state ignores a stale note.
     let s = status(State::Pending, &ui);
-    assert_eq!(s.line, Some((Tone::Muted, "Sent to KOTA…".into())));
+    assert_eq!(s.line, Some((Tone::Muted, "Sent to the agent…".into())));
 }
 
 #[test]

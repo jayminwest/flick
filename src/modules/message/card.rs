@@ -224,7 +224,7 @@ impl Inbox {
             Some(v) => v.to_string(),
         };
         Ok(match self.press(id, action, values, cx)? {
-            Pressed::Sent => format!("Sent {action} to KOTA; the card waits for its update"),
+            Pressed::Sent => format!("Sent {action} to the agent; the card waits for its update"),
             Pressed::Confirm(cmd) => format!("Confirm on the card: {cmd}\nPress {action} again to run it"),
             Pressed::Cancelled => "Cancelled".into(),
             Pressed::Running(label) => format!("Running {label}; the result shows on the card"),

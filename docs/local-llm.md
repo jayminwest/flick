@@ -2,7 +2,7 @@
 
 The `llm` module chats with OpenAI-compatible model servers on your tailnet, such as mlx-serve or ollama on the Mac Pro. You type in a floating chat window and the reply streams in. Normal chats are kept in flick.db unless you turn history off. The private chat keeps nothing: it lives in memory, talks only to a server you mark `private = true`, and is wiped when its window closes.
 
-Nothing runs until `[[llm.servers]]` lists a server. Without one there is no launcher item, the chat hotkey is not bound, and no request is made. (A set `private_hotkey` is still bound, only to say that there is no private server.)
+The module is opt-in. Flick does not register it until `[llm]` sets at least one key, so a Mac without the table has no launcher item, hotkey, help topic or `flick llm` verb. Nothing runs until `[[llm.servers]]` lists a server. Without one there is no launcher item, the chat hotkey is not bound, and no request is made. (A set `private_hotkey` is still bound, only to say that there is no private server.)
 
 ## Set up
 

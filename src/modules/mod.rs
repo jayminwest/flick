@@ -4,16 +4,19 @@
 //!
 //! Config: each module reads its own `[<module id>]` table in `Module::configure`, into a
 //! settings type private to the module. `enabled = false` in that table leaves the module
-//! out of the registry, so it adds no items, views or hotkeys.
+//! out of the registry, so it adds no items, views or hotkeys. The `OPT_IN` modules (KOTA and
+//! the local models) are left out too unless their table sets a key (`Section::is_set`): a Mac
+//! that never names them runs none of their code.
 
 use crate::config::{Config, Section};
 use crate::core::{Module, Registry};
 
 /// Declares each module directory and registers it, one line per module:
 /// `[pub] mod <dir> => "<id>", <constructor>;`. The id names the config table and must
-/// equal `Module::id()`. `$apps` names the scanned app list for constructors that take it.
+/// equal `Module::id()`. `$apps` names the scanned app list and `$config` the config, for
+/// constructors that take them.
 macro_rules! modules {
-    (fn add_all($m:ident, $apps:ident) {
+    (fn add_all($m:ident, $apps:ident, $config:ident) {
         $($vis:vis mod $dir:ident => $id:literal, $new:expr;)*
     }) => {
         $($vis mod $dir;)*
@@ -23,6 +26,7 @@ macro_rules! modules {
         pub const IDS: &[&str] = &[$($id),*];
 
         fn add_all($m: &mut Modules, $apps: Vec<apps::App>) -> Result<(), String> {
+            let $config = $m.config;
             $($m.add($id, $new)?;)*
             Ok(())
         }
@@ -34,7 +38,7 @@ macro_rules! modules {
 // window keys). Item ids feed the `usage` table, so their format is pinned by
 // `crate::characterization`.
 modules! {
-    fn add_all(m, apps) {
+    fn add_all(m, apps, config) {
         pub mod apps => "app", || apps::Apps::new(apps);
         mod desktop => "desktop", desktop::Desktop::default;
         pub mod switcher => "switcher", switcher::Switcher::default;
@@ -56,9 +60,25 @@ modules! {
         mod feedback => "feedback", feedback::Feedback::default;
         mod message => "message", message::Inbox::default;
         mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
-        mod help => "help", help::Help::default;
+        mod help => "help", || help::Help::new(opt_in_off(config));
     }
 }
+
+/// Modules registered only when their table sets a key: they talk to KOTA or run models,
+/// which a Mac must ask for (flick-0c67).
+pub const OPT_IN: [&str; 3] = ["kota", "llm", "dictation"];
+
+/// The `OPT_IN` modules `config` leaves out, as `Modules::add` decides.
+fn opt_in_off(config: &Config) -> Vec<&'static str> {
+    OPT_IN
+        .into_iter()
+        .filter(|id| !matches!(config.section(id), Ok(Some(t)) if t.is_set()))
+        .collect()
+}
+
+/// Modules a reload always builds afresh, without `Started` (so they must not need it):
+/// `help` lists topics by what the config turns on.
+const REBUILT: [&str; 1] = ["help"];
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
@@ -68,9 +88,9 @@ pub use clipboard::store::Clips;
 
 /// Every enabled module over `apps`, in `modules!` order. Errors name the bad table.
 pub fn with_apps(config: &Config, apps: Vec<apps::App>) -> Result<Registry, String> {
-    let mut m = Modules { config, list: vec![], skipped: None };
+    let mut m = Modules { config, list: vec![], off: vec![], skipped: None };
     add_all(&mut m, apps)?;
-    Ok(Registry::new(m.list))
+    Ok(Registry::new(m.list).with_off(m.off))
 }
 
 /// Every enabled module under `config`, with the app index scanned now, for startup.
@@ -82,31 +102,33 @@ pub fn lenient(config: &Config) -> (Registry, Vec<String>) {
 
 /// `lenient` over `apps`.
 pub fn lenient_with_apps(config: &Config, apps: Vec<apps::App>) -> (Registry, Vec<String>) {
-    let mut m = Modules { config, list: vec![], skipped: Some(vec![]) };
+    let mut m = Modules { config, list: vec![], off: vec![], skipped: Some(vec![]) };
     // `add` fails only when `skipped` is `None`.
     let _ = add_all(&mut m, apps);
-    (Registry::new(m.list), m.skipped.unwrap_or_default())
+    (Registry::new(m.list).with_off(m.off), m.skipped.unwrap_or_default())
 }
 
-/// Each module's `flick help` verb line (`Module::verbs`), in registration order.
-pub fn verbs() -> Vec<&'static str> {
-    with_apps(&Config::default(), vec![]).map_or_else(
-        |_| vec![],
-        |r| r.into_modules().iter().map(|m| m.verbs()).filter(|v| !v.is_empty()).collect(),
-    )
+/// Each module enabled under `config` (as at startup: a bad table does not hide the
+/// others): its `flick help` verb line (`Module::verbs`), in registration order.
+pub fn verbs(config: &Config) -> Vec<&'static str> {
+    let (registry, _) = lenient_with_apps(config, vec![]);
+    registry.into_modules().iter().map(|m| m.verbs()).filter(|v| !v.is_empty()).collect()
 }
 
 /// `registry` under a reloaded `config`, unchanged on error. Modules still enabled keep
 /// their state (recent apps, the app index) and take their new table; newly enabled ones
 /// start fresh. Returns the ids of the fresh ones, which the caller sends `Event::Started`.
 pub fn reload(registry: &mut Registry, config: &Config) -> Result<Vec<&'static str>, String> {
-    let fresh = with_apps(config, vec![])?.into_modules();
+    let fresh = with_apps(config, vec![])?;
+    let off = fresh.off().to_vec();
+    let fresh = fresh.into_modules();
     let mut old = std::mem::replace(registry, Registry::new(vec![])).into_modules();
     let mut started = vec![];
     let list = fresh
         .into_iter()
         .map(|new| {
-            if let Some(i) = old.iter().position(|m| m.id() == new.id()) {
+            let keep = !REBUILT.contains(&new.id());
+            if let Some(i) = old.iter().position(|m| m.id() == new.id()).filter(|_| keep) {
                 let mut kept = old.swap_remove(i);
                 // `fresh` already took this table, so it cannot fail here.
                 if let Ok(Some(table)) = config.section(kept.id())
@@ -115,35 +137,36 @@ pub fn reload(registry: &mut Registry, config: &Config) -> Result<Vec<&'static s
                     return kept;
                 }
             }
-            started.push(new.id());
+            if keep {
+                started.push(new.id());
+            }
             new
         })
         .collect();
-    *registry = Registry::new(list);
+    *registry = Registry::new(list).with_off(off);
     Ok(started)
 }
 
 struct Modules<'a> {
     config: &'a Config,
     list: Vec<Box<dyn Module>>,
+    /// The modules the config leaves out.
+    off: Vec<&'static str>,
     /// `Some` when lenient: the errors of the bad tables skipped so far.
     skipped: Option<Vec<String>>,
 }
 
 impl Modules<'_> {
     /// Build module `id` and configure it from its table, unless the table sets
-    /// `enabled = false`. When lenient, a bad table is recorded and the module configured
-    /// from an empty one instead.
+    /// `enabled = false`, or sets no key for an `OPT_IN` module. When lenient, a bad table is
+    /// recorded and the module configured from an empty one instead (an `OPT_IN` one stays
+    /// out).
     fn add<M: Module + 'static>(
         &mut self,
-        id: &str,
+        id: &'static str,
         new: impl FnOnce() -> M,
     ) -> Result<(), String> {
-        let table = match self.config.section(id) {
-            Ok(None) => return Ok(()),
-            Ok(Some(table)) => table,
-            Err(e) => self.skip(id, e)?,
-        };
+        let Some(table) = self.table(id)? else { return Ok(()) };
         let mut module = new();
         if let Err(e) = module.configure(&table) {
             module.configure(&self.skip(id, e)?)?;
@@ -151,6 +174,24 @@ impl Modules<'_> {
         debug_assert_eq!(module.id(), id, "table name is the module id");
         self.list.push(Box::new(module));
         Ok(())
+    }
+
+    /// Module `id`'s table, or `None` (recorded in `off`) when the config leaves it out.
+    /// Not generic, so the `add` of each module stays small.
+    fn table(&mut self, id: &'static str) -> Result<Option<Section>, String> {
+        let opt_in = OPT_IN.contains(&id);
+        let table = match self.config.section(id) {
+            Ok(Some(table)) if table.is_set() || !opt_in => Some(table),
+            Ok(_) => None,
+            Err(e) => {
+                let empty = self.skip(id, e)?;
+                (!opt_in).then_some(empty)
+            }
+        };
+        if table.is_none() {
+            self.off.push(id);
+        }
+        Ok(table)
     }
 
     /// Error `e` in module `id`'s table: `Err(e)`, or when lenient the empty table to use
@@ -170,17 +211,34 @@ pub struct AppStore;
 impl AppStore {
     pub fn open(path: &std::path::Path) -> Result<crate::core::store::Store, String> {
         let store = crate::core::store::Store::open(path).map_err(|e| e.to_string())?;
-        with_apps(&Config::default(), vec![])?.migrate(&store)?;
+        every()?.migrate(&store)?;
         Ok(store)
     }
 
     pub fn in_memory() -> crate::core::store::Store {
         let store = crate::core::store::Store::in_memory();
-        with_apps(&Config::default(), vec![])
+        every()
             .and_then(|r| r.migrate(&store))
             .expect("module migrations run on an empty database");
         store
     }
+}
+
+/// Every module, `OPT_IN` ones included, each on its defaults.
+#[cfg(test)]
+pub fn every() -> Result<Registry, String> {
+    with_apps(&crate::config::parse(&opt_in_config())?, vec![])
+}
+
+/// A config that turns every `OPT_IN` module on with otherwise default settings.
+#[cfg(test)]
+pub fn opt_in_config() -> String {
+    let on = |id: &str| match id {
+        "kota" => "[kota]\nmachine = \"m\"\ncwd = \"/k\"\ndash = \"http://m:1\"\npoll_secs = 0",
+        "llm" => "[llm]\nhistory = true",
+        _ => "[dictation]\nengine = \"whisper\"",
+    };
+    OPT_IN.map(on).join("\n")
 }
 
 #[cfg(test)]

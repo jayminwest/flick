@@ -4,10 +4,10 @@
 //! local runs (`local.rs`). `message card press` calls the same `press`.
 //!
 //! - A press of a reply action (no `do`) runs `[message] action_command` on a worker; the
-//!   card shows "Sent to KOTA…" with its actions off until KOTA re-posts it (a post of the
+//!   card shows "Sent to the agent…" with its actions off until KOTA re-posts it (a post of the
 //!   same id clears the press state). Exit 2 or any failure puts an error line on the card
 //!   and turns the actions back on. A card still pending after `pending_timeout_secs` turns
-//!   to "No update from KOTA".
+//!   to "No update from the agent".
 //! - Presses on a pending or running card are ignored (no double send or run), and so are
 //!   presses on a card KOTA posted as `pending` or `done`: only `open` and `error` cards take
 //!   presses (`actionable`, docs/cards.md "States and updates").
@@ -40,9 +40,9 @@ use crate::core::card::{Action, Card, Do, Kind, Origin, State};
 use crate::platform::hud::{CANCEL, CardUi};
 
 /// The error line of a press with no `action_command`.
-pub const NO_COMMAND: &str = "Set [message] action_command to send presses to KOTA";
+pub const NO_COMMAND: &str = "Set [message] action_command to send presses to the agent";
 /// The error line of a pending card KOTA did not update in time.
-pub const NO_UPDATE: &str = "No update from KOTA";
+pub const NO_UPDATE: &str = "No update from the agent";
 
 /// What the HUD handlers queue for the module.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,7 +105,7 @@ pub type Uis = HashMap<String, Ui>;
 /// What a press did, for `message card press` (the HUD needs no answer).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pressed {
-    /// Sent to KOTA; the card waits for its update.
+    /// Sent to the agent; the card waits for its update.
     Sent,
     /// A shell action's first press: the card shows this exact command with Cancel and Run.
     Confirm(String),
@@ -322,7 +322,7 @@ impl Inbox {
                     (self.env.wake_after)(secs + 1);
                 }
             }
-            Exit::Rejected(why) => self.set_error(&done.card, &format!("KOTA rejected: {why}"), cx),
+            Exit::Rejected(why) => self.set_error(&done.card, &format!("The agent rejected it: {why}"), cx),
             Exit::Failed(why) => self.set_error(&done.card, &why, cx),
         }
     }

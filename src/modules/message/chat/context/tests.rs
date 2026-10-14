@@ -189,7 +189,7 @@ fn a_question_carries_its_chips_and_uploads_first() {
     // The chips are used up at once.
     assert_eq!(only("chat chips", &log).last().unwrap(), "");
     // echo@host fails with the argv and stdin, so the notice shows what kota-ask got.
-    let want = "Not sent: .dotfiles/home/.local/bin/kota-ask --id m1 --thread tnew1 <What is this?\n\n[context]\napp: Safari (com.apple.Safari)\nwindow: Inbox\nscreenshot: ~/t-carry/attach/m1-1.png\n[/context]";
+    let want = "Not sent: kota-ask --id m1 --thread tnew1 <What is this?\n\n[context]\napp: Safari (com.apple.Safari)\nwindow: Inbox\nscreenshot: ~/t-carry/attach/m1-1.png\n[/context]";
     assert_eq!(only("chat notice", &log).last().unwrap(), want);
     let ups: Vec<String> = fake::uploads().into_iter().filter(|u| u.contains("t-carry/")).collect();
     let cmd = attach::upload_argv("echo@host", "t-carry/attach", "m1", 1).unwrap().pop().unwrap();

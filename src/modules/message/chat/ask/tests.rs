@@ -123,12 +123,11 @@ fn chips_label_each_item() {
 
 #[test]
 fn the_argv_runs_kota_ask_with_the_thread() {
-    let argv = argv(DEFAULT_HOST, DEFAULT_KOTA_ASK, "k1abc", "t1xyz").unwrap();
-    let want = [
-        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "me@mbp-server",
-        ".dotfiles/home/.local/bin/kota-ask", "--id", "k1abc", "--thread", "t1xyz",
-    ];
-    assert_eq!(argv, want);
+    let got = argv("u@kota", DEFAULT_KOTA_ASK, "k1abc", "t1xyz").unwrap();
+    let want = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "u@kota", "kota-ask", "--id", "k1abc", "--thread", "t1xyz"];
+    assert_eq!(got, want);
+    // No default host: the chat names the key to set.
+    assert_eq!(argv(DEFAULT_HOST, DEFAULT_KOTA_ASK, "k", "t"), Err("no ssh host: set [message] kota_host".into()));
     assert!(super::argv("h", "~/bin/kota-ask", "k", "t").is_ok());
 }
 

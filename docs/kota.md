@@ -2,18 +2,18 @@
 
 The `kota` module shows KOTA in the menu bar. KOTA is the always-on Claude Code session in a herdr pane on another Mac, here mbp-server. The menu bar item shows whether KOTA is thinking, waiting on an approval, idle, degraded or down, or whether this Mac is offline. It also shows how many cards are waiting on you. **Ask KOTA…** (a hotkey, the menu, or `flick kota ask`) sends KOTA a question. A pending KOTA card shows until the reply replaces it.
 
-The module is off until `[kota]` sets at least one key. An empty `[kota]` table counts as none. Without a key, Flick runs no thread and no child process for this module, and shows no menu bar item. `flick kota refresh` still checks once on demand. The defaults below fit Jaymin's setup, so `hotkey` alone is enough to turn it on:
+The module is opt-in. Flick does not register it until `[kota]` sets at least one key. An empty `[kota]` table, or one with only `enabled = true`, counts as none. Without a key, the module does not exist on that Mac: no thread, no child process, no menu bar item, no launcher items, no help topic, and `flick kota ...` answers `kota is off: turn it on in its [kota] table in config.toml`. No default names a machine. When the module is on, `machine`, `cwd` and `dash` are required, and quick ask needs `ssh`:
 
 ```toml
 [kota]
 hotkey = "cmd+ctrl+alt+shift+KeyO" # opens Ask KOTA; unbound by default
-machine = "mbp-server"             # herdr's saved machine that runs KOTA; "local" (or this Mac's host name) is this Mac
-cwd = "/Users/me/kota"         # the KOTA pane is agent "claude" in this directory there
+machine = "server"                 # required: herdr's saved machine that runs KOTA; "local" (or this Mac's host name) is this Mac
+cwd = "/Users/me/kota"             # required: the KOTA pane is agent "claude" in this directory there
 pane = ""                          # when several panes match, the one with this herdr pane name wins
 herdr = "herdr"                    # the herdr CLI: a name on PATH (then /opt/homebrew/bin) or a path
-dash = "https://mbp-server.example.ts.net:8310" # kota-dash; presence reads <dash>/ok
-ssh = "me@mbp-server"          # quick ask: the ssh target
-kota_ask = ".dotfiles/home/.local/bin/kota-ask"    # kota-ask on it, relative to its home
+dash = "https://server.example.ts.net:8310" # required: kota-dash; presence reads <dash>/ok
+ssh = "me@server"                  # quick ask: the ssh target; none by default
+kota_ask = "kota-ask"              # kota-ask on it, relative to its home (default "kota-ask")
 poll_secs = 60                     # seconds between checks (15 s while KOTA works); 0: only on demand; else at least 15
 fast_secs = 180                    # seconds of 15 s checks after an ask
 status_item = true                 # show the menu bar item
@@ -90,9 +90,9 @@ keyword = "k"
 shell = "id=$(\"$HOME/Applications/Flick.app/Contents/MacOS/Flick\" message post --pending -- {query} 2>/dev/null); printf %s {query} | /usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=8 mbp-server .dotfiles/home/.local/bin/kota-ask --id \"$id\""
 ```
 
-Replace it once the laptop runs a Flick with this module (`flick kota status` answers instead of `unknown module`):
+Replace it once the laptop runs a Flick with this module (`flick kota status` answers instead of `unknown module` or `kota is off`):
 
-1. Add `[kota]` with a `hotkey` (and any key that differs from the defaults) to the laptop's config. When one config.toml is shared between Macs, put it in the laptop's [per-host overlay](configuration.md#per-host-overlay), so mbp-server does not poll too.
+1. Add `[kota]` with `machine`, `cwd`, `dash`, `ssh` and a `hotkey` to the laptop's config. When one config.toml is shared between Macs, put it in the laptop's [per-host overlay](configuration.md#per-host-overlay), so mbp-server does not poll too.
 2. Remove the `[[script.commands]]` "Ask KOTA" table and run **Reload Flick Config**.
 3. Ask KOTA with the hotkey, the menu bar item's **Ask KOTA…**, or `flick kota ask <text>` in a shell.
 

@@ -154,6 +154,9 @@ impl Kota {
     /// the outcome once ssh is done (`core::later`).
     fn ask(&self, text: &str, cli: bool) -> Result<String, String> {
         let text = ask::check(text)?;
+        if self.settings.ssh.trim().is_empty() {
+            return Err("kota ask: set [kota] ssh, the host that runs kota-ask".into());
+        }
         let id = ask::new_id();
         let now = (self.hooks.now)();
         let ask = Ask { id: id.clone(), text: text.clone(), at: now, status: Status::Sending };
@@ -197,6 +200,9 @@ impl Module for Kota {
     fn configure(&mut self, table: &Section) -> Result<(), String> {
         let settings = table.get::<Settings>()?.check()?;
         let active = table.is_set();
+        if active {
+            settings.required()?;
+        }
         let old = std::mem::replace(&mut self.settings, settings);
         let was = std::mem::replace(&mut self.active, active);
         if !self.started {

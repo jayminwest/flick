@@ -14,6 +14,7 @@ fn help() -> Help {
             open: |url| OPENED.with_borrow_mut(|o| o.push(url.into())),
             copy: |text| COPIED.with_borrow_mut(|c| c.push(text.into())),
         },
+        off: vec![],
     }
 }
 
@@ -103,5 +104,21 @@ fn actions_open_docs_or_copy_the_how_to() {
 fn unknown_rows_rank_last() {
     let item = Item::new(id("other"), "x", "Open", Icon::Symbol("x"));
     assert!(items_pos(&item, 3) < items_pos(&Item::new(id("key/draw/2"), "y", "Open", Icon::Symbol("x")), 3));
-    assert!(topic_of("key/").is_none());
+    assert!(help().topic_of("key/").is_none());
+}
+
+#[test]
+fn topics_of_modules_that_are_off_are_hidden() {
+    let mut h = Help { off: vec!["kota", "llm", "dictation"], ..help() };
+    let slugs = |items: &[Item]| items.iter().map(|i| i.id.key().trim_start_matches(TOPIC).to_string()).collect::<Vec<_>>();
+    let shown = slugs(&view(&mut h, "topics", ""));
+    for gone in ["kota", "chat", "llm", "dictation"] {
+        assert!(!shown.iter().any(|s| s == gone), "{gone} in {shown:?}");
+    }
+    assert!(shown.iter().any(|s| s == "message") && shown.len() == TOPICS.len() - 4);
+    let keywords = test_cx("", |cx| h.items(cx))[0].keywords.join(" ");
+    assert!(!keywords.contains("KOTA") && !keywords.contains("Local Model"), "{keywords}");
+    assert!(test_cx("", |cx| h.actions(&id("topic/kota"), cx)).is_empty());
+    // On by default: `Help::new` with nothing off lists every topic.
+    assert_eq!(slugs(&view(&mut Help::new(vec![]), "topics", "")).len(), TOPICS.len());
 }
