@@ -109,10 +109,6 @@ impl EventKind {
 }
 
 /// One call to an extension.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "queries and keywords (flick-f4e6), events (flick-d894)")
-)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     /// The root search items.
@@ -130,6 +126,7 @@ pub enum Request {
     /// Submit the form `form` with each field's text.
     Submit { form: String, values: Vec<(String, String)> },
     /// Something happened in Flick.
+    #[cfg_attr(not(test), expect(dead_code, reason = "events are sent from flick-d894"))]
     Event(EventKind),
 }
 
