@@ -2,7 +2,8 @@
 # Test fixture for the ext transport (src/modules/ext/transport.rs): a Flick extension
 # whose first argument picks how it behaves.
 #   echo            reply with one item: key = the request's op, title = "$FLICK_EXT
-#                   $FLICK_VERSION", subtitle = $FLICK_SOCKET; status "<op> done"
+#                   $FLICK_VERSION", subtitle = $FLICK_SOCKET; status "<op> done";
+#                   to op form, a form "Echo" with one required field "title"
 #   deaf            reply without reading stdin
 #   sleep N FILE    write "<pid> <sleep pid>" to FILE, then sleep N seconds
 #   fail            two stderr lines, exit 3
@@ -20,6 +21,10 @@ esac
 op=$(printf '%s' "$request" | sed -n 's/.*"op":"\([a-z_]*\)".*/\1/p')
 case $mode in
 echo)
+  if [ "$op" = form ]; then
+    echo '{"title":"Echo","submit":"Send","fields":[{"key":"title","label":"Title","required":true}]}'
+    exit 0
+  fi
   printf '{"v":1,"status":"%s done","items":[{"key":"%s","title":"%s %s","subtitle":"%s"}]}\n' \
     "$op" "$op" "$FLICK_EXT" "$FLICK_VERSION" "$FLICK_SOCKET"
   ;;

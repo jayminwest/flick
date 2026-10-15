@@ -11,7 +11,8 @@ use crate::core::test_cx;
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ext-echo.sh");
 
 thread_local! {
-    /// What the hooks saw on this thread: `log <line>` and `notify <ext>: <error>`.
+    /// What the hooks saw on this thread: `log <line>`, `notify <ext> | <error>`,
+    /// `toast <ext> | <line>` and `card <do>`.
     static SEEN: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
 }
 
@@ -23,18 +24,39 @@ fn notify(ext: &str, error: &str) {
     SEEN.with(|s| s.borrow_mut().push(format!("notify {ext} | {error}")));
 }
 
-fn seen() -> Vec<String> {
+fn toast(ext: &str, line: &str) {
+    SEEN.with(|s| s.borrow_mut().push(format!("toast {ext} | {line}")));
+}
+
+/// Records the card `do`; `open_app` of "Nope" fails.
+fn card(run: &Do) -> Result<(), String> {
+    SEEN.with(|s| s.borrow_mut().push(format!("card {}", run.to_value())));
+    match run {
+        Do::OpenApp(app) if app == "Nope" => Err("open_app: no app \"Nope\"".into()),
+        _ => Ok(()),
+    }
+}
+
+/// Answers a card `script` or `flick` with its words, or fails for `fail`.
+fn flick(words: &[String]) -> Result<Parsed, String> {
+    match words.first().map(String::as_str) {
+        Some("fail") => Err("exit 1".into()),
+        _ => Ok(Parsed { reply: Reply::Done(proto::Done { status: Some(words.join(" ")), refresh: false }), warnings: vec![] }),
+    }
+}
+
+pub(super) fn seen() -> Vec<String> {
     SEEN.with(RefCell::take)
 }
 
-fn socket() -> PathBuf {
+pub(super) fn socket() -> PathBuf {
     "/tmp/flick-test.sock".into()
 }
 
 /// An `ext` over the real transport and the fixture, with recording hooks.
-fn module(table: &str) -> Ext {
-    let job = Job { run: transport::call, socket, post: || {} };
-    let mut m = Ext::with(Hooks { job, log, notify, visible: || true });
+pub(super) fn module(table: &str) -> Ext {
+    let job = Job { run: transport::call, socket, post: || {}, flick };
+    let mut m = Ext::with(Hooks { job, log, notify, toast, card, visible: || true });
     configure(&mut m, table).unwrap();
     m
 }
@@ -45,14 +67,14 @@ fn configure(m: &mut Ext, table: &str) -> Result<(), String> {
 }
 
 /// `[[ext.extensions]]` for the fixture in `mode`.
-fn entry(name: &str, mode: &[&str], timeout_ms: u64) -> String {
+pub(super) fn entry(name: &str, mode: &[&str], timeout_ms: u64) -> String {
     let argv: Vec<String> = std::iter::once(FIXTURE).chain(mode.iter().copied()).map(|a| format!("{a:?}")).collect();
     format!("[[ext.extensions]]\nname = \"{name}\"\nargv = [{}]\ntimeout_ms = {timeout_ms}\n", argv.join(", "))
 }
 
 /// Drain until every queued call was answered (bounded), as the main thread does on
 /// `ModuleChanged`; true when a root item or view changed.
-fn settle(m: &mut Ext) -> bool {
+pub(super) fn settle(m: &mut Ext) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut stale = false;
     while !m.pending.is_empty() && Instant::now() < deadline {
@@ -60,6 +82,17 @@ fn settle(m: &mut Ext) -> bool {
         std::thread::sleep(Duration::from_millis(5));
     }
     stale
+}
+
+/// Wait (bounded) until `n` answers are in the inbox, then drain them; true when a root
+/// item, view or form changed.
+pub(super) fn answered(m: &mut Ext, n: usize) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while m.inbox.len() < n && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(m.inbox.len(), n);
+    m.drain()
 }
 
 /// Drain until something was logged (bounded).
@@ -78,12 +111,12 @@ fn event(m: &mut Ext, event: Event) -> bool {
     test_cx("", |cx| m.on_event(event, cx))
 }
 
-fn ids(items: &[Item]) -> Vec<&str> {
+pub(super) fn ids(items: &[Item]) -> Vec<&str> {
     items.iter().map(|i| i.id.as_str()).collect()
 }
 
 /// The answer of extension `ext` to `request`, as a worker leaves it.
-fn answer(ext: &str, request: Request, result: Result<Reply, &str>) -> Answer {
+pub(super) fn answer(ext: &str, request: Request, result: Result<Reply, &str>) -> Answer {
     let result = result.map(|reply| Parsed { reply, warnings: vec![] }).map_err(String::from);
     Answer { ext: ext.into(), request, result }
 }
@@ -225,7 +258,7 @@ fn a_slow_extension_never_holds_the_caller_and_its_timeout_is_reported() {
 #[test]
 fn failures_are_logged_and_notified_with_the_name() {
     let mut m = module(&entry("broken", &["fail"], 2000));
-    m.call("broken", Request::Form { form: "f".into() }).unwrap();
+    m.call("broken", Request::Root).unwrap();
     assert_eq!(wait_seen(&mut m), ["log broken: bad token", "notify broken | broken: bad token"]);
 }
 
@@ -257,8 +290,23 @@ fn a_reload_keeps_only_the_workers_of_unchanged_extensions() {
     assert_eq!(names, ["a"]);
     assert_eq!((m.root.len(), m.views.len()), (2, 1));
     m.error = Some(("b/v".into(), "b: x".into()));
+    m.status = Some(("b/v".into(), "Copy…".into()));
+    let form = proto::form::ExtForm { title: "F".into(), submit: "S".into(), fields: vec![] };
+    m.forms.insert("b/f".into(), form);
+    m.form = Some(("b/f".into(), forms::Phase::Open));
+    let ran = act::Ran { ext: "b".into(), view: None, item: "i".into() };
+    let action = proto::item::ExtAction {
+        key: "a".into(),
+        title: "A".into(),
+        icon: None,
+        run: proto::item::Run::Ext,
+        after: proto::item::After::Hide,
+        confirm: None,
+    };
+    m.asked = Some(Asked { token: "t".into(), run: ran, action });
     configure(&mut m, &entry("a", &["echo"], 2000)).unwrap();
     assert_eq!((m.root.len(), m.views.len(), m.error.is_some()), (1, 0, false));
+    assert!(m.status.is_none() && m.forms.is_empty() && m.form.is_none() && m.asked.is_none());
     assert!(configure(&mut m, &entry("Bad Name", &[], 1)).is_err());
     assert_eq!(m.specs.len(), 1);
     configure(&mut m, "").unwrap();

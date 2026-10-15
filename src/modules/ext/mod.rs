@@ -11,8 +11,10 @@
 //! already queued is not queued again. A failed call is logged, and shown in the footer of
 //! the view it was for when that view is on the screen, else posted as a notification,
 //! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
-//! Actions and forms build on these answers (flick-b46d).
+//! Actions (`act`) and forms (`forms`) build on these answers.
 
+mod act;
+mod forms;
 mod icons;
 mod items;
 pub mod proto;
@@ -25,7 +27,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::config::Section;
-use crate::core::{Binding, Cx, Event, Item, ListView, Module};
+use crate::core::card::Do;
+use crate::core::{Action, Binding, Cx, Event, Form, Item, ItemId, ListView, Module, Outcome};
+use act::Asked;
+use forms::Phase;
+use proto::form::ExtForm;
 use proto::item::ExtItem;
 use proto::{Reply, Request, View};
 use settings::Spec;
@@ -42,6 +48,10 @@ struct Hooks {
     log: fn(&str),
     /// A failed call of extension `.0`, `.1` the error.
     notify: fn(&str, &str),
+    /// A line of extension `.0` for the user, `.1` (an action's or form's status or error).
+    toast: fn(&str, &str),
+    /// Run a card `open_url`, `open_app` or `copy`, on the main thread.
+    card: fn(&Do) -> Result<(), String>,
     /// The launcher is on the screen.
     visible: fn() -> bool,
 }
@@ -63,13 +73,23 @@ pub struct Ext {
     /// The showing view's last failed `open`, `(view, error)`, for its footer, until the view
     /// opens again or an answer lands.
     error: Option<(String, String)>,
+    /// The showing view's last action line, `(view, line)`, for its footer: `<title>…` while
+    /// it runs, then its status or error.
+    status: Option<(String, String)>,
+    /// The action waiting for the user to confirm it.
+    asked: Option<Asked>,
+    /// Forms by `<name>/<form>`, from their last good `form` answer.
+    forms: HashMap<String, ExtForm>,
+    /// The ext form on the screen, `(<name>/<form>, phase)`.
+    form: Option<(String, Phase)>,
 }
 
 impl Ext {
     /// `socket` is the control socket path the extensions get as `FLICK_SOCKET`.
     pub fn new(socket: fn() -> PathBuf) -> Ext {
-        let job = Job { run: transport::call, socket, post: wire::post };
-        Ext::with(Hooks { job, log: wire::log, notify: wire::notify, visible: wire::visible })
+        let job = Job { run: transport::call, socket, post: wire::post, flick: wire::flick };
+        let (log, notify, toast, visible, card) = (wire::log, wire::notify, wire::toast, wire::visible, wire::card);
+        Ext::with(Hooks { job, log, notify, toast, card, visible })
     }
 
     fn with(hooks: Hooks) -> Ext {
@@ -83,6 +103,10 @@ impl Ext {
             pending: vec![],
             showing: None,
             error: None,
+            status: None,
+            asked: None,
+            forms: HashMap::new(),
+            form: None,
         }
     }
 
@@ -136,12 +160,18 @@ impl Ext {
             if self.spec(&ext).is_none() {
                 continue;
             }
-            stale |= match result {
-                Ok(parsed) => {
-                    self.log_warnings(&ext, &request, &parsed.warnings);
-                    self.keep(ext, request, parsed.reply)
-                }
-                Err(e) => self.failed(&ext, &request, e),
+            if let Ok(parsed) = &result {
+                self.log_warnings(&ext, &request, &parsed.warnings);
+            }
+            let result = result.map(|parsed| parsed.reply);
+            stale |= match request {
+                Request::Act { view, .. } => self.acted(&ext, view.as_deref(), result),
+                Request::Form { form } => self.loaded(&ext, &form, result),
+                Request::Submit { form, .. } => self.saved(&ext, &form, result),
+                request => match result {
+                    Ok(reply) => self.keep(ext, request, reply),
+                    Err(e) => self.failed(&ext, &request, e),
+                },
             };
         }
         stale
@@ -161,7 +191,7 @@ impl Ext {
                 self.views.insert(name, answer);
                 true
             }
-            // Actions and forms (flick-b46d), queries (flick-f4e6); events need no answer.
+            // Queries (flick-f4e6); events need no answer.
             _ => false,
         }
     }
@@ -210,6 +240,10 @@ impl Module for Ext {
         let view_kept = |view: &String| items::split(view).is_some_and(|(name, _)| kept(name));
         self.views.retain(|view, _| view_kept(view));
         self.error.take_if(|(view, _)| !view_kept(view));
+        self.status.take_if(|(view, _)| !view_kept(view));
+        self.forms.retain(|form, _| view_kept(form));
+        self.form.take_if(|(form, _)| !view_kept(form));
+        self.asked.take_if(|a| !kept(&a.run.ext));
         self.specs = specs;
         Ok(())
     }
@@ -224,7 +258,7 @@ impl Module for Ext {
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
         let (name, inner) = items::split(view)?;
         self.spec(name)?;
-        self.error = None;
+        (self.error, self.status) = (None, None);
         self.showing = Some(view.to_string());
         self.fetch(name, Request::Open { view: inner.to_string() });
         Some(items::list(view, name, self.views.get(view)))
@@ -232,14 +266,47 @@ impl Module for Ext {
 
     fn closed(&mut self, view: &str, _cx: &mut Cx) {
         if self.showing.as_deref() == Some(view) {
-            (self.showing, self.error) = (None, None);
+            (self.showing, self.error, self.status) = (None, None, None);
         }
     }
 
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
         let name = items::split(&view.name).map_or("", |(name, _)| name).to_string();
-        let error = self.error.as_ref().filter(|(v, _)| *v == view.name).map(|(_, e)| e.as_str());
-        items::fill(view, &name, self.views.get(&view.name), error, cx);
+        let footer = [&self.error, &self.status].into_iter().flatten().find(|(v, _)| *v == view.name);
+        let footer = footer.map(|(_, line)| line.as_str());
+        items::fill(view, &name, self.views.get(&view.name), footer, cx);
+    }
+
+    fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        self.act_on(id, None, cx)
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.actions_of(id)
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        self.act_on(id, Some(key), cx)
+    }
+
+    fn confirmed(&mut self, token: &str, cx: &mut Cx) -> Outcome {
+        self.confirm_asked(token, cx)
+    }
+
+    fn form(&mut self, name: &str, _cx: &mut Cx) -> Option<Form> {
+        self.open_form(name)
+    }
+
+    fn submit(&mut self, form: &Form, _cx: &mut Cx) -> Result<String, String> {
+        self.submit_form(form)
+    }
+
+    fn refresh_form(&mut self, form: &mut Form, _cx: &mut Cx) -> Option<String> {
+        self.fill_form(form)
+    }
+
+    fn form_closed(&mut self, form: &Form, _cx: &mut Cx) {
+        self.close_form(form);
     }
 
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {

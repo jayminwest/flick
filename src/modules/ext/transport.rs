@@ -5,6 +5,8 @@
 //! The child gets `FLICK_EXT` (its name), `FLICK_SOCKET` (this Flick's control socket, for
 //! `flick ...` calls back) and `FLICK_VERSION`, and `FLICK_HOST` removed so the CLI talks to
 //! this Mac. Every error starts with `<name>: `; a failed exit gives the last stderr line.
+//!
+//! `flick` runs Flick's own CLI for an action's card `script` or `flick` `do`, the same way.
 
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
@@ -15,8 +17,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::icons;
-use super::proto::{self, Parsed, REPLY_MAX, Request};
+use super::proto::{self, Done, Parsed, REPLY_MAX, Reply, Request, TEXT_MAX};
 use super::settings::Spec;
+
+/// Time a card `script` or `flick` request may take: `script run` only starts the script,
+/// and a request answers in milliseconds, so this is generous.
+pub const FLICK_BUDGET: Duration = Duration::from_secs(30);
 
 /// How often the worker checks its child.
 const POLL: Duration = Duration::from_millis(10);
@@ -56,9 +62,39 @@ fn exec(spec: &Spec, req: &Request, socket: &Path) -> Result<Vec<u8>, String> {
             let _ = stdin.write_all(json.as_bytes()).and_then(|()| stdin.write_all(b"\n"));
         });
     }
+    finish(child, spec.budget(req.op()))
+}
+
+/// Run Flick's CLI `exe` with `words`, without stdin, as a local request to this Mac
+/// (`FLICK_HOST` and `FLICK_REMOTE` removed). Its status is the last line it printed.
+pub fn flick(exe: &Path, words: &[String]) -> Result<Parsed, String> {
+    let child = Command::new(exe)
+        .args(words)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("FLICK_HOST")
+        .env_remove("FLICK_REMOTE")
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("{}: {e}", exe.display()))?;
+    let out = finish(child, FLICK_BUDGET)?;
+    let status = last_line(&out).filter(|l| !l.chars().any(proto::hidden));
+    let status = status.map(|l| l.chars().take(TEXT_MAX).collect());
+    Ok(Parsed { reply: Reply::Done(Done { status, refresh: false }), warnings: vec![] })
+}
+
+/// The last line of `bytes` that is not blank, trimmed.
+fn last_line(bytes: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(bytes);
+    text.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(String::from)
+}
+
+/// Wait for `child` to exit within `budget`, else kill its group. Its stdout on exit 0, else
+/// the last stderr line.
+fn finish(mut child: Child, budget: Duration) -> Result<Vec<u8>, String> {
     let out = reader(child.stdout.take(), Keep::Head(REPLY_MAX + 1));
     let err = reader(child.stderr.take(), Keep::Tail(TAIL));
-    let budget = spec.budget(req.op());
     let deadline = Instant::now() + budget;
     let status = loop {
         match child.try_wait() {
@@ -72,10 +108,7 @@ fn exec(spec: &Spec, req: &Request, socket: &Path) -> Result<Vec<u8>, String> {
         }
     };
     let (out, err) = (out.recv_timeout(DRAIN).unwrap_or_default(), err.recv_timeout(DRAIN));
-    let last = || {
-        let err = String::from_utf8_lossy(&err.clone().unwrap_or_default()).into_owned();
-        err.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(String::from)
-    };
+    let last = || last_line(&err.clone().unwrap_or_default());
     match status.code() {
         Some(0) if out.len() > REPLY_MAX => Err(format!("reply over {REPLY_MAX} bytes")),
         Some(0) => Ok(out),
@@ -165,6 +198,18 @@ mod tests {
         assert!(e.starts_with("echo: /nonexistent/ext: "), "{e}");
         let empty = Spec { argv: vec![], ..missing };
         assert_eq!(call(&empty, &Request::Root, Path::new("/s")).unwrap_err(), "echo: nothing to run");
+    }
+
+    #[test]
+    fn flick_runs_the_cli_and_its_last_line_is_the_status() {
+        let words = |w: &[&str]| w.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let done = |status: Option<&str>| Reply::Done(Done { status: status.map(String::from), refresh: false });
+        let p = flick(Path::new("/bin/echo"), &words(&["task", "ls"])).unwrap();
+        assert_eq!(p.reply, done(Some("task ls")));
+        assert_eq!(flick(Path::new("/usr/bin/true"), &[]).unwrap().reply, done(None));
+        assert_eq!(flick(Path::new(FIXTURE), &words(&["fail"])).unwrap_err(), "bad token");
+        let e = flick(Path::new("/nonexistent/flick"), &[]).unwrap_err();
+        assert!(e.starts_with("/nonexistent/flick: "), "{e}");
     }
 
     #[test]

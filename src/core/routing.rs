@@ -17,6 +17,19 @@ impl Registry {
         }
     }
 
+    /// Update `form` on the screen through its owning module; `Some` is done, with a status.
+    /// An unknown module leaves it.
+    pub fn refresh_form(&mut self, form: &mut Form, cx: &mut Cx) -> Option<String> {
+        self.get(form.module)?.refresh_form(form, cx)
+    }
+
+    /// Tell `form`'s owning module the form left the screen.
+    pub fn form_closed(&mut self, form: &Form, cx: &mut Cx) {
+        if let Some(m) = self.get(form.module) {
+            m.form_closed(form, cx);
+        }
+    }
+
     /// Item `id`'s action menu, from the module that owns it. An unknown module has none.
     pub fn actions(&mut self, id: &ItemId, cx: &mut Cx) -> Vec<Action> {
         self.get(id.module()).map(|m| m.actions(id, cx)).unwrap_or_default()
@@ -82,6 +95,15 @@ mod tests {
         fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
             Outcome::Stay(Some(format!("{} deleted {token}", self.0)))
         }
+
+        /// A pending form of "b" is saved.
+        fn refresh_form(&mut self, form: &mut Form, _cx: &mut Cx) -> Option<String> {
+            form.pending.take().filter(|_| self.0 == "b").map(|_| format!("{} saved", self.0))
+        }
+
+        fn form_closed(&mut self, form: &Form, _cx: &mut Cx) {
+            assert!(form.pending.is_none());
+        }
     }
 
     /// Implements nothing but its id.
@@ -114,6 +136,23 @@ mod tests {
             assert_eq!(r.submit(&bare, cx), Err("bare: cannot submit form \"x\"".into()));
             let orphan = Form::new("nobody", "x", "X");
             assert_eq!(r.submit(&orphan, cx), Err("unknown module \"nobody\"".into()));
+        });
+    }
+
+    #[test]
+    fn shown_forms_refresh_and_close_through_their_module() {
+        let mut r = registry();
+        test_cx("", |cx| {
+            for module in ["a", "bare", "nobody"] {
+                let mut form = Form::new(module, "new", "New");
+                assert_eq!(r.refresh_form(&mut form, cx), None);
+                r.form_closed(&form, cx);
+            }
+            let mut form =
+                Form { pending: Some("Saving…".into()), ..Form::new("b", "new", "New") };
+            assert_eq!(r.refresh_form(&mut form, cx).as_deref(), Some("b saved"));
+            assert_eq!(form.pending, None);
+            r.form_closed(&form, cx);
         });
     }
 

@@ -2,7 +2,8 @@
 //! order queued, leaves each answer in the module's inbox and tells the main thread
 //! (`ModuleChanged`). The main thread only queues and drains; it never waits on a child.
 //! The thread ends when its `Worker` drops (a reload changed or removed the extension, or
-//! the module went away), after the call it is running.
+//! the module went away), after the call it is running. An action's card `script` or
+//! `flick` runs on a thread of its own (`flick`), its answer in the same inbox.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
@@ -14,6 +15,8 @@ use super::settings::Spec;
 
 /// One call: the extension, the request and `FLICK_SOCKET`.
 pub type Run = fn(&Spec, &Request, &Path) -> Result<Parsed, String>;
+/// One run of Flick's own CLI with these words.
+pub type Flick = fn(&[String]) -> Result<Parsed, String>;
 
 /// What a worker needs besides its extension.
 #[derive(Clone, Copy)]
@@ -23,6 +26,22 @@ pub struct Job {
     pub socket: fn() -> PathBuf,
     /// Tell the main thread the inbox has an answer.
     pub post: fn(),
+    pub flick: Flick,
+}
+
+/// Run Flick's CLI with `words` on a thread of its own, for action `request` of extension
+/// `ext` (a card `script` or `flick`): its answer lands in `inbox` as `request`'s, an error
+/// as `<ext>: flick <words>: <why>`.
+pub fn flick(job: Job, inbox: Inbox, ext: &str, request: Request, words: Vec<String>) -> Result<(), String> {
+    let name = ext.to_string();
+    let thread = thread::Builder::new().name(format!("flick-ext-{ext}-run"));
+    let run = move || {
+        let label = format!("flick {}", words.join(" "));
+        let result = (job.flick)(&words).map_err(|e| format!("{name}: {label}: {e}"));
+        inbox.push(Answer { ext: name, request, result });
+        (job.post)();
+    };
+    thread.spawn(run).map(drop).map_err(|e| format!("{ext}: cannot start a thread: {e}"))
 }
 
 /// A finished call.
@@ -45,6 +64,12 @@ impl Inbox {
 
     pub fn take(&self) -> Vec<Answer> {
         std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Answers waiting.
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 }
 
@@ -120,10 +145,25 @@ mod tests {
         got
     }
 
+    fn no_flick(words: &[String]) -> Result<Parsed, String> {
+        Err(format!("{} words", words.len()))
+    }
+
+    #[test]
+    fn a_flick_run_answers_as_its_action() {
+        let inbox = Inbox::default();
+        let job = Job { run: fake, socket, post: || {}, flick: no_flick };
+        let act = Request::Act { view: None, item: "i".into(), action: "a".into() };
+        flick(job, inbox.clone(), "w", act.clone(), vec!["task".into(), "ls".into()]).unwrap();
+        let got = wait(&inbox, 1);
+        assert_eq!((got[0].ext.as_str(), &got[0].request), ("w", &act));
+        assert_eq!(got[0].result, Err("w: flick task ls: 2 words".into()));
+    }
+
     #[test]
     fn calls_run_in_order_and_land_in_the_inbox() {
         let inbox = Inbox::default();
-        let job = Job { run: fake, socket, post: || {} };
+        let job = Job { run: fake, socket, post: || {}, flick: no_flick };
         let w = Worker::start(spec(), job, inbox.clone()).unwrap();
         assert_eq!(w.spec().name, "w");
         assert!(w.alive());
@@ -141,7 +181,7 @@ mod tests {
         fn panics(_: &Spec, _: &Request, _: &Path) -> Result<Parsed, String> {
             panic!("extension call panicked")
         }
-        let w = Worker::start(spec(), Job { run: panics, socket, post: || {} }, Inbox::default());
+        let w = Worker::start(spec(), Job { run: panics, socket, post: || {}, flick: no_flick }, Inbox::default());
         let w = w.unwrap();
         assert!(w.send(Request::Root));
         let deadline = Instant::now() + Duration::from_secs(15);
