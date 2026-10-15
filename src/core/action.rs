@@ -9,8 +9,8 @@ pub struct Action {
     pub key: &'static str,
     pub title: String,
     pub icon: Icon,
-    /// Shown at the row's end, e.g. "⌘E". Empty for none. Display only: the controller
-    /// does not bind it.
+    /// Shown at the row's end, e.g. "⌘E". Empty for none. The controller binds only "⌘Q":
+    /// on a list it runs the selected item's action with that hint. Others are display only.
     pub shortcut_hint: &'static str,
 }
 

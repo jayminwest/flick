@@ -9,6 +9,7 @@ hotkey = "ctrl+Space"              # launcher
 
 [switcher]
 hotkey = "cmd+Space"               # window switcher
+cycle_hotkey = "cmd+Tab"           # hold to cycle windows, ⇧ back, ⌘Q quits; replaces macOS ⌘Tab
 
 [desktop]
 hotkey = "cmd+Backquote"           # most recent app on another desktop

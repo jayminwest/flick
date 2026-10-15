@@ -54,6 +54,8 @@ pub enum Key {
     Backspace,
     /// ⌘K.
     CmdK,
+    /// ⌘Q.
+    CmdQ,
     /// ⌘↵.
     CmdEnter,
     /// One line up or down (K, J with a read-only title). Up and Down move the selection;
@@ -205,6 +207,8 @@ fn key_equivalent(command_only: bool, chars: &str, key_code: u16) -> Option<Key>
         Some(Key::CmdEnter)
     } else if chars.eq_ignore_ascii_case("k") {
         Some(Key::CmdK)
+    } else if chars.eq_ignore_ascii_case("q") {
+        Some(Key::CmdQ)
     } else {
         None
     }
@@ -462,6 +466,8 @@ mod tests {
     fn cmd_k_and_cmd_enter_need_command_alone() {
         assert_eq!(key_equivalent(true, "k", 40), Some(Key::CmdK));
         assert_eq!(key_equivalent(true, "K", 40), Some(Key::CmdK));
+        assert_eq!(key_equivalent(true, "q", 12), Some(Key::CmdQ));
+        assert_eq!(key_equivalent(false, "q", 12), None);
         assert_eq!(key_equivalent(true, "\r", 36), Some(Key::CmdEnter));
         assert_eq!(key_equivalent(true, "\u{3}", 76), Some(Key::CmdEnter));
         // ⌘C, ⌘V and ⌘A are edit actions, not key commands.

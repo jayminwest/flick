@@ -42,6 +42,10 @@
 #[switcher]
 # Opens the switcher; unset by default.
 #hotkey = "cmd+Space"
+# Hold to cycle windows: each press selects the next one, with shift the previous one, and
+# releasing the modifiers switches. Hold the key to scroll; cmd+Q quits the selected app.
+# "cmd+Tab" replaces macOS's app switcher. Unset by default.
+#cycle_hotkey = "cmd+Tab"
 
 # --- window: window layouts. Each command is also a global hotkey: <action> = "<hotkey>".
 # Actions ("flick window list"): left-half, right-half, top-half, bottom-half,

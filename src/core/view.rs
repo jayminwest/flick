@@ -50,6 +50,31 @@ pub struct ListView {
     pub record_use: bool,
     /// Escape hides the launcher instead of going back to root search.
     pub escape_hides: bool,
+    /// A hotkey's request to step through the view while its modifiers are held (⌘Tab).
+    pub cycle: Option<Cycle>,
+}
+
+/// One step of a held hotkey. The first press shows the view with its first (`Next`) or last
+/// (`Previous`) item selected; each press while it shows moves one item, wrapping around;
+/// releasing ⌘, ⌥ and ⌃ activates the selected item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cycle {
+    Next,
+    Previous,
+}
+
+impl Cycle {
+    /// The item to select among `len`: `first` press, or the step from `selected`.
+    pub fn select(self, selected: usize, len: usize, first: bool) -> usize {
+        let last = len.saturating_sub(1);
+        match (self, first) {
+            (Cycle::Next, true) => 0,
+            (Cycle::Previous, true) => last,
+            (Cycle::Next, false) if selected >= last => 0,
+            (Cycle::Next, false) => selected + 1,
+            (Cycle::Previous, false) => selected.checked_sub(1).unwrap_or(last),
+        }
+    }
 }
 
 impl ListView {
@@ -68,6 +93,7 @@ impl ListView {
             text_tail: false,
             record_use: false,
             escape_hides: false,
+            cycle: None,
         }
     }
 
@@ -88,6 +114,18 @@ mod tests {
         assert!(!v.is("clip", "other") && !v.is("switcher", "history"));
         assert_eq!(v.empty, "No Results");
         assert!(v.items.is_empty() && v.text.is_empty() && !v.record_use && !v.escape_hides);
-        assert!(v.title.is_none() && !v.text_tail);
+        assert!(v.title.is_none() && !v.text_tail && v.cycle.is_none());
+    }
+
+    #[test]
+    fn cycling_wraps_both_ways() {
+        let steps =
+            |c: Cycle, first: bool| (0..3).map(|i| c.select(i, 3, first)).collect::<Vec<_>>();
+        assert_eq!(steps(Cycle::Next, true), [0, 0, 0]);
+        assert_eq!(steps(Cycle::Previous, true), [2, 2, 2]);
+        assert_eq!(steps(Cycle::Next, false), [1, 2, 0]);
+        assert_eq!(steps(Cycle::Previous, false), [2, 0, 1]);
+        assert_eq!(Cycle::Next.select(0, 0, false), 0);
+        assert_eq!(Cycle::Previous.select(0, 0, true), 0);
     }
 }

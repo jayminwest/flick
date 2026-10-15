@@ -1,10 +1,16 @@
 //! Global hotkeys via Carbon (through `global-hotkey`).
+//!
+//! Binding ⌘Tab or ⌘⇧Tab takes it from macOS: the system app switcher is off while Flick
+//! holds the binding, and on again when it lets go or quits (menu, `quit`, SIGTERM). A crash
+//! leaves it off until Flick starts again or the user logs out.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::str::FromStr;
+use std::sync::Once;
 
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use objc2_app_kit::NSEvent;
 
 /// A parsed key combination such as `cmd+shift+KeyK`.
 #[derive(Clone, Copy)]
@@ -31,7 +37,19 @@ thread_local! {
     static REGISTERED: RefCell<Vec<HotKey>> = const { RefCell::new(Vec::new()) };
     /// While the control layer is on: each layer hotkey, and the id of the hotkey it fires.
     static LAYER: RefCell<Vec<(HotKey, u32)>> = const { RefCell::new(Vec::new()) };
+    /// The key of the last pressed hotkey is down: pressed, and not yet released.
+    static DOWN: Cell<bool> = const { Cell::new(false) };
 }
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    /// Private (`SkyLight`, re-exported by `CoreGraphics`); `AltTab` turns off ⌘Tab the same
+    /// way. Returns a `CGError`.
+    fn CGSSetSymbolicHotKeyEnabled(hotkey: i32, enabled: bool) -> i32;
+}
+
+/// System shortcuts a Flick hotkey takes over: its spec, and its `CGSSymbolicHotKey`.
+const SYSTEM: [(&str, i32); 2] = [("cmd+Tab", 1), ("cmd+shift+Tab", 2)];
 
 /// `CGEventFlags` bits, as the keys engine names hyper mods.
 const FLAG_SHIFT: u64 = 0x2_0000;
@@ -44,6 +62,7 @@ pub fn init(on_press: fn(u32)) -> Result<(), String> {
     let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
     // Carbon delivers hotkey events on the main thread.
     GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
+        DOWN.set(e.state == HotKeyState::Pressed);
         if e.state == HotKeyState::Pressed {
             on_press(layer_target(e.id).unwrap_or(e.id));
         }
@@ -58,6 +77,9 @@ pub fn register(hotkey: Hotkey) -> Result<(), String> {
         let m = m.as_ref().ok_or("Hotkey manager not initialized")?;
         m.register(hotkey.0).map_err(|e| e.to_string())?;
         REGISTERED.with(|r| r.borrow_mut().push(hotkey.0));
+        if let Some(system) = system_shortcut(hotkey.0) {
+            take_from_system(system);
+        }
         Ok(())
     })
 }
@@ -69,6 +91,40 @@ pub fn unregister(hotkey: Hotkey) {
         }
     });
     REGISTERED.with(|r| r.borrow_mut().retain(|h| h.id() != hotkey.id()));
+    if let Some(system) = system_shortcut(hotkey.0) {
+        set_system_enabled(system, true);
+    }
+}
+
+/// The system shortcut `hotkey` would collide with.
+fn system_shortcut(hotkey: HotKey) -> Option<i32> {
+    SYSTEM
+        .iter()
+        .find(|(spec, _)| spec.parse::<HotKey>().is_ok_and(|h| h.id() == hotkey.id()))
+        .map(|&(_, system)| system)
+}
+
+/// Turn `system` off; the first time, also hook quit to turn every taken shortcut on again.
+fn take_from_system(system: i32) {
+    static HOOKED: Once = Once::new();
+    HOOKED.call_once(|| {
+        super::app::on_terminate(|| {
+            for (_, system) in SYSTEM {
+                set_system_enabled(system, true);
+            }
+        });
+        super::app::quit_on_sigterm();
+    });
+    set_system_enabled(system, false);
+}
+
+fn set_system_enabled(system: i32, enabled: bool) {
+    // SAFETY: plain C call with a symbolic hotkey id and a flag; it changes only that
+    // shortcut's state in the window server.
+    let error = unsafe { CGSSetSymbolicHotKeyEnabled(system, enabled) };
+    if error != 0 {
+        eprintln!("flick: system shortcut {system}: CGError {error}");
+    }
 }
 
 /// Turn the control layer on or off; main thread only. While on, each registered hotkey whose
@@ -129,6 +185,17 @@ pub fn registered_keys() -> Vec<String> {
     REGISTERED.with(|r| r.borrow().iter().map(|h| h.key.to_string()).collect())
 }
 
+/// Whether the key of the last pressed hotkey is still down. Carbon sends no key repeat, so
+/// a caller that wants one polls this.
+pub fn key_down() -> bool {
+    DOWN.get()
+}
+
+/// The user's key repeat settings: seconds before the first repeat, and between repeats.
+pub fn key_repeat() -> (f64, f64) {
+    (NSEvent::keyRepeatDelay(), NSEvent::keyRepeatInterval())
+}
+
 pub fn is_initialized() -> bool {
     MANAGER.with(|m| m.borrow().is_some())
 }
@@ -171,5 +238,14 @@ mod tests {
         assert_eq!(layer_for(&[hk("ctrl+KeyH")], Modifiers::CONTROL), vec![]);
         assert_eq!(modifiers(0), Modifiers::empty());
         assert_eq!(layer_target(1), None);
+    }
+
+    #[test]
+    fn only_cmd_tab_and_cmd_shift_tab_are_system_shortcuts() {
+        let hk = |spec: &str| spec.parse::<Hotkey>().unwrap().0;
+        assert_eq!(system_shortcut(hk("cmd+Tab")), Some(1));
+        assert_eq!(system_shortcut(hk("cmd+shift+Tab")), Some(2));
+        assert_eq!(system_shortcut(hk("alt+Tab")), None);
+        assert_eq!(system_shortcut(hk("cmd+Backquote")), None);
     }
 }

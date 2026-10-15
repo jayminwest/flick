@@ -43,6 +43,18 @@ impl State {
         true
     }
 
+    /// A shortcut on a list: the selected item's action whose hint is `hint`. False when it
+    /// has none.
+    pub(super) fn run_shortcut(&mut self, hint: &str) -> bool {
+        let Some(item) = self.results.get(self.selected).cloned() else { return false };
+        let query = ui::query();
+        let actions = self.registry.actions(&item.id, &mut self.env.cx(&query));
+        let Some(action) = actions.iter().find(|a| a.shortcut_hint == hint) else { return false };
+        let outcome = self.registry.act(&item.id, action.key, &mut self.env.cx(&query));
+        self.apply(outcome, None);
+        true
+    }
+
     /// Tab on a list: what the selected item's `tab` asks for. `Activate` is Enter (a
     /// quicklink's argument, like Raycast); `Act(key)` runs that action as the ⌘K menu would.
     pub(super) fn tab(&mut self) {

@@ -42,4 +42,4 @@ pub use module::test_cx;
 pub use module::{Binding, Cx, Module, unknown_verb};
 pub use rank::{Ranker, Usage, frecency};
 pub use registry::Registry;
-pub use view::{ListView, Outcome};
+pub use view::{Cycle, ListView, Outcome};

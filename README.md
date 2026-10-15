@@ -38,7 +38,7 @@ Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 
 - **Launcher.** Fuzzy search over apps and commands. Acronyms match (`vsc` finds Visual Studio Code). Results you pick often rank higher, with a 14-day half-life.
 - **Window management.** Halves, quarters, thirds, two-thirds, maximize, almost maximize, center, minimize, hide, next and previous display. Bind any of them to a global hotkey. Repeating a half cycles its size, as Rectangle does. [Configuration](docs/configuration.md).
-- **Window switcher.** Fuzzy search over open windows by title and app. The first result is the previous window, so the hotkey and ↵ jump back. Apps on other desktops show as one entry that switches desktops.
+- **Window switcher.** Fuzzy search over open windows by title and app. The first result is the previous window, so the hotkey and ↵ jump back. Apps on other desktops show as one entry that switches desktops. With `[switcher] cycle_hotkey = "cmd+Tab"` it replaces macOS ⌘Tab: hold ⌘, press Tab (⇧Tab goes back), let go to switch. Hold Tab to scroll; ⌘Q quits the selected app.
 - **Desktop toggle.** One hotkey jumps to the most recent app on another desktop. Built for a full-screen terminal on one desktop and everything else on another.
 - **Clipboard history.** The last 500 text clips, searchable. ↵ pastes into the previous app. Flick skips content that password managers mark as concealed.
 - **Herdr agents.** Coding agents in herdr on this Mac and on herdr's saved SSH machines, the ones waiting on you first. ↵ jumps to the agent's pane; a notification tells you when one starts to wait. [Herdr](docs/herdr.md).

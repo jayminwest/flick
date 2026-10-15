@@ -3,6 +3,7 @@
 
 mod overlay;
 mod screen;
+mod toggle;
 
 use std::cell::RefCell;
 
@@ -18,6 +19,7 @@ use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
 use screen::{Back, ListNav, Screen};
+use toggle::toggle_view;
 
 const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
 
@@ -128,26 +130,6 @@ pub fn hotkey(module: &str, key: &str) {
     }
 }
 
-/// Show `request` (root search for `None`), or hide the launcher if it already shows it.
-fn toggle_view(request: Option<ListView>) {
-    let visible = ui::is_visible();
-    if visible && with_state(|s| s.screen.shows(request.as_ref())).unwrap_or(false) {
-        ui::hide();
-        return;
-    }
-    with_state(|s| {
-        if request.is_none() {
-            s.registry.dispatch(Event::LauncherOpened, &mut s.env.cx(""));
-            control::publish(Event::LauncherOpened);
-        }
-        s.status = None;
-        s.enter(request);
-    });
-    if !visible {
-        ui::show();
-    }
-}
-
 /// Show `query` in the root search (for `flick snapshot`).
 pub fn set_root_query(query: &str) {
     with_state(|s| {
@@ -209,6 +191,8 @@ impl State {
             self.enter(None);
         } else if key == Key::CmdK {
             return self.open_actions();
+        } else if key == Key::CmdQ {
+            return self.run_shortcut("⌘Q");
         } else if let Some(nav) = screen::list_nav(list.is_some_and(|v| !v.text.is_empty()), key) {
             match nav {
                 ListNav::Select(rows) => self.move_selection(rows),

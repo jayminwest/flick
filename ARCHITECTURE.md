@@ -57,7 +57,7 @@ the main thread.
 | `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
 | `on_event(Event, &mut Cx) -> bool` | each event | `true`: this module's views show stale data. A visible view of that module then refreshes. |
 | `hotkeys() -> Vec<Binding>` | startup, reload | `Binding { spec, key }`. `key: Err(msg)` reports a binding the module cannot map. |
-| `hotkey(key, &mut Cx) -> Option<ListView>` | a bound hotkey press | `Some(view)` toggles the launcher on that view. `None` leaves the launcher alone. |
+| `hotkey(key, &mut Cx) -> Option<ListView>` | a bound hotkey press | `Some(view)` toggles the launcher on that view. `None` leaves the launcher alone. A view with `cycle: Some(Cycle::Next \| Previous)` is held, not toggled (`app::toggle`): the first press shows it with its first or last item selected, each press while it shows moves one item, wrapping, and releasing ⌘, ⌥ and ⌃ (polled every 20 ms, `keytap::current_flags`) activates the selected item. Holding the hotkey's key repeats the step at the system key repeat rate (`hotkeys::key_down`, `hotkeys::key_repeat`; Carbon sends no repeats), back while ⇧ is down. |
 | `command(&[String], &mut Cx) -> Result<String, String>` | `flick <id> <verb> ...` | `args` starts at the verb. Return `Err(unknown_verb(id, args))` for verbs you do not have. |
 | `verbs() -> &'static str` | `flick help` | One line naming `command`'s verbs, e.g. `toy ping`. Empty: none. |
 
@@ -81,6 +81,9 @@ A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open
 Registration order (the `modules!` list in `src/modules/mod.rs`) is significant. It sets root order for
 equal ranks, event order, and hotkey bind order. Hotkeys bind in the order launcher, desktop,
 switcher, window. When two bindings use the same spec, the later one fails with "bound twice".
+Binding `cmd+Tab` or `cmd+shift+Tab` turns off the macOS app switcher's shortcut while Flick
+holds it (`platform::hotkeys`, private `CGSSetSymbolicHotKeyEnabled`, as AltTab does); quit
+and SIGTERM turn it on again, a crash leaves it off until Flick starts again or logout.
 
 ## Items, ids and outcomes
 
@@ -147,7 +150,7 @@ A form takes none of them, so they keep their text-editing defaults there.
   `Actions  ⌘K` beside the Enter verb when the selected item has actions. In the menu, typing
   filters the actions (fuzzy; module order while the field is empty), Enter runs `act`,
   Escape, ⌘K or Backspace in an empty field go back to `back`: the same screen, search text
-  and selection. The action keybinding hints (`Action::shortcut_hint`) are display only.
+  and selection. The action keybinding hints (`Action::shortcut_hint`) are display only, except "⌘Q": ⌘Q on a list runs the selected item's action with that hint (`State::run_shortcut`).
 - `Confirm { confirm, back }`: from `Outcome::Confirm`. `Confirm::title` replaces the search
   field (read-only); `Confirm::rows` are read-only rows (Up/Down, ⌃J/⌃K, J/K scroll; ⌃D/⌃U half a page; G/⇧G top/bottom). Non-destructive:
   Enter or ⌘↵ confirms. `destructive = true`: only ⌘↵ confirms, and plain Enter shows
