@@ -222,9 +222,10 @@ Sources:
   menu takes the new rows. Menu rows are typed `Entry`s:
   `Info(text)` (disabled), `Separator`, `Pick { title, key }`, which calls the owner's
   `on_pick(key)`, and `Open { title, module, key }`, which goes to the one opener the
-  controller installs at `app::init` (`status_item::set_opener`): it defers through
+  controller installs at `app::init` (`status_item::set_opener(app::hotkey_later)`): it defers through
   `events::on_main` to `app::hotkey(module, key)`, so an `Open` row behaves exactly like that
-  module's hotkey press. `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
+  module's hotkey press. `app::hotkey_later` is also the `ext` module's opener for
+  `ext open`, a verb that runs with the state borrowed. `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
   called as the owner's menu opens. Pick handlers and menu-open hooks run inside `AppKit`'s
   event handling, so they only set a flag and post an event (the module reads it on
   `ModuleChanged`), never borrow the state (mx-fcbc43). Items do not activate Flick or
@@ -337,7 +338,10 @@ and every hotkey.
   `after` (hide, stay, root) applies at once, the reply's status or error arrives later in
   the footer of the view if it still shows, else as a HUD toast (errors always toast). A
   card `script` or `flick` action runs Flick's own CLI on a thread of its own, answered
-  into the same inbox. Forms are `background`: `Saving…` until the submit reply.
+  into the same inbox. Forms are `background`: `Saving…` until the submit reply. Each
+  worker keeps its last call's op, error and duration behind a lock held only to store or
+  copy it (`ext ls`). `ext call` queues a raw request on the same worker and answers
+  through `core::later` with the unparsed stdout.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
   `core::control::PeerHooks`, or `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5
@@ -805,7 +809,9 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `kota ask` (a peer, KOTA included, never makes this Mac ssh text to KOTA), `llm` (any verb:
   a peer never makes this Mac send requests to model servers), `sys restart|tail` (a peer
   never restarts this Mac's services or reads its logs), `sys window` (a peer never pops
-  the fleet window on this Mac or writes its snapshot), and of `remote` only
+  the fleet window on this Mac or writes its snapshot), `ext open|call` (a peer never pops
+  the launcher on an extension's view or makes this Mac run an extension with a request of
+  its choosing; `ext ls|refresh` stay allowed), and of `remote` only
   `remote status`. A table verb may be
   several words; it matches a prefix of the words after the module, so `message card press`
   is denied and `message card post` is not. `["events"]` needs `[remote] events = true`. Everything

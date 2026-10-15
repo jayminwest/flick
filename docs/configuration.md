@@ -147,6 +147,8 @@ Each call runs the program once. Flick writes one JSON request to its stdin and 
 
 Root search shows the extension's root items with the other modules' items, ranked by the same fuzzy match and usage. Flick keeps the last items it got and shows them at once; it asks the extension again each time the launcher opens and at each config reload, so a change shows a moment later. A view (`<name>/<view>`, opened by a hotkey or an item) shows its last items too, or `Loading…` the first time, and asks again each time it opens; Flick filters its items as you type. An item's id is `ext:<name>/<key>`, so its usage history stays while its key stays. An icon file that is missing or is not an image is left out (logged). A failed call for the view on the screen shows in its footer instead of a notification.
 
+`flick ext ls` lists the extensions with how each one's last call went (its op, ok or the error, and how long it took). `flick ext refresh <name>` asks one again for its root items and for its view on the screen. `flick ext open <name> <view>` opens a view as its hotkey does. `flick ext call <name> <json>` (or `--stdin` for the JSON) is for debugging: it sends the request to the program exactly as given and prints the program's stdout as it is, without checking it. A peer over the network may not send `ext open` or `ext call`.
+
 ## Launcher keys
 
 | Key | Action |

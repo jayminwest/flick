@@ -46,7 +46,7 @@ modules! {
         pub mod quicklinks => "quicklink", quicklinks::Quicklinks::default;
         mod scripts => "script", scripts::Scripts::default;
         mod snippet => "snippet", snippet::Snippets::default;
-        mod ext => "ext", || ext::Ext::new(crate::control::socket_path);
+        mod ext => "ext", || ext::Ext::new(crate::control::socket_path, crate::app::hotkey_later);
         mod flick => "builtin", || flick::Flick;
         mod clipboard => "clip", || clipboard::Clipboard;
         mod activity => "activity", activity::Activity::default;

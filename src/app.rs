@@ -101,13 +101,14 @@ pub fn init(config: Config, store: Store) -> String {
     }
     state.registry.dispatch(Event::Started, &mut state.env.cx(""));
     STATE.with(|s| *s.borrow_mut() = Some(state));
-    status_item::set_opener(open_from_menu);
+    status_item::set_opener(hotkey_later);
     launcher
 }
 
-/// A status item's `Open` row: module `module`'s hotkey `key`, on the main queue's next turn,
-/// because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43).
-fn open_from_menu(module: &str, key: &str) {
+/// Module `module`'s hotkey `key`, on the main queue's next turn: for a status item's `Open`
+/// row, because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43), and
+/// for a verb (`ext open`), which runs with the state borrowed.
+pub fn hotkey_later(module: &str, key: &str) {
     let (module, key) = (module.to_owned(), key.to_owned());
     events::on_main(move || hotkey(&module, &key));
 }
