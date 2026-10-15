@@ -48,6 +48,7 @@ Hyper+HJKL ──► snap windows (repeat to cycle 1/2 → 2/3 → 1/3)
 - **KOTA.** The state of an always-on agent session in the menu bar (thinking, blocked, idle, down), the cards waiting on you, and a quick ask. A floating chat window holds threaded conversations with it, with its cards inline and context from the app you were in. [KOTA](docs/kota.md), [Chat](docs/message.md#chat).
 - **Fleet.** This Mac's health and service checks, and a launcher view of several Macs and their services, with Screen Sharing, log tails and confirmed restarts. [System and fleet](docs/sys.md).
 - **Activity and tasks.** Opt-in time tracking per app, kept on this Mac, and a short task list with one running timer. [Activity](docs/activity.md), [Tasks](docs/tasks.md).
+- **Extensions.** A program in any language adds root items, views, actions and forms. Flick sends it one JSON request on stdin per call and reads one JSON reply, on a thread of its own, so a slow extension never slows the launcher. [Extensions](docs/extensions.md).
 - **Quicklinks.** URLs and paths with an optional `{query}` argument. Type `<keyword> <text>` to run one from the root search. Import your Raycast quicklinks with one command. [Quicklinks](docs/configuration.md#quicklinks).
 
 ## See it
@@ -76,10 +77,10 @@ The script builds `~/Applications/Flick.app` and starts it. Press `⌥⇧Space` 
 - [Install and update](docs/install.md)
 - [Configuration](docs/configuration.md): config file, hotkeys, quicklinks, launcher keys
 - [Command line](docs/cli.md)
-- Modules: [Script commands](docs/scripts.md) · [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Messages](docs/message.md) · [Dictation](docs/dictation.md) · [KOTA](docs/kota.md) · [System and fleet](docs/sys.md) · [Remote access](docs/remote.md)
+- Modules: [Script commands](docs/scripts.md) · [Extensions](docs/extensions.md) · [Key triggers](docs/keys.md) · [Activity](docs/activity.md) · [Tasks](docs/tasks.md) · [Herdr](docs/herdr.md) · [Capture](docs/capture.md) · [Feedback](docs/feedback.md) · [Messages](docs/message.md) · [Dictation](docs/dictation.md) · [KOTA](docs/kota.md) · [System and fleet](docs/sys.md) · [Remote access](docs/remote.md)
 - [How it works](docs/how-it-works.md) and [ARCHITECTURE.md](ARCHITECTURE.md)
 
-Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except what you configure: HTTP requests as key triggers, shell commands as key triggers or script commands, the checks and ssh calls of `[kota]` and `[[sys.machine]]`, the ssh calls of the `[message]` KOTA chat and `action_command`, and the curl requests of `[[llm.servers]]`. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
+Flick keeps its data in `~/Library/Application Support/Flick/flick.db` and sends nothing over the network except what you configure: HTTP requests as key triggers, shell commands as key triggers or script commands, the checks and ssh calls of `[kota]` and `[[sys.machine]]`, the ssh calls of the `[message]` KOTA chat and `action_command`, and the curl requests of `[[llm.servers]]`. An extension (`[[ext.extensions]]`) is your own program: it does what you wrote it to do. It listens on the network only when you turn on [remote access](docs/remote.md), and then only on Tailscale addresses.
 
 ## Roadmap
 

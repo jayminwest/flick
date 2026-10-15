@@ -343,7 +343,8 @@ and every hotkey.
   into the same inbox. Forms are `background`: `Saving…` until the submit reply. Each
   worker keeps its last call's op, error and duration behind a lock held only to store or
   copy it (`ext ls`). `ext call` queues a raw request on the same worker and answers
-  through `core::later` with the unparsed stdout.
+  through `core::later` with the unparsed stdout. The wire protocol, for extension
+  authors, is `docs/extensions.md`.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
   `core::control::PeerHooks`, or `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5
