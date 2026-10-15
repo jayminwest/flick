@@ -18,7 +18,7 @@ fn runs() -> Vec<(String, String)> {
 }
 
 const KOTA: &str = "[[script.commands]]\nname = \"Ask KOTA\"\nkeyword = \"k\"\n\
-                    shell = \"printf %s {query} | ssh mbp-server kota-ask\"\n\
+                    shell = \"printf %s {query} | ssh my-server kota-ask\"\n\
                     [[script.commands]]\nname = \"Lock\"\nshell = \"pmset displaysleepnow\"\n";
 
 fn configured(text: &str) -> Result<Scripts, String> {
@@ -46,7 +46,7 @@ fn keyword_and_text_runs_the_command_with_the_text_quoted() {
     assert_eq!(items[0].id.as_str(), "script:Ask KOTA");
     assert_eq!(items[0].subtitle, "“what's up; rm -rf ~”");
     assert!(matches!(activate(&mut m, &items[0].id), Outcome::Hide));
-    let cmd = r"printf %s 'what'\''s up; rm -rf ~' | ssh mbp-server kota-ask";
+    let cmd = r"printf %s 'what'\''s up; rm -rf ~' | ssh my-server kota-ask";
     assert_eq!(runs(), [("Ask KOTA".to_string(), cmd.to_string())]);
 }
 
@@ -90,7 +90,7 @@ fn argument_view_previews_the_command_and_runs_it() {
     // Enter on an empty argument does nothing.
     assert!(matches!(activate(&mut m, &view.items[0].id), Outcome::Stay(None)));
     test_cx("hi ", |cx| m.refresh(&mut view, cx));
-    assert_eq!(view.items[0].subtitle, "printf %s 'hi' | ssh mbp-server kota-ask");
+    assert_eq!(view.items[0].subtitle, "printf %s 'hi' | ssh my-server kota-ask");
     assert!(matches!(activate(&mut m, &view.items[0].id), Outcome::Hide));
     assert_eq!(runs().len(), 1);
     view.name = "Gone".into();
@@ -146,7 +146,7 @@ fn run_verb(m: &mut Scripts, args: &[&str]) -> Result<String, String> {
 #[test]
 fn run_verb_runs_by_name_with_the_query_quoted() {
     let mut m = configured(KOTA).unwrap();
-    let cmd = r"printf %s 'it'\''s; rm -rf ~' | ssh mbp-server kota-ask";
+    let cmd = r"printf %s 'it'\''s; rm -rf ~' | ssh my-server kota-ask";
     assert_eq!(run_verb(&mut m, &["run", "Ask KOTA", " it's;", "rm -rf ~ "]), Ok(format!("ran Ask KOTA: {cmd}")));
     assert_eq!(run_verb(&mut m, &["run", "Lock"]), Ok("ran Lock: pmset displaysleepnow".into()));
     assert_eq!(

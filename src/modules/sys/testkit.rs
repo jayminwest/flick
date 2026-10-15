@@ -16,8 +16,8 @@ use super::window::{self, Note};
 use crate::platform::surface::{Row, Status};
 use crate::core::control::{Flags, Reply};
 
-/// The real probe output from mbp-server.
-pub const SERVER: &str = include_str!("fixtures/probe_mbp_server.txt");
+/// The real probe output from my-server.
+pub const SERVER: &str = include_str!("fixtures/probe_my_server.txt");
 /// The real probe output from a desktop Mac without a battery.
 pub const DESKTOP: &str = include_str!("fixtures/probe_desktop.txt");
 

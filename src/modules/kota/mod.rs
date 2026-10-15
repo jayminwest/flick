@@ -1,6 +1,6 @@
 //! Module `kota`: KOTA's presence in the menu bar, its pending-card badge and quick ask
 //! (plan flick-4354). KOTA is the always-on Claude Code session in a herdr pane on
-//! mbp-server. Steps so far: the presence model and `kota status` (flick-3b9b), the
+//! my-server. Steps so far: the presence model and `kota status` (flick-3b9b), the
 //! poller and `kota refresh` (flick-4f39), the pending-card count (flick-316c), quick
 //! ask (flick-039d) and the menu bar item (flick-78b9, `item.rs`).
 //!

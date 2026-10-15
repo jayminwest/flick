@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Gate check:privacy: the repo is public, so no tracked or new file may name a real
 # tailnet, Tailscale address or personal machine. Use placeholders instead:
-# `<host>.example.ts.net`, 100.64.0.x, fd7a:115c:a1e0::x, `my-macbook-pro`, `me@server`.
+# `<host>.example.ts.net`, 100.64.0.x, fd7a:115c:a1e0::x, `my-macbook-pro`, `my-server`,
+# `my-desktop`, `me@server`.
 # Fails on:
 #   - a tailnet MagicDNS suffix (`tail<hex>.ts.net`)
 #   - an address in 100.64.0.0/10 outside 100.64.0.0/24 and Tailscale's documented
 #     fixed ones (100.100.100.100, 100.101.102.103, 100.127.255.254/255)
 #   - a full fd7a:115c:a1e0::/48 address (all eight groups written out)
-#   - the owner's personal machine names, ssh user or home directory
+#   - the owner's personal machine names (`jaymins-*`, `mbp-server`, `mac-pro`), ssh user,
+#     launchd label prefix (`com.jaymin.`) or home directory
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -22,7 +24,7 @@ git ls-files -z -co --exclude-standard | grep -zv '^scripts/checks/privacy\.sh$'
       push @hits, $1 unless $1 =~ /^100\.64\.0\./ || $ok{$1};
     }
     push @hits, $1 while /\b(fd7a:115c:a1e0(?::[0-9a-f]{1,4}){5})\b/gi;
-    push @hits, $1 while /(jaymins?-(?:macbook|mac-pro|iphone|ipad)[\w-]*|mac-pro-jaymin|\bjaymin@|\/Users\/jaymin\w*)/gi;
+    push @hits, $1 while /(jaymins?-(?:macbook|mac-pro|iphone|ipad)[\w-]*|\bmac-?pro-(?:jaymin|kota)\b|\bmbp[-_]server\b|\bmac-pro\b|\bcom\.jaymin\.|\bjaymin@|\bjaymin(?= ALL=)|<string>jaymin<|\/Users\/jaymin\w*)/gi;
     for (@hits) { print "error: $ARGV:$.: $_  [use a placeholder; see scripts/checks/privacy.sh]\n"; $n++ }
     close ARGV if eof;
     END { print "check:privacy: $files files clean\n" unless $n; exit($n ? 1 : 0) }

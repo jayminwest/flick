@@ -128,12 +128,12 @@ refresh_secs = 60
 name = "laptop"
 via = "local"
 [[sys.machine]]
-name = "mbp-server"
+name = "my-server"
 via = "flick"
-ssh = "me@mbp-server"
-dash = "https://mbp-server.ts.net:8310/"
+ssh = "me@my-server"
+dash = "https://my-server.ts.net:8310/"
 [[sys.machine]]
-name = "mac-pro"
+name = "my-desktop"
 via = "ssh"
 host = "pro:7419"
 ssh = "me@100.64.0.20"
@@ -151,7 +151,7 @@ target = "100.64.0.20:11234"
     assert_eq!(s.refresh_secs, 60);
     let vias: Vec<&str> = s.machine.iter().map(|m| m.via.as_str()).collect();
     assert_eq!(vias, ["local", "flick", "ssh"]);
-    assert_eq!((s.machine[1].flick_host(), s.machine[2].flick_host()), ("mbp-server", "pro:7419"));
+    assert_eq!((s.machine[1].flick_host(), s.machine[2].flick_host()), ("my-server", "pro:7419"));
     let names: Vec<&str> = s.machine[2].service.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["ollama", "mlx"]);
     assert!(settings("").unwrap().machine.is_empty() && settings("").unwrap().refresh_secs == 0);

@@ -5,7 +5,7 @@
   Install by hand on the Mac Pro: docs/local-llm/private-server.md.
 
   Two values are placeholders because the shared daemon's plist is not in any repo.
-  Copy them from `sudo launchctl print system/com.jaymin.mlx-serve` (the "program",
+  Copy them from `sudo launchctl print system/com.example.mlx-serve` (the "program",
   "arguments" and "username" lines) before installing:
     __MLX_SERVE_BINARY__  absolute path of the mlx-serve binary
     __MODEL_ARGS__        the shared daemon's model-selection arguments (for example
@@ -19,7 +19,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.jaymin.mlx-serve-private</string>
+  <string>com.example.mlx-serve-private</string>
 
   <key>ProgramArguments</key>
   <array>
@@ -44,9 +44,9 @@
   </array>
 
   <!-- Same user as the shared daemon so it reads the same model cache. Check the
-       "username" line of `sudo launchctl print system/com.jaymin.mlx-serve`. -->
+       "username" line of `sudo launchctl print system/com.example.mlx-serve`. -->
   <key>UserName</key>
-  <string>jaymin</string>
+  <string>me</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>

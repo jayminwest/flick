@@ -25,11 +25,11 @@ fn one_round(sh: &Arc<Shared>, s: &Settings) {
 
 #[test]
 fn argvs_name_the_machine_unless_it_is_this_mac() {
-    let s = settings("mbp-server", "https://h:8310/");
+    let s = settings("my-server", "https://h:8310/");
     let (list, curl) = argvs(&s, "/opt/homebrew/bin/herdr", Some("laptop"));
-    assert_eq!(list, ["/opt/homebrew/bin/herdr", "--machine", "mbp-server", "agent", "list"]);
+    assert_eq!(list, ["/opt/homebrew/bin/herdr", "--machine", "my-server", "agent", "list"]);
     assert_eq!(curl, ["/usr/bin/curl", "-sS", "--fail", "--max-time", "5", "https://h:8310/ok"]);
-    let (list, _) = argvs(&s, "herdr", Some("mbp-server"));
+    let (list, _) = argvs(&s, "herdr", Some("my-server"));
     assert_eq!(list, ["herdr", "agent", "list"]);
     let (list, _) = argvs(&settings("local", "http://x"), "herdr", None);
     assert_eq!(list, ["herdr", "agent", "list"]);

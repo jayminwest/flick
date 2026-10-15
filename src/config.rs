@@ -95,7 +95,7 @@ hotkey = "alt+shift+Space"
 # remote_refresh_secs = 0 polls remote machines only while the launcher is open.
 # notify: statuses that post a notification ("blocked", "done"); [] for none.
 # [herdr]
-# machines = ["local", "mbp-server"]
+# machines = ["local", "my-server"]
 # remote_refresh_secs = 60
 # terminal = "WezTerm"
 # hotkey = "cmd+ctrl+alt+shift+KeyA"
@@ -164,7 +164,7 @@ hotkey = "alt+shift+Space"
 # only. Off until "flick remote on" or "Turn On Network Access". Peers may not reload, rebuild,
 # capture, fire keys or edit config; events = true lets them stream events. docs/remote.md
 # [remote]
-# peers = ["mbp-server"]
+# peers = ["my-server"]
 # port = 7419
 # events = false
 

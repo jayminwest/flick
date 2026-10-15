@@ -33,9 +33,9 @@ target = "killed"
 fn snapshot_answers_inline_the_first_time() {
     let mut m = sys("", HOOKS);
     let text = ask(&mut m, &["snapshot"], false).unwrap();
-    assert!(text.starts_with("mbp-server · up 3d 13h · read 0s ago\nload     1.42 2.06 2.42 · 11 CPUs\n"), "{text}");
+    assert!(text.starts_with("my-server · up 3d 13h · read 0s ago\nload     1.42 2.06 2.42 · 11 CPUs\n"), "{text}");
     let v: serde_json::Value = serde_json::from_str(&ask(&mut m, &["snapshot"], true).unwrap()).unwrap();
-    assert_eq!((v["host"].as_str(), v["ncpu"].as_u64(), v["services"].as_array().map(Vec::len)), (Some("mbp-server"), Some(11), Some(0)));
+    assert_eq!((v["host"].as_str(), v["ncpu"].as_u64(), v["services"].as_array().map(Vec::len)), (Some("my-server"), Some(11), Some(0)));
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn fleet_reads_every_machine_the_first_time() {
     assert!(lines[2].starts_with("fresh    pro     ssh    load "), "{text}");
     let v: serde_json::Value = serde_json::from_str(&ask(&mut m, &["fleet"], true).unwrap()).unwrap();
     let hosts: Vec<&str> = v["machines"].as_array().unwrap().iter().map(|m| m["snapshot"]["host"].as_str().unwrap()).collect();
-    assert_eq!(hosts, ["mbp-server", "server", "mac-pro"]);
+    assert_eq!(hosts, ["my-server", "server", "my-desktop"]);
     assert_eq!(v["machines"][2]["snapshot"]["services"][0]["reason"], "running (pid 812)");
 }
 

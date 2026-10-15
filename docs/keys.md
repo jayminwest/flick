@@ -100,7 +100,7 @@ Do the steps in this order. Hyperkey and Flick must never both remap Caps Lock.
    and no `conflict:` lines. A conflict line names the app or hotkey to remove.
 7. Do the manual tests below.
 8. Remove the old apps from the dotfiles: the `"hammerspoon"` cask in
-   `~/.dotfiles/hosts/workstation.nix` and `~/.dotfiles/hosts/mbp-server.nix`. Hyperkey is not
+   `~/.dotfiles/hosts/workstation.nix` and `~/.dotfiles/hosts/my-server.nix`. Hyperkey is not
    in the dotfiles: move `Hyperkey.app` to the Trash by hand. Then stop the voice app
    from writing `~/.hammerspoon/init.lua`, and delete that file.
 

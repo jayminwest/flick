@@ -1,6 +1,6 @@
 # KOTA
 
-The `kota` module shows KOTA in the menu bar. KOTA is the always-on Claude Code session in a herdr pane on another Mac, here mbp-server. The menu bar item shows whether KOTA is thinking, waiting on an approval, idle, degraded or down, or whether this Mac is offline. It also shows how many cards are waiting on you. **Ask KOTA…** (a hotkey, the menu, or `flick kota ask`) sends KOTA a question. A pending KOTA card shows until the reply replaces it.
+The `kota` module shows KOTA in the menu bar. KOTA is the always-on Claude Code session in a herdr pane on another Mac, here my-server. The menu bar item shows whether KOTA is thinking, waiting on an approval, idle, degraded or down, or whether this Mac is offline. It also shows how many cards are waiting on you. **Ask KOTA…** (a hotkey, the menu, or `flick kota ask`) sends KOTA a question. A pending KOTA card shows until the reply replaces it.
 
 The module is opt-in. Flick does not register it until `[kota]` sets at least one key. An empty `[kota]` table, or one with only `enabled = true`, counts as none. Without a key, the module does not exist on that Mac: no thread, no child process, no menu bar item, no launcher items, no help topic, and `flick kota ...` answers `kota is off: turn it on in its [kota] table in config.toml`. No default names a machine. When the module is on, `machine`, `cwd` and `dash` are required, and quick ask needs `ssh`:
 
@@ -43,7 +43,7 @@ Each check (a "round") runs two children in parallel. `herdr [--machine <machine
 
 The cards waiting on you and the posts you have not read follow the glyph, for example `K! 2`; the Inbox row splits them (`Inbox (1 waiting, 1 unread)`). The counts come from the `message` module (`Event::CardsPending`); see [unread posts](message.md#unread-posts).
 
-**Down vs offline.** Down means the server answered and KOTA is not running there. The pane is gone, or kota-dash says it is unhealthy. Fix it on mbp-server. Offline means nothing answered. From the laptop, a dead mbp-server and a laptop with no network look the same, so offline is never called down, and it posts no notification. Check this Mac's network and Tailscale first.
+**Down vs offline.** Down means the server answered and KOTA is not running there. The pane is gone, or kota-dash says it is unhealthy. Fix it on my-server. Offline means nothing answered. From the laptop, a dead my-server and a laptop with no network look the same, so offline is never called down, and it posts no notification. Check this Mac's network and Tailscale first.
 
 **Debounce.** Down and offline take effect only on the second failing round in a row. The first failing round keeps the last state and retries in 15 s. Sleep and lock stop the timer and mark the state stale (`K?`, `(stale)` in the menu). Wake and unlock run a round after 5 s. Failing rounds within 30 s of a wake keep the last state, because the network may not be back yet.
 
@@ -60,7 +60,7 @@ The item shows only after Flick starts, while `[kota]` sets a key and `status_it
 - **Open Dashboard** opens `dash` in the browser.
 - **Refresh Now** checks now.
 
-Opening the menu also checks now, at most once per 10 s. When the state changes to down and `notify_down` is true, Flick posts one notification: `KOTA is down` and `herdr on mbp-server has no KOTA pane` (or `kota-dash on mbp-server reports health false`). Notifications need Flick.app. macOS asks for permission on the first launch.
+Opening the menu also checks now, at most once per 10 s. When the state changes to down and `notify_down` is true, Flick posts one notification: `KOTA is down` and `herdr on my-server has no KOTA pane` (or `kota-dash on my-server reports health false`). Notifications need Flick.app. macOS asks for permission on the first launch.
 
 ## Quick ask
 
@@ -87,12 +87,12 @@ Before this module, the dotfiles had a script command for asking KOTA:
 [[script.commands]]
 name = "Ask KOTA"
 keyword = "k"
-shell = "id=$(\"$HOME/Applications/Flick.app/Contents/MacOS/Flick\" message post --pending -- {query} 2>/dev/null); printf %s {query} | /usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=8 mbp-server .dotfiles/home/.local/bin/kota-ask --id \"$id\""
+shell = "id=$(\"$HOME/Applications/Flick.app/Contents/MacOS/Flick\" message post --pending -- {query} 2>/dev/null); printf %s {query} | /usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=8 my-server .dotfiles/home/.local/bin/kota-ask --id \"$id\""
 ```
 
 Replace it once the laptop runs a Flick with this module (`flick kota status` answers instead of `unknown module` or `kota is off`):
 
-1. Add `[kota]` with `machine`, `cwd`, `dash`, `ssh` and a `hotkey` to the laptop's config. When one config.toml is shared between Macs, put it in the laptop's [per-host overlay](configuration.md#per-host-overlay), so mbp-server does not poll too.
+1. Add `[kota]` with `machine`, `cwd`, `dash`, `ssh` and a `hotkey` to the laptop's config. When one config.toml is shared between Macs, put it in the laptop's [per-host overlay](configuration.md#per-host-overlay), so my-server does not poll too.
 2. Remove the `[[script.commands]]` "Ask KOTA" table and run **Reload Flick Config**.
 3. Ask KOTA with the hotkey, the menu bar item's **Ask KOTA…**, or `flick kota ask <text>` in a shell.
 
@@ -100,7 +100,7 @@ The module makes the request id itself, so kota-ask never gets an empty `--id`. 
 
 ## Manual smoke checklist
 
-Unit tests cover the presence model, the menu model and the ask argv with fake children. This checklist covers the parts they cannot reach: the real herdr and kota-dash, ssh to mbp-server, the menu bar and notifications. Run it on the laptop, on the installed Flick.app, after a change to `src/modules/kota/` or `platform::status_item`.
+Unit tests cover the presence model, the menu model and the ask argv with fake children. This checklist covers the parts they cannot reach: the real herdr and kota-dash, ssh to my-server, the menu bar and notifications. Run it on the laptop, on the installed Flick.app, after a change to `src/modules/kota/` or `platform::status_item`.
 
 - [ ] **Off without a key.** With no `[kota]` table (or an empty one), there is no K item in the menu bar, and `flick kota status` ends with `polling: off (set a key in [kota] to poll)`.
 - [ ] **On with a key.** Add `hotkey = "cmd+ctrl+alt+shift+KeyO"` under `[kota]` and reload. Within a few seconds the menu bar shows `K` (or `K…` while KOTA works). `flick kota status` shows `KOTA: idle · <age>`, `Checked HH:MM` and `polling: every 60 s`.
@@ -113,9 +113,9 @@ Unit tests cover the presence model, the menu model and the ask argv with fake c
 - [ ] **Ask from the CLI.** `flick kota ask "smoke test from the cli"` prints `Asked KOTA (k…): queued for KOTA (…)` (kota-ask's last line) and exits 0.
 - [ ] **Ask failure.** Set `ssh = "me@nonexistent-host"` and reload. `flick kota ask hi` exits 1 with ssh's error. The pending card turns into `KOTA ask failed: <reason>`. Restore `ssh`.
 - [ ] **Degraded.** Make one kota-dash `/ok` check false (or stop kota-dash). Within two rounds the glyph is `K~`, and the menu shows `Checks: <name> failing` (`dash` when kota-dash is stopped). Restore it.
-- [ ] **Down and its notification.** In a test herdr session, or with `cwd` pointed at a directory with no Claude pane, wait two rounds (about 15 s after the first). The glyph turns `K×`, and one notification says `KOTA is down` / `herdr on mbp-server has no KOTA pane`. No second notification comes while it stays down. Restore `cwd`.
+- [ ] **Down and its notification.** In a test herdr session, or with `cwd` pointed at a directory with no Claude pane, wait two rounds (about 15 s after the first). The glyph turns `K×`, and one notification says `KOTA is down` / `herdr on my-server has no KOTA pane`. No second notification comes while it stays down. Restore `cwd`.
 - [ ] **Offline, no notification.** Turn off Wi-Fi (or quit Tailscale). After two rounds the glyph is `K-`, and no notification is posted. Turn the network back on and choose **Refresh Now**: the glyph returns.
 - [ ] **Sleep and wake.** Sleep the laptop for a few minutes and wake it. The glyph shows `K?` (the menu says `stale`) until the first round, about 5 s after unlock, and then the real state. No false `K×` or `K-` appears during the first 30 s.
-- [ ] **Network refusal.** From mbp-server: `flick --host my-macbook-pro kota status` answers. `flick --host my-macbook-pro kota ask hi` prints `flick: kota ask: not allowed over the network` and exits 1.
+- [ ] **Network refusal.** From my-server: `flick --host my-macbook-pro kota status` answers. `flick --host my-macbook-pro kota ask hi` prints `flick: kota ask: not allowed over the network` and exits 1.
 - [ ] **Hidden item.** Set `status_item = false` and reload: the item goes away, and `flick kota status` still answers. Set it back.
 - [ ] **Migration.** After you remove the `k` script command and reload, `k hello` in root search no longer runs a command. Every ask path above still works.

@@ -22,7 +22,7 @@ timeout_secs = 300                 # seconds one reply may take (1 to 3600)
 
 [[llm.servers]]
 name = "mlx"
-url = "https://mac-pro.example.ts.net:11234" # with or without /v1
+url = "https://my-desktop.example.ts.net:11234" # with or without /v1
 
 [[llm.servers]]
 name = "ollama"
@@ -76,7 +76,7 @@ private_hotkey = "cmd+ctrl+alt+shift+KeyP" # shows or hides the private chat; un
 
 [[llm.servers]]
 name = "vault"
-url = "https://mac-pro.example.ts.net:11235"
+url = "https://my-desktop.example.ts.net:11235"
 private = true
 ```
 
@@ -138,7 +138,7 @@ Private chat (flick-c325) only sends to a server with `private = true`. On the M
 [`local-llm/verify-private.sh`](local-llm/verify-private.sh) makes a random canary, waits while you send it through the private chat, then searches both Macs for it. Run it on the laptop:
 
 ```bash
-docs/local-llm/verify-private.sh                 # laptop, then the Mac Pro over ssh (host mac-pro)
+docs/local-llm/verify-private.sh                 # laptop, then the Mac Pro over ssh (host my-desktop)
 docs/local-llm/verify-private.sh --host <ssh-host>
 docs/local-llm/verify-private.sh --reuse         # check again for the last canary (asked for, hidden)
 ```
@@ -157,7 +157,7 @@ Each location gets a line: PASS (no canary), FAIL (found, with the files), SKIP 
 
 The canary never goes into a file or a command line: grep and sqlite3 read it from a pipe, and ssh gets it on stdin. Your terminal shows it, so do not paste it anywhere else. Terminal's own saved state is not searched.
 
-Over ssh, the Mac Pro scan runs as your user, so root-only files under `/var/log` come back INCOMPLETE. For a complete scan, copy the script to the Mac Pro and run it there with `sudo bash verify-private.sh --here mac-pro`; it asks for the canary. On the laptop, an INCOMPLETE `~/Library/Caches` usually means the terminal lacks Full Disk Access.
+Over ssh, the Mac Pro scan runs as your user, so root-only files under `/var/log` come back INCOMPLETE. For a complete scan, copy the script to the Mac Pro and run it there with `sudo bash verify-private.sh --here my-desktop`; it asks for the canary. On the laptop, an INCOMPLETE `~/Library/Caches` usually means the terminal lacks Full Disk Access.
 
 Run it after installing the private server, after each mlx-serve or Flick update that touches private chat, and after any change to logging on either Mac. Note the date and result on flick-6519.
 

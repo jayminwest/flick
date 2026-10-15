@@ -1,7 +1,7 @@
 use super::*;
 use crate::modules::sys::run::Exit;
 
-// Real `launchctl print gui/501/<label>` output from mbp-server (macOS 27.0.1), with the
+// Real `launchctl print gui/501/<label>` output from my-server (macOS 27.0.1), with the
 // argument and environment blocks emptied and the home directory renamed.
 /// kota-life-ops: running, never exited.
 const RUNNING: &str = include_str!("../fixtures/launchctl_running.txt");

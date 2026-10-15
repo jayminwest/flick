@@ -186,11 +186,11 @@ mod tests {
 
     #[test]
     fn whois_output_gives_every_node_name() {
-        let out = r#"{"Node":{"Name":"mbp-server.tail1.ts.net.","ComputedName":"mbp-server",
-            "Hostinfo":{"Hostname":"MBP-Server"}},"UserProfile":{"LoginName":"x@y"}}"#;
+        let out = r#"{"Node":{"Name":"my-server.tail1.ts.net.","ComputedName":"my-server",
+            "Hostinfo":{"Hostname":"My-Server"}},"UserProfile":{"LoginName":"x@y"}}"#;
         assert_eq!(
             parse_whois(out).unwrap(),
-            ["mbp-server", "MBP-Server", "mbp-server.tail1.ts.net."]
+            ["my-server", "My-Server", "my-server.tail1.ts.net."]
         );
         let partial = r#"{"Node":{"Name":"","ComputedName":"a"}}"#;
         assert_eq!(parse_whois(partial).unwrap(), ["a"]);

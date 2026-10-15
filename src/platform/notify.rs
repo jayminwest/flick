@@ -180,8 +180,8 @@ mod tests {
     fn click_goes_to_the_handler_set_first() {
         assert_eq!(on_click(record), Err(NO_BUNDLE));
         assert_eq!(on_click(|_| {}), Err(NO_BUNDLE));
-        clicked("mbp-server/p7");
+        clicked("my-server/p7");
         let clicks = CLICKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert_eq!(*clicks, ["mbp-server/p7"]);
+        assert_eq!(*clicks, ["my-server/p7"]);
     }
 }

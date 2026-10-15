@@ -4,7 +4,7 @@ The `herdr` module lists the coding agents (claude, pi, codex, ...) that run in 
 
 ```toml
 [herdr]
-machines = ["local", "mbp-server"] # default []: local plus every enabled `herdr machine list` profile
+machines = ["local", "my-server"] # default []: local plus every enabled `herdr machine list` profile
 remote_refresh_secs = 60           # default 0: remote machines refresh only while the launcher is open
 terminal = "WezTerm"               # the app brought to the front on a jump
 hotkey = "cmd+ctrl+alt+shift+KeyA" # opens the agents view; unbound by default
@@ -14,7 +14,7 @@ notify = ["blocked", "done"]       # default ["blocked"]; [] for no notification
 
 ```bash
 flick herdr ls                     # <machine>/<pane id>  <status>  <name>  <cwd · title>, waiting first
-flick herdr jump mbp-server/w1:p2  # or <machine>/<agent name>
+flick herdr jump my-server/w1:p2  # or <machine>/<agent name>
 flick herdr status                 # per machine: live or polled, last read, error; notifications
 flick --json herdr ls | jq '.ok.machines | keys'
 ```

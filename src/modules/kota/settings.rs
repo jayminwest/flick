@@ -145,8 +145,8 @@ mod tests {
     fn local_means_this_macs_server() {
         let s = |m: &str| Settings { machine: m.into(), ..Settings::default() };
         assert!(s("local").is_local(None));
-        assert!(s("MBP-Server").is_local(Some("mbp-server")));
-        assert!(!s("mbp-server").is_local(Some("my-macbook-pro")));
-        assert!(!s("mbp-server").is_local(None));
+        assert!(s("My-Server").is_local(Some("my-server")));
+        assert!(!s("my-server").is_local(Some("my-macbook-pro")));
+        assert!(!s("my-server").is_local(None));
     }
 }

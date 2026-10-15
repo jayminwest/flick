@@ -1,5 +1,5 @@
 @@ host
-mbp-server
+my-server
 @@ sysctl
 hw.ncpu: 11
 hw.memsize: 19327352832

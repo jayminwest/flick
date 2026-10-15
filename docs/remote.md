@@ -4,7 +4,7 @@ The `remote` module lets other Macs in your [Tailscale](https://tailscale.com) t
 
 ```toml
 [remote]
-peers = ["mbp-server"]   # Tailscale machine names allowed to connect; [] means no listener
+peers = ["my-server"]   # Tailscale machine names allowed to connect; [] means no listener
 port = 7419              # default 7419
 events = false           # true lets peers stream `flick --host <mac> events`
 ```
@@ -20,11 +20,11 @@ flick --json remote status | jq .ok.last
 
 ## Phone events
 
-flick-ios (`../flick-ios`) sends one event per app open on the iPhone, so KOTA can read phone use through Flick next to the Mac's [activity](activity.md). The receiver is the Mac Pro (`mac-pro`): it is always on. This section is the wire contract; flick-ios follows it.
+flick-ios (`../flick-ios`) sends one event per app open on the iPhone, so KOTA can read phone use through Flick next to the Mac's [activity](activity.md). The receiver is the Mac Pro (`my-desktop`): it is always on. This section is the wire contract; flick-ios follows it.
 
-Setup on the receiver: put the iPhone's Tailscale machine name in `[remote] peers` (`tailscale status` lists it, for example `my-iphone`), reload, and run `flick remote on` once. Adding opens needs no activity grant and works with activity recording off. KOTA reads them like Mac activity: `flick --host mac-pro activity today --json --remote`, with KOTA's Mac in `peers` and `flick activity remote allow` on the receiver.
+Setup on the receiver: put the iPhone's Tailscale machine name in `[remote] peers` (`tailscale status` lists it, for example `my-iphone`), reload, and run `flick remote on` once. Adding opens needs no activity grant and works with activity recording off. KOTA reads them like Mac activity: `flick --host my-desktop activity today --json --remote`, with KOTA's Mac in `peers` and `flick activity remote allow` on the receiver.
 
-**Transport.** TCP to `mac-pro:7419` (the receiver's `[remote] port`). A request is one line: a JSON array of strings in UTF-8, then `\n`, at most 64 KiB. The reply is one line, `{"ok":...}` or `{"error":"..."}`. One connection may carry many requests: send one line, read its reply, then send the next. Flick closes a connection after 30 s without a request. A peer not in `peers` is closed before any reply.
+**Transport.** TCP to `my-desktop:7419` (the receiver's `[remote] port`). A request is one line: a JSON array of strings in UTF-8, then `\n`, at most 64 KiB. The reply is one line, `{"ok":...}` or `{"error":"..."}`. One connection may carry many requests: send one line, read its reply, then send the next. Flick closes a connection after 30 s without a request. A peer not in `peers` is closed before any reply.
 
 **Request.**
 
@@ -53,18 +53,18 @@ Flags may come in any order, each once. `--json` is optional and must be the las
 | any other `{"error":...}` | The receiver cannot take it now: an older Flick (`activity: unknown command "phone"`), activity disabled (`activity is off: turn it on in its [activity] table in config.toml`), a database error (`activity: could not store the phone open: ...`). | Keep it; retry later. |
 | no reply (cannot connect, closed, timeout) | Network access off, Tailscale down, receiver asleep, not in `peers`. | Keep it; retry later. |
 
-To test from a Mac peer: `flick --host mac-pro activity phone add --id t1 --device test --app flick-test --at $(date +%s)`, then `flick activity forget app flick-test --yes` on the receiver.
+To test from a Mac peer: `flick --host my-desktop activity phone add --id t1 --device test --app flick-test --at $(date +%s)`, then `flick activity forget app flick-test --yes` on the receiver.
 
 ## Peers for the fleet
 
-The [fleet](sys.md) reads a `via = "flick"` machine through that Mac's Flick, so the network access works the other way round from the setup below. The Mac that shows the fleet (the laptop) is the peer, and the Mac it reads (mbp-server) is the host. On mbp-server:
+The [fleet](sys.md) reads a `via = "flick"` machine through that Mac's Flick, so the network access works the other way round from the setup below. The Mac that shows the fleet (the laptop) is the peer, and the Mac it reads (my-server) is the host. On my-server:
 
 ```toml
 [remote]
 peers = ["my-macbook-pro"]   # the laptop's Tailscale machine name (`tailscale status`)
 ```
 
-Then reload and run `flick remote on` there once (the switch survives restarts). mbp-server's Flick must be new enough to have `sys snapshot`. Until then, or while its network access is off, the laptop falls back to ssh when the machine has `ssh` set. When one `config.toml` is shared between both Macs, list both names (`peers = ["mbp-server", "my-macbook-pro"]`), or give each Mac its own `peers` in its [per-host overlay](configuration.md#per-host-overlay): naming itself does no harm, and network access stays off on each Mac until `flick remote on` there. A peer only reads the fleet's data: `sys tail` and `sys restart` are refused over the network, and the laptop runs them over ssh.
+Then reload and run `flick remote on` there once (the switch survives restarts). my-server's Flick must be new enough to have `sys snapshot`. Until then, or while its network access is off, the laptop falls back to ssh when the machine has `ssh` set. When one `config.toml` is shared between both Macs, list both names (`peers = ["my-server", "my-macbook-pro"]`), or give each Mac its own `peers` in its [per-host overlay](configuration.md#per-host-overlay): naming itself does no harm, and network access stays off on each Mac until `flick remote on` there. A peer only reads the fleet's data: `sys tail` and `sys restart` are refused over the network, and the laptop runs them over ssh.
 
 ## Setup and manual tests
 
@@ -74,7 +74,7 @@ Nothing here runs by itself: do each step by hand, on the installed Flick.app, a
 to `src/control/net.rs`, `src/control/tailscale.rs`, `src/modules/remote/` or `net_policy`.
 
 Names below: **host** is the Mac that runs Flick with network access on (its MagicDNS name is
-`<host>`); **peer** is the second Mac (here `mbp-server`), which needs only the `flick`
+`<host>`); **peer** is the second Mac (here `my-server`), which needs only the `flick`
 binary. Both must be in the same tailnet, and the Tailscale ACLs must let the peer reach the
 host on the port (default 7419).
 
@@ -84,12 +84,12 @@ On the host, in `~/.config/flick/config.toml`:
 
 ```toml
 [remote]
-peers = ["mbp-server"]
+peers = ["my-server"]
 ```
 
 Then **Reload Flick Config**. The peer's name is its Tailscale machine name (`tailscale
-status` on the host lists it). Case does not matter; `mbp-server` also matches
-`mbp-server.example.ts.net`.
+status` on the host lists it). Case does not matter; `my-server` also matches
+`my-server.example.ts.net`.
 
 To see what the host knows:
 
@@ -121,11 +121,11 @@ Turning access on or off is async: it asks Tailscale on a background thread. Rig
    `FLICK_HOST=<host> flick task ls` and `flick --host <host>:7419 --json herdr ls`. Each
    prints what a remote caller gets on the host (compare with
    `FLICK_REMOTE=1 flick task ls` there) and exits 0. On the host, `remote status` shows
-   `last connection: mbp-server (<peer ip>) allowed <n>s ago`.
-5. **Refused peer.** Remove `mbp-server` from `peers` (keep another name) and reload. On the
+   `last connection: my-server (<peer ip>) allowed <n>s ago`.
+5. **Refused peer.** Remove `my-server` from `peers` (keep another name) and reload. On the
    peer, `flick --host <host> task ls` prints `flick: Flick closed the connection` and exits
-   1; no reply comes. On the host, `remote status` shows `last connection: mbp-server (<ip>)
-   refused ...: mbp-server is not in [remote] peers`. Restore `peers`.
+   1; no reply comes. On the host, `remote status` shows `last connection: my-server (<ip>)
+   refused ...: my-server is not in [remote] peers`. Restore `peers`.
 6. **Refused verb.** From the peer, each of these prints `flick: <request>: not allowed over
    the network`, exits 1 and changes nothing on the host: `flick --host <host> reload`,
    `flick --host <host> remote off`, `flick --host <host> capture screen`,

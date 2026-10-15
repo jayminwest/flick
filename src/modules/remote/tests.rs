@@ -82,7 +82,7 @@ fn net(peers: &[&str], port: u16, events: bool) -> NetSettings {
     NetSettings { peers: peers.iter().map(|p| (*p).to_string()).collect(), port, events }
 }
 
-const PEERS: &str = "[remote]\npeers = [\"mbp-server\", \" \"]";
+const PEERS: &str = "[remote]\npeers = [\"my-server\", \" \"]";
 
 #[test]
 fn settings_default_and_validate() {
@@ -112,7 +112,7 @@ fn off_by_default_and_started_stops() {
     let text = run(&mut r, &s, &["status"]).unwrap();
     assert_eq!(
         text,
-        "network access: off\nlistening: not listening\npeers: mbp-server\nlast connection: none"
+        "network access: off\nlistening: not listening\npeers: my-server\nlast connection: none"
     );
     // Off: Wake and LauncherOpened leave it alone.
     event(&mut r, &s, Event::Wake);
@@ -125,14 +125,14 @@ fn off_by_default_and_started_stops() {
 #[test]
 fn on_off_apply_and_persist() {
     let s = store();
-    let mut r = remote("[remote]\npeers = [\"mbp-server\"]\nport = 9000");
+    let mut r = remote("[remote]\npeers = [\"my-server\"]\nport = 9000");
     event(&mut r, &s, Event::Started);
     applied();
     assert_eq!(
         run(&mut r, &s, &["on"]).unwrap(),
         "Network access on · listening on 100.101.102.103:9000"
     );
-    assert_eq!(applied(), [Some(net(&["mbp-server"], 9000, false))]);
+    assert_eq!(applied(), [Some(net(&["my-server"], 9000, false))]);
     assert!(s.network_on());
     let status = run(&mut r, &s, &["status"]).unwrap();
     assert!(
@@ -141,9 +141,9 @@ fn on_off_apply_and_persist() {
     );
 
     // A restart reads the switch back.
-    let mut again = remote("[remote]\npeers = [\"mbp-server\"]\nport = 9000");
+    let mut again = remote("[remote]\npeers = [\"my-server\"]\nport = 9000");
     event(&mut again, &s, Event::Started);
-    assert_eq!(applied(), [Some(net(&["mbp-server"], 9000, false))]);
+    assert_eq!(applied(), [Some(net(&["my-server"], 9000, false))]);
 
     assert_eq!(run(&mut r, &s, &["off"]).unwrap(), "Network access off");
     assert_eq!(applied(), [None]);
@@ -174,11 +174,11 @@ fn reload_applies_only_changes() {
     s.set_network_on(true);
     let mut r = remote(PEERS);
     event(&mut r, &s, Event::Started);
-    assert_eq!(applied(), [Some(net(&["mbp-server"], DEFAULT_PORT, false))]);
+    assert_eq!(applied(), [Some(net(&["my-server"], DEFAULT_PORT, false))]);
     configure(&mut r, PEERS).unwrap();
     assert!(applied().is_empty(), "same settings: no restart");
-    configure(&mut r, "[remote]\npeers = [\"mbp-server\"]\nevents = true").unwrap();
-    assert_eq!(applied(), [Some(net(&["mbp-server"], DEFAULT_PORT, true))]);
+    configure(&mut r, "[remote]\npeers = [\"my-server\"]\nevents = true").unwrap();
+    assert_eq!(applied(), [Some(net(&["my-server"], DEFAULT_PORT, true))]);
     configure(&mut r, "").unwrap();
     assert_eq!(applied(), [None]);
     assert!(configure(&mut r, "[remote]\nport = 0").is_err());
@@ -208,7 +208,7 @@ fn apply_errors_show_and_retry_on_wake() {
     applied();
     FAIL.with(|f| *f.borrow_mut() = None);
     event(&mut r, &s, Event::Wake);
-    assert_eq!(applied(), [Some(net(&["mbp-server"], DEFAULT_PORT, false))]);
+    assert_eq!(applied(), [Some(net(&["my-server"], DEFAULT_PORT, false))]);
     assert!(!run(&mut r, &s, &["status"]).unwrap().contains("error:"));
     // Listening: LauncherOpened does not restart it.
     event(&mut r, &s, Event::LauncherOpened);
@@ -242,8 +242,8 @@ fn status_reports_the_last_connection_and_errors() {
     };
     let cases = [
         (
-            last(Some("mbp-server"), TS - 5, true, None),
-            "mbp-server (100.101.102.103) allowed 5s ago",
+            last(Some("my-server"), TS - 5, true, None),
+            "my-server (100.101.102.103) allowed 5s ago",
         ),
         (
             last(Some("phone"), TS - 120, false, Some("not in peers")),
@@ -272,7 +272,7 @@ fn status_reports_the_last_connection_and_errors() {
 #[test]
 fn status_json() {
     let s = store();
-    let mut r = remote("[remote]\npeers = [\"mbp-server\"]\nevents = true");
+    let mut r = remote("[remote]\npeers = [\"my-server\"]\nevents = true");
     event(&mut r, &s, Event::Started);
     with_cx(&s, false, false, |cx| r.command(&["on".into()], cx)).unwrap();
     let text = with_cx(&s, true, true, |cx| r.command(&["status".into()], cx)).unwrap();
@@ -280,7 +280,7 @@ fn status_json() {
     assert_eq!(
         v,
         serde_json::json!({
-            "on": true, "port": DEFAULT_PORT, "events": true, "peers": ["mbp-server"],
+            "on": true, "port": DEFAULT_PORT, "events": true, "peers": ["my-server"],
             "listening": [format!("100.101.102.103:{DEFAULT_PORT}")], "last": null, "error": null,
         })
     );
@@ -330,7 +330,7 @@ fn the_root_item_toggles() {
     assert!(matches!(toggle(&mut r), Outcome::Stay(Some(t)) if t.starts_with("Network access on")));
     assert_eq!(item(&mut r).title, "Turn Off Network Access");
     assert!(matches!(toggle(&mut r), Outcome::Stay(Some(t)) if t == "Network access off"));
-    assert_eq!(applied(), [Some(net(&["mbp-server"], DEFAULT_PORT, false)), None]);
+    assert_eq!(applied(), [Some(net(&["my-server"], DEFAULT_PORT, false)), None]);
     let other = ItemId::new(ID, "other");
     assert!(matches!(with_cx(&s, false, false, |cx| r.activate(&other, cx)), Outcome::Stay(None)));
 }

@@ -58,24 +58,24 @@ hotkey = "alt+shift+Space"
 ```toml
 # config.my-macbook-pro.toml (laptop only)
 [kota]
-machine = "mbp-server"
+machine = "my-server"
 hotkey = "cmd+ctrl+alt+shift+KeyO"
 
 [dictation]
 engine = "parakeet"
 
 [[sys.machine]]
-name = "mbp-server"
+name = "my-server"
 via = "flick"
-host = "mbp-server"
-ssh = "me@mbp-server"
+host = "my-server"
+ssh = "me@my-server"
 
 [remote]
-peers = ["mbp-server"]
+peers = ["my-server"]
 ```
 
 ```toml
-# config.mbp-server.toml (server only)
+# config.my-server.toml (server only)
 [remote]
 peers = ["my-macbook-pro"]
 

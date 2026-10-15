@@ -6,7 +6,7 @@ The `script` module runs shell commands from root search. It is the first step t
 [[script.commands]]
 name = "Ask KOTA"
 keyword = "k"
-shell = "printf %s {query} | ssh -o BatchMode=yes -o ConnectTimeout=5 mbp-server .local/bin/kota-ask"
+shell = "printf %s {query} | ssh -o BatchMode=yes -o ConnectTimeout=5 my-server .local/bin/kota-ask"
 
 [[script.commands]]
 name = "Sleep Display"

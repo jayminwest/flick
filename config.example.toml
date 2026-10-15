@@ -147,7 +147,7 @@
 # and show nothing for it.
 #[kota]
 # herdr's saved machine that runs KOTA; "local" (or this Mac's host name) is this Mac.
-#machine = "mbp-server"
+#machine = "my-server"
 # KOTA's working directory there: the KOTA pane is agent "claude" in it.
 #cwd = "/Users/me/kota"
 # When several panes match, the one with this herdr pane name wins; "" for none.
@@ -155,9 +155,9 @@
 # The herdr CLI: a name on PATH (then /opt/homebrew/bin) or a path.
 #herdr = "herdr"
 # kota-dash: its /ok checks (one JSON object of booleans) mark KOTA degraded.
-#dash = "https://mbp-server.example.ts.net:8310"
+#dash = "https://my-server.example.ts.net:8310"
 # Quick ask: the ssh target, and kota-ask on it (relative to its home).
-#ssh = "me@mbp-server"
+#ssh = "me@my-server"
 #kota_ask = ".dotfiles/home/.local/bin/kota-ask"
 # Seconds between checks (15 s while KOTA works); 0: only on demand. 0 or at least 15.
 #poll_secs = 60
@@ -211,7 +211,7 @@
 # is removed after each request, never from its arguments. Example:
 #[[llm.servers]]
 #name = "mlx"
-#url = "https://mac-pro.example.ts.net:11234"
+#url = "https://my-desktop.example.ts.net:11234"
 #private = false
 #api_key = ""
 
@@ -269,12 +269,12 @@
 # dash: an http(s) dashboard URL (Open Dash). Both are in the machine's cmd+K menu.
 # Example:
 #[[sys.machine]]
-#name = "mac-pro"
+#name = "my-desktop"
 #via = "ssh"
-#host = "mac-pro"
-#ssh = "me@mac-pro"
-#vnc = "vnc://mac-pro"
-#dash = "http://mac-pro:8080/"
+#host = "my-desktop"
+#ssh = "me@my-desktop"
+#vnc = "vnc://my-desktop"
+#dash = "http://my-desktop:8080/"
 # A check of a machine with ssh, keys as in [[sys.service]] but no "command": launchd and
 # process run inside the ssh call, http and tcp from this Mac. A via = "flick" machine
 # with ssh may list its services here too: they are checked when it falls back to ssh, and
@@ -283,7 +283,7 @@
 #[[sys.machine.service]]
 #name = "ollama"
 #kind = "tcp"
-#target = "mac-pro:11434"
+#target = "my-desktop:11434"
 #warn = 200
 #fail = 1000
 #log = "~/.ollama/logs/server.log"
@@ -464,7 +464,7 @@
 # stdin (20 s budget). Exit 0: the card waits for KOTA's update; 2: KOTA rejected it (last
 # stderr line shown); anything else: an error on the card. Unset (empty) by default: presses
 # show an error. Example:
-#action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
+#action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@my-server", ".dotfiles/home/.local/bin/kota-ask"]
 # Seconds a sent press waits for KOTA to update the card before it shows "No update from
 # KOTA"; 0 waits forever.
 #pending_timeout_secs = 120
@@ -477,7 +477,7 @@
 #chat_hotkey = "cmd+ctrl+alt+shift+KeyJ"
 # Where a chat question goes: the text on stdin to "ssh <kota_host> <kota_ask> --id <req>
 # --thread <t>" (20 s budget). kota_ask is relative to that host's home.
-#kota_host = "me@mbp-server"
+#kota_host = "me@my-server"
 #kota_ask = ".dotfiles/home/.local/bin/kota-ask"
 # Context chips: summoning the chat window attaches the app in front, its window title and
 # its selected text (Accessibility; never the clipboard), each a chip you can click off.
@@ -493,7 +493,7 @@
 # reload, rebuild, capture, dictate, fire keys or edit config. See docs/remote.md.
 #[remote]
 # Tailscale machine names allowed to connect; none by default. Example:
-#peers = ["mbp-server"]
+#peers = ["my-server"]
 # The TCP port.
 #port = 7419
 # Let peers stream events ("flick --host <mac> events").

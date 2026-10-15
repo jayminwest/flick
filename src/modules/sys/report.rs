@@ -67,7 +67,7 @@ pub fn snapshot_text(snap: &Snapshot, error: Option<&str>, services: &[Entry], n
     lines.join("\n")
 }
 
-/// `mbp-server · up 3d 13h · read 4s ago`.
+/// `my-server · up 3d 13h · read 4s ago`.
 pub fn head(snap: &Snapshot, now: u64) -> String {
     let mut head = vec![snap.host.clone().unwrap_or_else(|| "this Mac".into())];
     if let Some(up) = snap.uptime_secs {

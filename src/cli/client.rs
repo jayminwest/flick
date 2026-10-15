@@ -253,8 +253,8 @@ mod tests {
     #[test]
     fn host_specs_default_the_port_and_bracket_ipv6() {
         let ok = |name: &str, port| Ok(Host { name: name.into(), port });
-        assert_eq!(Host::parse("mbp-server"), ok("mbp-server", DEFAULT_PORT));
-        assert_eq!(Host::parse("mbp-server:9000"), ok("mbp-server", 9000));
+        assert_eq!(Host::parse("my-server"), ok("my-server", DEFAULT_PORT));
+        assert_eq!(Host::parse("my-server:9000"), ok("my-server", 9000));
         assert_eq!(Host::parse("100.64.0.1:1"), ok("100.64.0.1", 1));
         assert_eq!(Host::parse("fd7a:115c:a1e0::1"), ok("fd7a:115c:a1e0::1", DEFAULT_PORT));
         assert_eq!(Host::parse("[fd7a::1]"), ok("fd7a::1", DEFAULT_PORT));

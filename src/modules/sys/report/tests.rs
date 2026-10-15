@@ -28,7 +28,7 @@ fn snapshot_json_is_the_peer_contract() {
     let v = snapshot_json(&snap, None, &entries(), 1_004);
     let want = serde_json::json!({
         "schema": 1,
-        "host": "mbp-server",
+        "host": "my-server",
         "cpu_load": [1.42, 2.06, 2.42],
         "ncpu": 11,
         "mem_total": 19_327_352_832_u64,
@@ -75,7 +75,7 @@ fn services_json_lists_every_service() {
 #[test]
 fn snapshot_text_reads_like_a_status_line() {
     let snap = parse(SERVER, 1_000);
-    let want = "mbp-server · up 3d 13h · read 4s ago\n\
+    let want = "my-server · up 3d 13h · read 4s ago\n\
                 load     1.42 2.06 2.42 · 11 CPUs\n\
                 memory   18.0 GiB · 73% free\n\
                 disk     / 2% used · 816.5 GiB free\n\
@@ -91,7 +91,7 @@ fn snapshot_text_skips_what_the_probe_missed() {
     let bare = Snapshot { at: 100, ..Snapshot::default() };
     assert_eq!(snapshot_text(&bare, Some("probe: no output"), &[], 100), "this Mac · read 0s ago\nbattery  none\nlast probe failed: probe: no output");
     let hot = Snapshot {
-        host: Some("mac-pro".into()),
+        host: Some("my-desktop".into()),
         mem_free_pct: Some(40),
         uptime_secs: Some(7_500),
         battery: Some(Battery { percent: Some(85), state: Some("discharging".into()), source: None, remaining_mins: Some(252) }),
@@ -100,7 +100,7 @@ fn snapshot_text_skips_what_the_probe_missed() {
         disks: vec![crate::modules::sys::probe::Disk { mount: "/".into(), device: "d".into(), total: 1, used: 1, avail: 512 * 1024 * 1024, used_pct: None }],
         ..Snapshot::default()
     };
-    let want = "mac-pro · up 2h 5m · read 1m ago\n\
+    let want = "my-desktop · up 2h 5m · read 1m ago\n\
                 load     1.00 0.50 0.25\n\
                 memory   40% free\n\
                 disk     / 512.0 MiB free\n\

@@ -174,11 +174,11 @@ fn no_peers_or_no_tailscale_means_no_listener() {
 #[test]
 fn an_allowed_peer_is_served_as_a_remote_caller() {
     static HUB: Hub = Hub::new();
-    let net = net(Ok(vec!["mbp-server", "mbp-server.tail1.ts.net."]), &HUB);
-    let status = net.sync(Some(settings(&["MBP-Server"], false))).unwrap();
+    let net = net(Ok(vec!["my-server", "my-server.tail1.ts.net."]), &HUB);
+    let status = net.sync(Some(settings(&["My-Server"], false))).unwrap();
     assert_eq!(status.listening.len(), 1);
     assert!(status.listening[0].ip().is_loopback());
-    assert_eq!(status.peers, ["MBP-Server"]);
+    assert_eq!(status.peers, ["My-Server"]);
     assert_eq!(status.error, None);
 
     let mut c = connect(&status);
@@ -192,7 +192,7 @@ fn an_allowed_peer_is_served_as_a_remote_caller() {
         "{\"error\":\"events: not allowed over the network\"}\n"
     );
     let last = net.status().last.unwrap();
-    assert_eq!(last.name.as_deref(), Some("mbp-server"));
+    assert_eq!(last.name.as_deref(), Some("my-server"));
     assert!(last.ip.is_loopback());
     assert!(last.allowed);
     assert_eq!(last.reason, None);
@@ -204,7 +204,7 @@ fn an_allowed_peer_is_served_as_a_remote_caller() {
 fn an_unknown_peer_or_a_failed_whois_is_closed_before_any_request() {
     static HUB: Hub = Hub::new();
     let other = net(Ok(vec!["laptop"]), &HUB);
-    let status = other.sync(Some(settings(&["mbp-server"], false))).unwrap();
+    let status = other.sync(Some(settings(&["my-server"], false))).unwrap();
     assert!(closed_unanswered(&mut connect(&status)));
     let last = other.status().last.unwrap();
     assert_eq!(last.name.as_deref(), Some("laptop"));
@@ -217,7 +217,7 @@ fn an_unknown_peer_or_a_failed_whois_is_closed_before_any_request() {
         (Ok(vec![]), "peer is not in [remote] peers"),
     ] {
         let failing = net(whois, &HUB);
-        let status = failing.sync(Some(settings(&["mbp-server"], false))).unwrap();
+        let status = failing.sync(Some(settings(&["my-server"], false))).unwrap();
         assert!(closed_unanswered(&mut connect(&status)));
         let last = failing.status().last.unwrap();
         assert_eq!((last.allowed, last.reason.as_deref()), (false, Some(reason)));

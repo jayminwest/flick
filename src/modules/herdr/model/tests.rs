@@ -163,13 +163,13 @@ fn ignores_malformed_events() {
 
 #[test]
 fn orders_waiting_first_then_most_recent() {
-    let mut fleet = Fleet::new(["local", "mbp-server"]);
-    fleet.apply_list("mbp-server", vec![agent("mbp-server", "a", Status::Blocked)], 10);
+    let mut fleet = Fleet::new(["local", "my-server"]);
+    fleet.apply_list("my-server", vec![agent("my-server", "a", Status::Blocked)], 10);
     fleet.apply_list("local", listed("local"), 20);
     // local blocked (newer) before mbp blocked; then done, working, unknown.
     assert_eq!(
         order(&fleet),
-        ["local/w1:p2", "mbp-server/a", "local/w2:p1", "local/w1:p1", "local/w2:p2"]
+        ["local/w1:p2", "my-server/a", "local/w2:p1", "local/w1:p1", "local/w2:p2"]
     );
     // Same time and status: higher seq first, then machine order, then pane id.
     let mut tie = Fleet::new(["b", "a"]);

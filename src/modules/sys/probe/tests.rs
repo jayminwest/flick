@@ -1,7 +1,7 @@
 use super::*;
 
-/// Real output of `PROBE` on mbp-server (a laptop on AC power, macOS 27.0.1), 2026-10-09.
-const SERVER: &str = include_str!("../fixtures/probe_mbp_server.txt");
+/// Real output of `PROBE` on my-server (a laptop on AC power, macOS 27.0.1), 2026-10-09.
+const SERVER: &str = include_str!("../fixtures/probe_my_server.txt");
 /// A desktop Mac without a battery under thermal pressure, written from pmset's documented
 /// output (`Thermal warning level set to N.`, `CPU_Speed_Limit = N`).
 const DESKTOP: &str = include_str!("../fixtures/probe_desktop.txt");
@@ -23,7 +23,7 @@ fn the_fixtures_follow_the_script() {
 #[test]
 fn reads_a_laptop_on_ac_power() {
     let s = parse(SERVER, 1_791_615_040);
-    assert_eq!(s.host.as_deref(), Some("mbp-server"));
+    assert_eq!(s.host.as_deref(), Some("my-server"));
     assert!(close(s.cpu_load.unwrap(), [1.42, 2.06, 2.42]));
     assert_eq!(s.ncpu, Some(11));
     assert_eq!(s.mem_total, Some(19_327_352_832));
@@ -68,7 +68,7 @@ fn reads_a_laptop_on_ac_power() {
 #[test]
 fn reads_a_desktop_without_a_battery() {
     let s = parse(DESKTOP, 5);
-    assert_eq!(s.host.as_deref(), Some("mac-pro"));
+    assert_eq!(s.host.as_deref(), Some("my-desktop"));
     assert_eq!(s.ncpu, Some(24));
     assert_eq!(s.disks.len(), 2);
     assert_eq!(s.disks[1].used_pct, Some(51));

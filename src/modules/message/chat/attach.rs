@@ -1,4 +1,4 @@
-//! Screenshots for KOTA (flick-2943): where one goes on mbp-server and the one ssh call that
+//! Screenshots for KOTA (flick-2943): where one goes on my-server and the one ssh call that
 //! puts it there.
 //!
 //! `[message] attach_dir` (default `DEFAULT_DIR`) is a path relative to the remote home,

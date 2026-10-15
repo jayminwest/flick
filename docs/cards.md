@@ -130,7 +130,7 @@ The user's Mac config holds the command (unset, a press shows "Set [message] act
 
 ```toml
 [message]
-action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
+action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@my-server", ".dotfiles/home/.local/bin/kota-ask"]
 pending_timeout_secs = 120
 ```
 
@@ -262,15 +262,15 @@ An error with a retry.
 
 ## Manual end-to-end check
 
-Run by Jaymin with the laptop awake, `[remote]` on there with mbp-server in `peers`, and `action_command` set as above.
+Run by Jaymin with the laptop awake, `[remote]` on there with my-server in `peers`, and `action_command` set as above.
 
-1. On mbp-server: `flick --host my-macbook-pro message card spec | head -1` prints this page's title (exit 0).
-2. On mbp-server: post the approval example with `printf %s "$json" | flick --host my-macbook-pro --json message card post --stdin`. The reply is `{"ok":{"id":"pr-128","replaced":false,"warnings":[]}}`; the card shows top right on the laptop without taking focus; `flick --host my-macbook-pro message card ls` lists it as `open`.
+1. On my-server: `flick --host my-macbook-pro message card spec | head -1` prints this page's title (exit 0).
+2. On my-server: post the approval example with `printf %s "$json" | flick --host my-macbook-pro --json message card post --stdin`. The reply is `{"ok":{"id":"pr-128","replaced":false,"warnings":[]}}`; the card shows top right on the laptop without taking focus; `flick --host my-macbook-pro message card ls` lists it as `open`.
 3. Post `{"id":"x"}` the same way: exit 1, `invalid card: card needs a non-empty title string`, nothing shows. Stop Flick or use a wrong host: exit 3.
 4. On the laptop, click **Open PR**: the browser opens, the card says "Opened the link" and stays.
-5. Press **Approve** (or `card_hotkey` then ⌘↵): the card shows "Sent to the agent…". On mbp-server, `kota-ask` got `--action --card pr-128 --action-id approve` and `{}` on stdin, and KOTA got a tick.
+5. Press **Approve** (or `card_hotkey` then ⌘↵): the card shows "Sent to the agent…". On my-server, `kota-ask` got `--action --card pr-128 --action-id approve` and `{}` on stdin, and KOTA got a tick.
 6. KOTA re-posts the `done` card: it redraws in place, "Done", no sound, and hides after 20 s.
 7. Post the form example; pick Wed, tick sam, type a note, press **Book**: stdin holds `{"note":"…","slot":"wed-14","with":["sam"]}`.
 8. Press a reply action and have KOTA not answer: after 120 s the card shows "No update from the agent" and the buttons come back. Make `kota-ask` print a reason to stderr and exit 2: the card shows `The agent rejected it: <reason>`.
-9. Post a card with `{"do":{"flick":["script","run","x"]}}` from mbp-server: its button is disabled with `flick: script run: not allowed over the network`. A `shell` action shows the exact command and runs only on Run.
+9. Post a card with `{"do":{"flick":["script","run","x"]}}` from my-server: its button is disabled with `flick: script run: not allowed over the network`. A `shell` action shows the exact command and runs only on Run.
 10. `flick --host my-macbook-pro message card press pr-128 approve` is refused (exit 1); `message card dismiss --all` clears the corner.

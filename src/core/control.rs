@@ -120,8 +120,8 @@ pub fn is_tailnet(ip: IpAddr) -> bool {
 
 /// Whether a peer that `tailscale whois` knows by `names` (its `ComputedName`,
 /// Hostinfo.Hostname and Node.Name) is one of the allowed `peers`. Case-insensitive; a name
-/// also matches by its first DNS label, so `mbp-server.tail1.ts.net.` matches peer
-/// `mbp-server`. Empty names and peers match nothing.
+/// also matches by its first DNS label, so `my-server.tail1.ts.net.` matches peer
+/// `my-server`. Empty names and peers match nothing.
 pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
     let candidates = names.iter().flat_map(|n| {
         let full = n.trim_end_matches('.');
@@ -358,23 +358,23 @@ mod tests {
 
     #[test]
     fn peers_match_any_name_case_insensitively() {
-        let peers = words(&["mbp-server", "Studio.tail1.ts.net"]);
+        let peers = words(&["my-server", "Studio.tail1.ts.net"]);
         let yes: [&[&str]; 5] = [
-            &["mbp-server"],
-            &["MBP-Server"],
-            &["other", "mbp-server.tail1.ts.net."],
+            &["my-server"],
+            &["My-Server"],
+            &["other", "my-server.tail1.ts.net."],
             &["studio.TAIL1.ts.net."],
-            &["", "x", "mbp-server"],
+            &["", "x", "my-server"],
         ];
         for names in yes {
             assert!(peer_matches(&words(names), &peers), "{names:?}");
         }
         // A suffixed ComputedName, another tailnet's label or a prefix do not match.
-        let no: [&[&str]; 5] = [&[], &[""], &["mbp-server-1"], &["studio"], &["mbp"]];
+        let no: [&[&str]; 5] = [&[], &[""], &["my-server-1"], &["studio"], &["mbp"]];
         for names in no {
             assert!(!peer_matches(&words(names), &peers), "{names:?}");
         }
-        assert!(!peer_matches(&words(&["mbp-server"]), &[]));
+        assert!(!peer_matches(&words(&["my-server"]), &[]));
         assert!(!peer_matches(&words(&["", "."]), &words(&[""])));
     }
 
@@ -464,7 +464,7 @@ mod tests {
             r#"{"listening":[],"peers":[],"last":null,"error":null}"#
         );
         let last = LastConn {
-            name: Some("mbp-server".into()),
+            name: Some("my-server".into()),
             ip: "100.64.0.2".parse().unwrap(),
             at: 7,
             allowed: false,
@@ -476,7 +476,7 @@ mod tests {
             last: Some(last),
             error: None,
         };
-        let want = r#"{"listening":["100.64.0.1:7419"],"peers":["x"],"last":{"name":"mbp-server","ip":"100.64.0.2","at":7,"allowed":false,"reason":"not a peer"},"error":null}"#;
+        let want = r#"{"listening":["100.64.0.1:7419"],"peers":["x"],"last":{"name":"my-server","ip":"100.64.0.2","at":7,"allowed":false,"reason":"not a peer"},"error":null}"#;
         assert_eq!(serde_json::to_string(&status).unwrap(), want);
         assert_eq!(DEFAULT_PORT, 7419);
     }

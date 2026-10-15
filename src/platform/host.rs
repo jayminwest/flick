@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-/// This Mac's Bonjour name as `scutil --get LocalHostName` prints it (`mbp-server`,
+/// This Mac's Bonjour name as `scutil --get LocalHostName` prints it (`my-server`,
 /// `My-MacBook-Pro`), else `hostname -s`. `None` when neither answers.
 pub fn local_host_name() -> Option<String> {
     let run = |program: &str, args: &[&str]| {

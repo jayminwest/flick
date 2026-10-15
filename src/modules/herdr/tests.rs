@@ -50,7 +50,7 @@ fn settings_have_defaults_and_reject_bad_values() {
     assert!(bad("[herdr]\nnotify_typo = 1").starts_with("[herdr]: unknown field"));
     assert_eq!(bad("[herdr]\nnotify = [\"working\"]"), "[herdr]: notify takes \"blocked\" and \"done\", not \"working\"");
     // The commented example in DEFAULT_CONFIG (config.rs).
-    let example = "[herdr]\nmachines = [\"local\", \"mbp-server\"]\nremote_refresh_secs = 60\nterminal = \"WezTerm\"\n\
+    let example = "[herdr]\nmachines = [\"local\", \"my-server\"]\nremote_refresh_secs = 60\nterminal = \"WezTerm\"\n\
                    hotkey = \"cmd+ctrl+alt+shift+KeyA\"\npreview_lines = 6\nnotify = [\"blocked\", \"done\"]";
     assert_eq!(configured(example).unwrap().settings.notify, ["blocked", "done"]);
     let h = configured("[herdr]\nhotkey = \"cmd+shift+A\"").unwrap();

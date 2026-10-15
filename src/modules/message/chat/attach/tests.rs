@@ -32,9 +32,9 @@ fn screenshots_are_named_by_request_and_number() {
 
 #[test]
 fn the_upload_writes_and_prunes_in_one_call() {
-    let argv = upload_argv("me@mbp-server", "shots/", "k1", 1).unwrap();
+    let argv = upload_argv("me@my-server", "shots/", "k1", 1).unwrap();
     let want = [
-        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "me@mbp-server",
+        "/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "me@my-server",
         "mkdir -p shots && cat > shots/k1-1.png && find shots -type f -name '*.png' -mtime +7 -delete",
     ];
     assert_eq!(argv, want);

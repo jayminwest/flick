@@ -130,5 +130,5 @@ Unit tests cover the session, the recorder and engine runs with fake programs, a
 - [ ] **Type mode.** Set `insert = "type"` and reload. Dictation still works in TextEdit, and the clipboard is never touched. Set it back.
 - [ ] **No leftovers.** After a normal run, a cancel and an engine error (set `whisper_bin` to `/usr/bin/false`), `ls ~/Library/Caches/Flick/dictation` is empty.
 - [ ] **No transcript in logs.** Flick's stderr (the launchd agent's log file, or the terminal when you start Flick by hand) has `flick: dictation: ...` lines with durations and character counts only, never the spoken words.
-- [ ] **Network refusal.** From mbp-server: `flick --host my-macbook-pro dictation start` prints `flick: dictation start: not allowed over the network` and exits 1. The laptop's microphone indicator does not light.
+- [ ] **Network refusal.** From my-server: `flick --host my-macbook-pro dictation start` prints `flick: dictation start: not allowed over the network` and exits 1. The laptop's microphone indicator does not light.
 - [ ] **Chord overlap.** Hold `right_cmd+right_shift+right_alt`: note whether KOTA push-to-talk fires too (it is expected to).

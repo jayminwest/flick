@@ -167,7 +167,7 @@ fn machine_view_has_facts_and_services() {
     let seen = seen(&f, &local, 104, 45);
     let (items, footer) = machine_items(Some(&seen[0]), 104);
     assert_eq!(footer, "laptop · fresh via local  ·  esc to go back");
-    assert_eq!(items[0].title, "fresh · mbp-server · up 3d 13h · read 4s ago");
+    assert_eq!(items[0].title, "fresh · my-server · up 3d 13h · read 4s ago");
     assert_eq!((items[0].id.as_str(), items[0].verb), ("sys:head", "Show Fleet"));
     let facts: Vec<(&str, &str)> = items[1..].iter().map(|i| (i.subtitle.as_str(), i.id.as_str())).collect();
     assert_eq!(facts[0], ("load", "sys:fact/0"));

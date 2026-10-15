@@ -1,6 +1,6 @@
 # System and fleet
 
-The `sys` module reports this Mac's health and the services it checks. It also shows a fleet of Macs in one launcher view, here the laptop, mbp-server and the Mac Pro. **Fleet** in root search lists each machine with its load, memory, disk, battery and age, and under it each service with ok, warn or fail. ⌘K on a machine opens Screen Sharing or its dashboard. ⌘K on a service tails its log or restarts it after a confirm.
+The `sys` module reports this Mac's health and the services it checks. It also shows a fleet of Macs in one launcher view, here the laptop, my-server and the Mac Pro. **Fleet** in root search lists each machine with its load, memory, disk, battery and age, and under it each service with ok, warn or fail. ⌘K on a machine opens Screen Sharing or its dashboard. ⌘K on a service tails its log or restarts it after a confirm.
 
 Nothing runs in the background by default. A check runs when you ask (`flick sys ...`), when the launcher opens, on wake, and every 15 s while the Fleet view shows. With `refresh_secs`, the fleet is also polled on a timer.
 
@@ -47,12 +47,12 @@ Each `[[sys.machine]]` table adds a machine to **Fleet**:
 refresh_secs = 0                 # 0 (default): no background polling; else at least 30
 
 [[sys.machine]]
-name = "mac-pro"                 # shown in the views; unique
+name = "my-desktop"                 # shown in the views; unique
 via = "ssh"                      # local | flick | ssh
-host = "mac-pro"                 # via = "flick": its Flick's name[:port]; default: name
-ssh = "me@mac-pro"           # an ssh destination: via = "ssh", and the fallback for via = "flick"
-vnc = "vnc://mac-pro"            # optional: Screen Sharing in its ⌘K menu
-dash = "http://mac-pro:8080/"    # optional: Open Dash in its ⌘K menu
+host = "my-desktop"                 # via = "flick": its Flick's name[:port]; default: name
+ssh = "me@my-desktop"           # an ssh destination: via = "ssh", and the fallback for via = "flick"
+vnc = "vnc://my-desktop"            # optional: Screen Sharing in its ⌘K menu
+dash = "http://my-desktop:8080/"    # optional: Open Dash in its ⌘K menu
 ```
 
 - **`via = "local"`** is this Mac: its own snapshot and its `[[sys.service]]` checks.
@@ -86,8 +86,8 @@ Tail and restart act only on services that this Mac's config defines: its own `[
 `sudo -n` never asks for a password, and Flick never types one. When sudo would need one, the restart fails with *sudo needs a password here; Flick never types one…* and nothing runs. To allow it, add a NOPASSWD rule for exactly that command on the Mac it runs on, with `sudo visudo -f /etc/sudoers.d/flick`:
 
 ```
-jaymin ALL=(root) NOPASSWD: /bin/launchctl kickstart -k system/homebrew.mxcl.ollama
-jaymin ALL=(root) NOPASSWD: /usr/bin/tail -n 100 -- /opt/homebrew/var/log/ollama.log
+me ALL=(root) NOPASSWD: /bin/launchctl kickstart -k system/homebrew.mxcl.ollama
+me ALL=(root) NOPASSWD: /usr/bin/tail -n 100 -- /opt/homebrew/var/log/ollama.log
 ```
 
 Without a rule, restart it in Terminal.
@@ -111,11 +111,11 @@ flick sys restart [<machine>] <service> --yes    # restarts it
 
 `sys snapshot`, `sys services` and `sys fleet` are read-only, so peers may ask them. That is how a `via = "flick"` fleet reads another Mac. A remote `sys fleet` gets the cache and starts no round, so a peer never makes this Mac ssh. `sys tail` and `sys restart` are refused over the network (`flick: sys restart: not allowed over the network`): they run code and read files. So is `sys window`: it pops a window. The fleet's own actions never go through a peer's Flick. They run here, or over ssh from here.
 
-## Fleet example: laptop, mbp-server, Mac Pro
+## Fleet example: laptop, my-server, Mac Pro
 
-The laptop shows the fleet. mbp-server runs Flick and checks its own KOTA services, many of them on loopback. The Mac Pro has no Flick and is read over ssh. Tailscale names: `my-macbook-pro`, `mbp-server`, and the Mac Pro at `100.64.0.20`.
+The laptop shows the fleet. my-server runs Flick and checks its own KOTA services, many of them on loopback. The Mac Pro has no Flick and is read over ssh. Tailscale names: `my-macbook-pro`, `my-server`, and the Mac Pro at `100.64.0.20`.
 
-`[[sys.machine]]` and `[[sys.service]]` belong to one Mac. If home-manager links one `config.toml` to every Mac, put them in each Mac's [per-host overlay](configuration.md#per-host-overlay) (`config.<host>.toml`), not in the shared file. Otherwise mbp-server would show the laptop's fleet with itself as `via = "local"`, and the laptop would check mbp-server's loopback ports. `[remote] peers` can be shared (list both Macs) or go in the overlays.
+`[[sys.machine]]` and `[[sys.service]]` belong to one Mac. If home-manager links one `config.toml` to every Mac, put them in each Mac's [per-host overlay](configuration.md#per-host-overlay) (`config.<host>.toml`), not in the shared file. Otherwise my-server would show the laptop's fleet with itself as `via = "local"`, and the laptop would check my-server's loopback ports. `[remote] peers` can be shared (list both Macs) or go in the overlays.
 
 **Laptop** (`my-macbook-pro`): the fleet.
 
@@ -125,14 +125,14 @@ name = "mbp"
 via = "local"
 
 [[sys.machine]]
-name = "mbp-server"
+name = "my-server"
 via = "flick"
-host = "mbp-server"
-ssh = "me@mbp-server"        # fallback while its Flick is old or off, and for tail/restart
-vnc = "vnc://mbp-server"
-dash = "https://mbp-server.example.ts.net:8310"
+host = "my-server"
+ssh = "me@my-server"        # fallback while its Flick is old or off, and for tail/restart
+vnc = "vnc://my-server"
+dash = "https://my-server.example.ts.net:8310"
 
-# What the laptop may tail and restart on mbp-server, over ssh. Same names as mbp-server's
+# What the laptop may tail and restart on my-server, over ssh. Same names as my-server's
 # own [[sys.service]] below, so the rows its Flick reports get these actions.
 [[sys.machine.service]]
 name = "kota-dash"
@@ -163,7 +163,7 @@ log = "~/Library/Logs/kota-life-ops.log"
 restart = true
 
 [[sys.machine]]
-name = "mac-pro"
+name = "my-desktop"
 via = "ssh"
 ssh = "me@100.64.0.20"
 vnc = "vnc://100.64.0.20"
@@ -197,10 +197,10 @@ warn = 200
 fail = 1000
 
 [remote]
-peers = ["mbp-server", "my-macbook-pro"]
+peers = ["my-server", "my-macbook-pro"]
 ```
 
-**mbp-server**: its own checks, reported to the laptop through its Flick.
+**my-server**: its own checks, reported to the laptop through its Flick.
 
 ```toml
 [[sys.service]]
@@ -262,10 +262,10 @@ target = "homebrew.mxcl.syncthing"
 log = "/opt/homebrew/var/log/syncthing.log"
 
 [remote]
-peers = ["mbp-server", "my-macbook-pro"]
+peers = ["my-server", "my-macbook-pro"]
 ```
 
-mbp-server then needs a Flick built with the `sys` module, its config reloaded, and `flick remote on` once (the switch persists). **Mac Pro**: nothing to install. The laptop needs key-based ssh to `me@100.64.0.20` (`ssh -o BatchMode=yes me@100.64.0.20 true` must succeed without a prompt).
+my-server then needs a Flick built with the `sys` module, its config reloaded, and `flick remote on` once (the switch persists). **Mac Pro**: nothing to install. The laptop needs key-based ssh to `me@100.64.0.20` (`ssh -o BatchMode=yes me@100.64.0.20 true` must succeed without a prompt).
 
 ## Manual checklist
 
@@ -273,21 +273,21 @@ Unit tests cover the probe parser, the check verdicts, the fleet model, the view
 
 - [ ] **Local snapshot.** `flick sys snapshot` prints the host, uptime, load, memory, disks, battery and thermal. `flick sys services` lists each `[[sys.service]]` with a verdict (or `no services (...)`).
 - [ ] **No fleet, no item.** With no `[[sys.machine]]`, root search has no **Fleet**, and `flick sys fleet` says `no machines (add [[sys.machine]] tables to config.toml)`.
-- [ ] **mbp-server via Flick.** On mbp-server: rebuild Flick, set `[remote] peers` to include `my-macbook-pro`, reload, `flick remote on`. On the laptop: `flick --host mbp-server --json sys snapshot` answers. `flick sys fleet` shows `fresh  mbp-server  flick  load ...`.
-- [ ] **Fallback to ssh.** On mbp-server, `flick remote off`. On the laptop, open **Fleet**: mbp-server still reads, now via `ssh`, and `flick sys fleet` shows a `note:` line with the reason. Turn it back on.
-- [ ] **Mac Pro via ssh.** `ssh -o BatchMode=yes me@100.64.0.20 true` succeeds with no prompt. **Fleet** shows mac-pro `fresh` with load, memory and disk, and its services: ollama, syncthing, mlx-serve, ollama-api.
-- [ ] **Unreachable machine.** Sleep or disconnect the Mac Pro. The Fleet view still opens at once. mac-pro turns `stale` with its last metrics and the ssh error (`down` if it never answered). Other machines are not slowed down.
+- [ ] **my-server via Flick.** On my-server: rebuild Flick, set `[remote] peers` to include `my-macbook-pro`, reload, `flick remote on`. On the laptop: `flick --host my-server --json sys snapshot` answers. `flick sys fleet` shows `fresh  my-server  flick  load ...`.
+- [ ] **Fallback to ssh.** On my-server, `flick remote off`. On the laptop, open **Fleet**: my-server still reads, now via `ssh`, and `flick sys fleet` shows a `note:` line with the reason. Turn it back on.
+- [ ] **Mac Pro via ssh.** `ssh -o BatchMode=yes me@100.64.0.20 true` succeeds with no prompt. **Fleet** shows my-desktop `fresh` with load, memory and disk, and its services: ollama, syncthing, mlx-serve, ollama-api.
+- [ ] **Unreachable machine.** Sleep or disconnect the Mac Pro. The Fleet view still opens at once. my-desktop turns `stale` with its last metrics and the ssh error (`down` if it never answered). Other machines are not slowed down.
 - [ ] **Polling cadence.** With `refresh_secs = 0` and the launcher closed, `flick sys fleet` ages grow (no background reads). With the Fleet view open, ages stay under about 15 s.
 - [ ] **Failing service.** Add a check that cannot pass (`name = "probe-fail"`, `kind = "tcp"`, `target = "127.0.0.1:1"`) to this Mac's `[[sys.service]]` and reload. Its row turns fail with a reason, and `flick sys fleet` lists it under the machine. Remove it.
-- [ ] **Screen Sharing and Open Dash.** ⌘K on mbp-server: **Screen Sharing** opens Screen Sharing to mbp-server, and **Open Dash** opens kota-dash. ⌘K on mac-pro: **Screen Sharing** connects to 100.64.0.20.
-- [ ] **Tail Log.** ⌘K on kota-mailwatch under mbp-server → **Tail Log** shows the last 100 lines of `~/Library/Logs/kota-mailwatch.log` there. **Tail Again** refreshes them. `flick sys tail mbp-server kota-mailwatch` prints the same.
-- [ ] **Restart with confirm.** ⌘K on syncthing under mac-pro → **Restart…** shows `ssh me@100.64.0.20 launchctl kickstart -k gui/$(id -u)/homebrew.mxcl.syncthing`. Esc cancels, and nothing restarts. ⌘↵ restarts it, and the footer says `Restarted syncthing on mac-pro`. Also try ollama: if launchctl answers that the service cannot be found in the GUI domain, ollama runs as a system daemon: set its `domain = "system"` (see **System daemons**).
-- [ ] **CLI restart needs --yes.** `flick sys restart mac-pro syncthing` prints the command and restarts nothing. `--yes` restarts it.
-- [ ] **No actions for peer-only services.** A service that only mbp-server's Flick reports (for example `kota-dash-ok`) has no **Tail Log** or **Restart…** in ⌘K.
-- [ ] **Network refusal.** From mbp-server: `flick --host my-macbook-pro sys fleet` answers from the cache. `flick --host my-macbook-pro sys restart mac-pro syncthing --yes` and `... sys tail mbp-server kota-dash` print `not allowed over the network` and exit 1.
+- [ ] **Screen Sharing and Open Dash.** ⌘K on my-server: **Screen Sharing** opens Screen Sharing to my-server, and **Open Dash** opens kota-dash. ⌘K on my-desktop: **Screen Sharing** connects to 100.64.0.20.
+- [ ] **Tail Log.** ⌘K on kota-mailwatch under my-server → **Tail Log** shows the last 100 lines of `~/Library/Logs/kota-mailwatch.log` there. **Tail Again** refreshes them. `flick sys tail my-server kota-mailwatch` prints the same.
+- [ ] **Restart with confirm.** ⌘K on syncthing under my-desktop → **Restart…** shows `ssh me@100.64.0.20 launchctl kickstart -k gui/$(id -u)/homebrew.mxcl.syncthing`. Esc cancels, and nothing restarts. ⌘↵ restarts it, and the footer says `Restarted syncthing on my-desktop`. Also try ollama: if launchctl answers that the service cannot be found in the GUI domain, ollama runs as a system daemon: set its `domain = "system"` (see **System daemons**).
+- [ ] **CLI restart needs --yes.** `flick sys restart my-desktop syncthing` prints the command and restarts nothing. `--yes` restarts it.
+- [ ] **No actions for peer-only services.** A service that only my-server's Flick reports (for example `kota-dash-ok`) has no **Tail Log** or **Restart…** in ⌘K.
+- [ ] **Network refusal.** From my-server: `flick --host my-macbook-pro sys fleet` answers from the cache. `flick --host my-macbook-pro sys restart my-desktop syncthing --yes` and `... sys tail my-server kota-dash` print `not allowed over the network` and exit 1.
 - [ ] **Herdr Agents.** The last row of **Fleet** opens the herdr agents view.
-- [ ] **Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**: the launcher hides and a window titled Fleet appears under the pointer with a bubble per machine; the app you were in stays active. Ages stay under about 15 s while it shows. Type `pro` + ↵: only mac-pro remains and a notice line shows the filter; ↵ on an empty field brings all back. ⌘R shows Refreshing… then Refreshed in the notice line, ahead of the filter. Esc hides it; reopen it and it keeps its size and place. `flick --host my-macbook-pro sys window` from mbp-server prints `not allowed over the network`.
-- [ ] **Fleet window actions.** With few machines, the bubbles sit at the top. ⌘K: a card shows under mbp-server and mac-pro. **Screen Sharing** on mac-pro opens Screen Sharing. **Tail kota-mailwatch** shows its last lines under mbp-server's card. **Restart syncthing…** on mac-pro shows the command with Cancel and Run; Cancel restarts nothing. ⌘K again hides the cards.
+- [ ] **Fleet window.** ⌘K on **Fleet** → **Open Fleet Window**: the launcher hides and a window titled Fleet appears under the pointer with a bubble per machine; the app you were in stays active. Ages stay under about 15 s while it shows. Type `pro` + ↵: only my-desktop remains and a notice line shows the filter; ↵ on an empty field brings all back. ⌘R shows Refreshing… then Refreshed in the notice line, ahead of the filter. Esc hides it; reopen it and it keeps its size and place. `flick --host my-macbook-pro sys window` from my-server prints `not allowed over the network`.
+- [ ] **Fleet window actions.** With few machines, the bubbles sit at the top. ⌘K: a card shows under my-server and my-desktop. **Screen Sharing** on my-desktop opens Screen Sharing. **Tail kota-mailwatch** shows its last lines under my-server's card. **Restart syncthing…** on my-desktop shows the command with Cancel and Run; Cancel restarts nothing. ⌘K again hides the cards.
 - [ ] **Restart toast.** Restart a service from the launcher's ⌘K or the window's card: a `Fleet` HUD card in the top right says `Restarted …` (or why not) and hides after about 6 s. `flick sys restart … --yes` shows no card.
 - [ ] **System daemon without NOPASSWD.** Set `domain = "system"` on a launch daemon whose command has no sudoers rule. Its row shows its state. **Restart…** shows `sudo -n launchctl kickstart -k system/<label>` with `launchd system · sudo -n`; Run fails at once with *sudo needs a password here…*; no password prompt appears and nothing restarts.
 - [ ] **System daemon with NOPASSWD.** Add the rule from **System daemons** for one daemon. Restart it: `Restarted …`. Tail a root-only log of it: the lines show, and the command shown is `sudo -n tail …`.

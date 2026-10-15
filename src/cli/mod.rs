@@ -314,9 +314,9 @@ mod tests {
 
     #[test]
     fn host_flag_sends_requests_and_events_to_that_flick_always_remote() {
-        let mbp = host("mbp-server", 7419);
+        let mbp = host("my-server", 7419);
         assert_eq!(
-            parsed(&["--host", "mbp-server", "task", "ls"]),
+            parsed(&["--host", "my-server", "task", "ls"]),
             to_host(&["task", "ls"], false, mbp.clone())
         );
         assert_eq!(
@@ -324,14 +324,14 @@ mod tests {
             to_host(&["task", "ls"], true, host("mbp", 9000))
         );
         assert_eq!(
-            parsed(&["--json", "--host", "mbp-server", "task", "ls"]),
+            parsed(&["--json", "--host", "my-server", "task", "ls"]),
             to_host(&["task", "ls"], true, mbp.clone())
         );
         assert_eq!(
-            parsed(&["--host", "mbp-server", "task", "ls", "--json"]),
+            parsed(&["--host", "my-server", "task", "ls", "--json"]),
             to_host(&["task", "ls"], true, mbp.clone())
         );
-        assert_eq!(parsed(&["--host", "mbp-server", "events"]), Command::Events(Some(mbp)));
+        assert_eq!(parsed(&["--host", "my-server", "events"]), Command::Events(Some(mbp)));
         // A missing, flag-like or bad spec, no command, or a command that runs here.
         for args in [
             &["--host"][..],
@@ -353,23 +353,23 @@ mod tests {
     #[test]
     fn flick_host_sends_requests_there_but_the_flag_wins() {
         let env = |args: &[&str], h| parsed_env(args, None, h);
-        let mbp = host("mbp-server", 7419);
+        let mbp = host("my-server", 7419);
         assert_eq!(
-            env(&["task", "ls"], Some("mbp-server")),
+            env(&["task", "ls"], Some("my-server")),
             to_host(&["task", "ls"], false, mbp.clone())
         );
-        assert_eq!(env(&["events"], Some("mbp-server")), Command::Events(Some(mbp)));
+        assert_eq!(env(&["events"], Some("my-server")), Command::Events(Some(mbp)));
         assert_eq!(
-            env(&["--host", "other:1", "task", "ls"], Some("mbp-server")),
+            env(&["--host", "other:1", "task", "ls"], Some("my-server")),
             to_host(&["task", "ls"], false, host("other", 1))
         );
         assert_eq!(env(&["task", "ls"], Some("")), request(&["task", "ls"], false));
         assert_eq!(env(&["task"], Some("bad:port")), Command::Usage);
         // Commands that run in this process ignore it.
-        assert_eq!(env(&[], Some("mbp-server")), Command::Launch);
-        assert_eq!(env(&["help"], Some("mbp-server")), Command::Help);
-        assert_eq!(env(&["snapshot"], Some("mbp-server")), Command::Snapshot(vec![]));
-        assert_eq!(env(&["--json"], Some("mbp-server")), Command::Usage);
+        assert_eq!(env(&[], Some("my-server")), Command::Launch);
+        assert_eq!(env(&["help"], Some("my-server")), Command::Help);
+        assert_eq!(env(&["snapshot"], Some("my-server")), Command::Snapshot(vec![]));
+        assert_eq!(env(&["--json"], Some("my-server")), Command::Usage);
     }
 
     #[test]

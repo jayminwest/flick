@@ -3,9 +3,9 @@
 # (flick-bcd7). Guide: docs/local-llm.md, "Verify private mode".
 #
 # Usage, on the laptop:
-#   docs/local-llm/verify-private.sh [--host mac-pro] [--no-remote] [--reuse] [--since-mins N]
+#   docs/local-llm/verify-private.sh [--host my-desktop] [--no-remote] [--reuse] [--since-mins N]
 # On the Mac Pro, for a complete scan of root-only logs:
-#   sudo bash verify-private.sh --here mac-pro [--since-mins N]
+#   sudo bash verify-private.sh --here my-desktop [--since-mins N]
 #
 # The script makes a random canary and you send it through Flick's private chat by hand.
 # Private chat has no CLI on purpose. The script then greps each location for the canary and
@@ -16,7 +16,7 @@
 # gets it on stdin. Avoid heredocs and here-strings in this file: bash writes those to temp files.
 #
 # Test overrides (point the scan at fake paths; never needed for a real run):
-#   FLICK_VERIFY_LAPTOP_DIRS / FLICK_VERIFY_MACPRO_DIRS  colon-separated paths that replace
+#   FLICK_VERIFY_LAPTOP_DIRS / FLICK_VERIFY_DESKTOP_DIRS  colon-separated paths that replace
 #       the default file locations (each path is its own row)
 #   FLICK_VERIFY_DB        flick.db for the clip-history check ("" skips it)
 #   FLICK_VERIFY_FEEDBACK  feedback file ("" skips it)
@@ -169,16 +169,16 @@ laptop_checks() { # minutes
     'process BEGINSWITH[c] "flick" OR process == "curl" OR process CONTAINS[c] "tailscale"' "$1"
 }
 
-macpro_checks() { # minutes
+desktop_checks() { # minutes
   local home=$HOME
   # Under sudo, scan the invoking user's home, not root's.
   if [ -n "${SUDO_USER:-}" ]; then
     home=$(dscl . -read "/Users/$SUDO_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
     [ -n "$home" ] || home=$HOME
   fi
-  say "== mac-pro =="
-  if [ -n "${FLICK_VERIFY_MACPRO_DIRS+x}" ]; then
-    scan_list "$FLICK_VERIFY_MACPRO_DIRS"
+  say "== my-desktop =="
+  if [ -n "${FLICK_VERIFY_DESKTOP_DIRS+x}" ]; then
+    scan_list "$FLICK_VERIFY_DESKTOP_DIRS"
   else
     scan "~/.mlx-serve" "$home/.mlx-serve"
     scan "/tmp" /private/tmp
@@ -195,13 +195,13 @@ remote_checks() { # host, minutes
   say "Scanning $1 over ssh (you may be asked for a password)..."
   # The canary goes in the script text on ssh's stdin, never in the remote command line.
   { printf 'FLICK_CANARY_IN=%s\n' "$CANARY"; cat "$self"; } |
-    ssh -T "$1" bash -s -- --here mac-pro --since-mins "$2" | sed 's/^/  /'
+    ssh -T "$1" bash -s -- --here my-desktop --since-mins "$2" | sed 's/^/  /'
   st=${PIPESTATUS[1]}
   case $st in
     0) ;;
     1) FAILS=$((FAILS + 1)) ;;
     2) INCOMPLETES=$((INCOMPLETES + 1)) ;;
-    *) row INCOMPLETE "mac-pro over ssh" "ssh exited $st; run the script there with --here mac-pro" ;;
+    *) row INCOMPLETE "my-desktop over ssh" "ssh exited $st; run the script there with --here my-desktop" ;;
   esac
 }
 
@@ -224,13 +224,13 @@ usage() {
 }
 
 main() {
-  local host=mac-pro remote=1 reuse=0 here="" mins="" start
+  local host=my-desktop remote=1 reuse=0 here="" mins="" start
   while [ $# -gt 0 ]; do
     case $1 in
       --host) host=${2:?--host needs a value}; shift 2 ;;
       --no-remote) remote=0; shift ;;
       --reuse) reuse=1; shift ;;
-      --here) here=${2:?--here needs laptop or mac-pro}; shift 2 ;;
+      --here) here=${2:?--here needs laptop or my-desktop}; shift 2 ;;
       --since-mins) mins=${2:?--since-mins needs a number}; shift 2 ;;
       -h | --help) usage ;;
       *) say "error: unknown argument $1"; usage ;;
@@ -238,17 +238,17 @@ main() {
   done
   [ -z "$mins" ] || [[ $mins =~ ^[0-9]+$ ]] || { say "error: --since-mins takes whole minutes"; exit 64; }
 
-  if [ "$here" = mac-pro ]; then
+  if [ "$here" = my-desktop ]; then
     if [ -n "${FLICK_CANARY_IN:-}" ]; then
       valid_canary "$FLICK_CANARY_IN" || { say "error: bad canary on stdin"; exit 64; }
       CANARY=$FLICK_CANARY_IN
     else
       read_canary
     fi
-    macpro_checks "${mins:-60}"
-    summary mac-pro
+    desktop_checks "${mins:-60}"
+    summary my-desktop
   elif [ -n "$here" ] && [ "$here" != laptop ]; then
-    say "error: --here takes laptop or mac-pro"
+    say "error: --here takes laptop or my-desktop"
     exit 64
   fi
 

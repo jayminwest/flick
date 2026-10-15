@@ -26,11 +26,11 @@ chat_threads = 20        # chat threads kept (the one with the oldest last messa
 sound = true             # a short sound when a message (not a pending one) arrives
 hotkey = "cmd+ctrl+alt+shift+KeyM"  # opens the list; unbound by default
 card_hotkey = "cmd+ctrl+alt+shift+KeyK"  # moves the keyboard into the newest card (again: back); unbound by default
-action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@mbp-server", ".dotfiles/home/.local/bin/kota-ask"]
+action_command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "me@my-server", ".dotfiles/home/.local/bin/kota-ask"]
 pending_timeout_secs = 120  # a sent press waiting this long for KOTA shows "No update from the agent"; 0 waits
 card_timeout_secs = 0       # how long an open card with actions stays; 0 until acted on or closed
 chat_hotkey = "cmd+ctrl+alt+shift+KeyJ"  # shows or hides the KOTA chat window; unbound by default
-kota_host = "me@mbp-server"          # where a chat question goes (ssh target)
+kota_host = "me@my-server"          # where a chat question goes (ssh target)
 kota_ask = ".dotfiles/home/.local/bin/kota-ask"  # kota-ask on that host, relative to its home
 attach_dir = ".cache/flick/attach"       # where chat screenshots go on kota_host, relative to its home
 ```
@@ -126,7 +126,7 @@ Chat is off until you set `chat_hotkey`:
 chat_hotkey = "cmd+ctrl+alt+shift+KeyJ"  # shows or hides the chat window; unbound by default
 chat_history = 200                       # messages kept per thread
 chat_threads = 20                        # threads kept (the one with the oldest last message goes first, all of it)
-kota_host = "me@mbp-server"          # ssh target a question goes to
+kota_host = "me@my-server"          # ssh target a question goes to
 kota_ask = ".dotfiles/home/.local/bin/kota-ask"  # kota-ask on that host, relative to its home
 attach_dir = ".cache/flick/attach"       # where screenshots go on kota_host, relative to its home
 ```
@@ -206,7 +206,7 @@ Chips above the input show what the next question carries besides its text. Noth
 
 ### KOTA side
 
-What mbp-server (or any agent) runs and must send.
+What my-server (or any agent) runs and must send.
 
 **The ask.** Flick runs, with the composed question on stdin and never in argv:
 
@@ -268,7 +268,7 @@ flick --host <laptop> message post [--thread <t>] --reply-to <req> --id <x> [--p
 
 **Known limits on the KOTA side** (seed flick-859d):
 
-- `kota-ask` drops control characters, turns every whitespace run (newlines included) into one space, and caps the prompt at 2000 characters. On mbp-server the `[context]` block arrives on one line, and a long question plus context is cut.
+- `kota-ask` drops control characters, turns every whitespace run (newlines included) into one space, and caps the prompt at 2000 characters. On my-server the `[context]` block arrives on one line, and a long question plus context is cut.
 - `kota-flick-say` has no `--thread` or `--partial` yet. Its `--reply-to <req>` reply still lands in the question's thread (inheritance). But each reply is a new post with a new id, so there is no streaming.
 
 ### Network
@@ -282,14 +282,14 @@ On the laptop against live KOTA, with `chat_hotkey` set and Flick reloaded.
 - [ ] **Summon.** In TextEdit, press `chat_hotkey`. The window shows under the pointer with the caret in its input, and the menu bar still says TextEdit. Esc hides it, and typing goes straight back to TextEdit. The hotkey shows it again, and the hotkey once more hides it. ⌘W hides it too.
 - [ ] **Ask.** Type a question and press Return. Your bubble shows at once with "Thinking…" under it, and the subtitle says `KOTA is on it…`. KOTA's reply appears in the same thread without reopening the window, and no corner card or sound comes while the window shows the thread.
 - [ ] **Not sent.** Set `kota_host = "nobody@invalid"`, reload and ask. The bubble says `Not sent · ⌘R retries` and the reason shows under the transcript. Restore the host, reload, open the thread, and press ⌘R: the question goes out.
-- [ ] **Streaming.** From mbp-server, run `flick --host <laptop> message post --thread <t> --id s1 --partial "Hel"`, then `... --partial "Hello wor"`, then `... "Hello world"` (no `--partial`). One bubble updates in place with a streaming indicator that clears on the last post.
+- [ ] **Streaming.** From my-server, run `flick --host <laptop> message post --thread <t> --id s1 --partial "Hel"`, then `... --partial "Hello wor"`, then `... "Hello world"` (no `--partial`). One bubble updates in place with a streaming indicator that clears on the last post.
 - [ ] **Inheritance.** `flick --host <laptop> message post --reply-to <req> "inherited"` (no `--thread`) lands in the question's thread.
 - [ ] **Threads.** ⌘N starts an empty `New chat`. ⌘[ and ⌘] walk older and newer threads. ⌘K on **Messages** > **Chat Threads** lists them, and Enter opens one. Quit and restart Flick: the threads are still there, and `flick message ls` still lists the unthreaded history.
 - [ ] **Chips from Safari.** In Safari, select some text on a page and press `chat_hotkey`. Three chips show: Safari, the window title, and the quoted selection. Click the window-title chip: it goes. Ask "what did I select?". KOTA's prompt carries a `[context]` block with app and selection, and the clipboard is unchanged.
 - [ ] **⌘⇧V.** Copy some text, open the chat, and press ⌘⇧V: a `Clipboard` chip shows. Press it again after copying something else: still one chip. With a password manager's concealed copy, the notice says "The clipboard holds no text".
-- [ ] **⌘⇧S.** Press ⌘⇧S. The window hides for the shot, comes back, and a `Screenshot` chip shows. Ask. On mbp-server, `ls ~/.cache/flick/attach` has `<req>-1.png` showing the display without the chat window, and the `[context]` block names `~/.cache/flick/attach/<req>-1.png`. A fourth ⌘⇧S on one question says "At most 3 screenshots per question".
+- [ ] **⌘⇧S.** Press ⌘⇧S. The window hides for the shot, comes back, and a `Screenshot` chip shows. Ask. On my-server, `ls ~/.cache/flick/attach` has `<req>-1.png` showing the display without the chat window, and the `[context]` block names `~/.cache/flick/attach/<req>-1.png`. A fourth ⌘⇧S on one question says "At most 3 screenshots per question".
 - [ ] **Screen Recording prompt.** With Screen Recording off for Flick, press ⌘⇧S. the notice says how to grant it, and macOS shows its permission prompt if it never asked before. A second ⌘⇧S shows only the notice, never a second prompt. Grant it, restart Flick, and ⌘⇧S works.
-- [ ] **Inline card.** From mbp-server, post a card with `"thread": "<t>"` and a reply action. It shows inline in the open thread, not in the corner. Press the action: "Sent to the agent…". KOTA's re-post of the card redraws it in place. Re-post it as `"state": "done"` and press again: nothing happens.
+- [ ] **Inline card.** From my-server, post a card with `"thread": "<t>"` and a reply action. It shows inline in the open thread, not in the corner. Press the action: "Sent to the agent…". KOTA's re-post of the card redraws it in place. Re-post it as `"state": "done"` and press again: nothing happens.
 - [ ] **Copy.** In a thread with a multi-line reply, drag across part of the reply, starting in the bubble's padding left of the first word: the text highlights and the window does not move. Press ⌘C and paste in TextEdit: the selected text. Click another app, then drag across a reply again: the first drag selects. Right-click the reply: the menu starts with **Copy Message**; choose it and paste: the whole message as written. Press ⌘⇧C: the notice says "Copied the last reply" and the clipboard holds the newest reply. Dragging the header or the space between rows still moves the window.
 - [ ] **Network.** From a peer, `flick --host <laptop> message chat` and `message ask x` are refused, and `message threads --json` answers.
 

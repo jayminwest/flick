@@ -112,14 +112,14 @@ mod tests {
     #[test]
     fn the_overlay_sits_next_to_the_config() {
         let base = Path::new("/c/flick/my.toml");
-        assert_eq!(overlay_path(base, "mbp-server"), Path::new("/c/flick/config.mbp-server.toml"));
+        assert_eq!(overlay_path(base, "my-server"), Path::new("/c/flick/config.my-server.toml"));
     }
 
     #[test]
     fn host_names_are_lowercase_without_local() {
         assert_eq!(normalize("My-MacBook-Pro").as_deref(), Some("my-macbook-pro"));
-        assert_eq!(normalize(" mbp-server.local\n").as_deref(), Some("mbp-server"));
-        assert_eq!(normalize("MBP-Server.LOCAL").as_deref(), Some("mbp-server"));
+        assert_eq!(normalize(" my-server.local\n").as_deref(), Some("my-server"));
+        assert_eq!(normalize("My-Server.LOCAL").as_deref(), Some("my-server"));
         assert_eq!(normalize("a_b.c").as_deref(), Some("a_b.c"));
         for bad in ["", "  ", ".local", "../x", "a/b", ".hidden", "a b", "é"] {
             assert_eq!(normalize(bad), None, "{bad:?}");

@@ -89,7 +89,7 @@ fn words(w: &[&str]) -> Vec<String> {
 }
 
 impl Target {
-    /// `ollama on mac-pro`.
+    /// `ollama on my-desktop`.
     pub fn what(&self) -> String {
         format!("{} on {}", self.service.name, self.machine)
     }

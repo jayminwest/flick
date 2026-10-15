@@ -28,7 +28,7 @@ fn a_flick_machine_answers_with_its_snapshot() {
 fn a_flick_too_old_or_unreachable_falls_back_to_ssh() {
     let f = fetch(&one("via = \"flick\"\nhost = \"old\"\nssh = \"pro\""), HOOKS).unwrap();
     assert_eq!((f.source, f.note.as_deref()), (Via::Ssh, Some("flick too old (no sys snapshot)")));
-    assert_eq!(f.snapshot["host"], "mac-pro");
+    assert_eq!(f.snapshot["host"], "my-desktop");
     let f = fetch(&one("via = \"flick\"\nssh = \"pro\""), HOOKS).unwrap();
     assert_eq!(f.note.as_deref(), Some("can't reach Flick at m:7419 (Connection refused)"));
     let e = fetch(&one("via = \"flick\"\nhost = \"old\"\nssh = \"refused\""), HOOKS).unwrap_err();
@@ -66,7 +66,7 @@ target = "closed:1"
     let f = fetch(&machines(text)[0], HOOKS).unwrap();
     assert_eq!((f.source, f.note), (Via::Ssh, None));
     let snap = &f.snapshot;
-    assert_eq!((snap["host"].as_str(), snap["battery"].is_null(), snap["schema"].as_u64()), (Some("mac-pro"), true, Some(1)));
+    assert_eq!((snap["host"].as_str(), snap["battery"].is_null(), snap["schema"].as_u64()), (Some("my-desktop"), true, Some(1)));
     let field = |s: &Value, k: &str| s[k].as_str().unwrap_or_default().to_string();
     let services: Vec<[String; 3]> =
         snap["services"].as_array().unwrap().iter().map(|s| [field(s, "name"), field(s, "status"), field(s, "reason")]).collect();
