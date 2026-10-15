@@ -22,6 +22,7 @@ domains:
   remote: {}
   testing: {}
   tooling: {}
+  ext: {}
 governance:
   max_entries: 100
   warn_entries: 150
