@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use super::proto::Reply;
+use super::items::LOADING;
+use super::proto::{Parsed, Reply};
 use super::*;
 use crate::core::scratch::Scratch;
 use crate::core::test_cx;
@@ -33,7 +34,7 @@ fn socket() -> PathBuf {
 /// An `ext` over the real transport and the fixture, with recording hooks.
 fn module(table: &str) -> Ext {
     let job = Job { run: transport::call, socket, post: || {} };
-    let mut m = Ext::with(Hooks { job, log, notify });
+    let mut m = Ext::with(Hooks { job, log, notify, visible: || true });
     configure(&mut m, table).unwrap();
     m
 }
@@ -49,15 +50,16 @@ fn entry(name: &str, mode: &[&str], timeout_ms: u64) -> String {
     format!("[[ext.extensions]]\nname = \"{name}\"\nargv = [{}]\ntimeout_ms = {timeout_ms}\n", argv.join(", "))
 }
 
-/// Drain until `n` answers arrived (bounded), as the main thread does on `ModuleChanged`.
-fn answers(m: &mut Ext, n: usize) -> Vec<(String, Request, Parsed)> {
+/// Drain until every queued call was answered (bounded), as the main thread does on
+/// `ModuleChanged`; true when a root item or view changed.
+fn settle(m: &mut Ext) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
-    let mut got = vec![];
-    while got.len() < n && Instant::now() < deadline {
-        got.extend(m.drain());
+    let mut stale = false;
+    while !m.pending.is_empty() && Instant::now() < deadline {
+        stale |= m.drain();
         std::thread::sleep(Duration::from_millis(5));
     }
-    got
+    stale
 }
 
 /// Drain until something was logged (bounded).
@@ -65,43 +67,144 @@ fn wait_seen(m: &mut Ext) -> Vec<String> {
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut got = vec![];
     while got.is_empty() && Instant::now() < deadline {
-        assert!(m.drain().is_empty());
+        assert!(!m.drain());
         got = seen();
         std::thread::sleep(Duration::from_millis(5));
     }
     got
 }
 
+fn event(m: &mut Ext, event: Event) -> bool {
+    test_cx("", |cx| m.on_event(event, cx))
+}
+
+fn ids(items: &[Item]) -> Vec<&str> {
+    items.iter().map(|i| i.id.as_str()).collect()
+}
+
+/// The answer of extension `ext` to `request`, as a worker leaves it.
+fn answer(ext: &str, request: Request, result: Result<Reply, &str>) -> Answer {
+    let result = result.map(|reply| Parsed { reply, warnings: vec![] }).map_err(String::from);
+    Answer { ext: ext.into(), request, result }
+}
+
+fn open_view(view: &str) -> Request {
+    Request::Open { view: view.into() }
+}
+
 #[test]
-fn a_call_queues_on_the_worker_and_the_answer_arrives_with_module_changed() {
+fn root_items_are_cached_and_asked_again_when_the_launcher_opens() {
     let mut m = module(&entry("echo", &["echo"], 2000));
-    m.call("echo", Request::Root).unwrap();
-    m.call("echo", Request::Open { view: "v".into() }).unwrap();
+    assert!(test_cx("", |cx| m.items(cx)).is_empty());
+    // A second open while the first call is queued does not queue it again.
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert_eq!(m.pending, [("echo".to_string(), Request::Root)]);
     assert_eq!(m.workers.len(), 1);
-    let got = answers(&mut m, 2);
-    assert_eq!(got.len(), 2);
-    assert_eq!((got[0].0.as_str(), &got[0].1), ("echo", &Request::Root));
-    let Reply::Items(items) = &got[0].2.reply else { panic!("{:?}", got[0].2.reply) };
+    assert!(settle(&mut m));
+    let items = test_cx("", |cx| m.items(cx));
+    assert_eq!(ids(&items), ["ext:echo/root"]);
     assert_eq!(items[0].subtitle, "/tmp/flick-test.sock");
-    assert_eq!(got[1].1, Request::Open { view: "v".into() });
     assert!(seen().is_empty());
-    // Another module's change, or an empty inbox, is not stale data for ext.
-    assert!(!test_cx("", |cx| m.on_event(Event::ModuleChanged { module: "ext" }, cx)));
-    m.call("echo", Request::Root).unwrap();
+}
+
+#[test]
+fn only_an_answer_is_stale_data_and_reload_asks_again() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    // Another module's change, an empty inbox or another event is not stale data for ext.
+    assert!(!event(&mut m, Event::ModuleChanged { module: "ext" }));
+    assert!(!event(&mut m, Event::ModuleChanged { module: "app" }));
+    assert!(!event(&mut m, Event::Wake));
+    assert!(!event(&mut m, Event::Reloaded));
+    assert_eq!(m.pending.len(), 1);
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut stale = false;
     while !stale && Instant::now() < deadline {
-        assert!(!test_cx("", |cx| m.on_event(Event::ModuleChanged { module: "app" }, cx)));
-        stale = test_cx("", |cx| m.on_event(Event::ModuleChanged { module: "ext" }, cx));
+        stale = event(&mut m, Event::ModuleChanged { module: "ext" });
     }
-    assert!(stale);
+    assert!(stale && m.pending.is_empty());
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
+}
+
+#[test]
+fn a_view_opens_from_its_cache_and_is_asked_again() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    let view = test_cx("", |cx| m.open("echo/v", cx)).unwrap();
+    assert!(view.is("ext", "echo/v") && view.record_use);
+    assert_eq!((view.empty.as_str(), m.showing.as_deref()), (LOADING, Some("echo/v")));
+    assert_eq!(m.pending, [("echo".to_string(), open_view("v"))]);
+    assert!(settle(&mut m));
+    let mut view = test_cx("", |cx| m.open("echo/v", cx)).unwrap();
+    assert_eq!(view.empty, "No Results");
+    test_cx("", |cx| m.refresh(&mut view, cx));
+    assert_eq!((ids(&view.items), view.footer.as_str()), (vec!["ext:echo/open"], "echo"));
+    test_cx("zzz", |cx| m.refresh(&mut view, cx));
+    assert!(view.items.is_empty());
+    test_cx("", |cx| m.closed("echo/other", cx));
+    assert!(m.showing.is_some());
+    test_cx("", |cx| m.closed("echo/v", cx));
+    assert!(m.showing.is_none());
+    assert!(settle(&mut m));
+}
+
+#[test]
+fn a_failed_view_call_shows_in_its_footer_while_it_is_on_the_screen() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    m.showing = Some("echo/v".into());
+    m.inbox.push(answer("echo", open_view("v"), Err("echo: boom")));
+    assert!(m.drain());
+    assert_eq!(seen(), ["log echo: boom"]);
+    let mut view = ListView::new("ext", "echo/v");
+    test_cx("", |cx| m.refresh(&mut view, cx));
+    assert_eq!((view.footer.as_str(), view.empty.as_str()), ("echo: boom", "No Results"));
+    // A good answer clears it.
+    m.inbox.push(answer("echo", open_view("v"), Ok(Reply::View(View::default()))));
+    assert!(m.drain());
+    test_cx("", |cx| m.refresh(&mut view, cx));
+    assert_eq!(view.footer, "echo");
+    // Hidden launcher, another view, or a root call: a notification.
+    m.hooks.visible = || false;
+    m.inbox.push(answer("echo", open_view("v"), Err("echo: hidden")));
+    m.inbox.push(answer("echo", open_view("w"), Err("echo: other")));
+    m.inbox.push(answer("echo", Request::Root, Err("echo: root")));
+    assert!(!m.drain());
+    let want = ["hidden", "other", "root"].map(|e| [format!("log echo: {e}"), format!("notify echo | echo: {e}")]);
+    assert_eq!(seen(), want.concat());
+    assert!(m.error.is_none());
+}
+
+#[test]
+fn answers_of_removed_extensions_and_to_events_change_nothing() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    m.inbox.push(answer("gone", Request::Root, Ok(Reply::Items(vec![]))));
+    m.inbox.push(answer("gone", Request::Root, Err("gone: x")));
+    m.inbox.push(answer("echo", Request::Event(proto::EventKind::Wake), Ok(Reply::Ack)));
+    assert!(!m.drain());
+    assert!(seen().is_empty() && m.root.is_empty());
+}
+
+#[test]
+fn hotkeys_open_views() {
+    let table = format!("{}hotkeys = {{ inbox = \"cmd+KeyI\", today = \"cmd+KeyT\" }}\n", entry("echo", &["echo"], 2000));
+    let mut m = module(&table);
+    let want = |view: &str, spec: &str| Binding { spec: spec.into(), key: Ok(format!("echo/{view}")) };
+    assert_eq!(m.hotkeys(), [want("inbox", "cmd+KeyI"), want("today", "cmd+KeyT")]);
+    let view = test_cx("", |cx| m.hotkey("echo/inbox", cx)).unwrap();
+    assert!(view.is("ext", "echo/inbox"));
+    assert!(test_cx("", |cx| m.hotkey("nope/inbox", cx)).is_none());
+    assert!(test_cx("", |cx| m.hotkey("inbox", cx)).is_none());
+    assert!(module("").hotkeys().is_empty());
 }
 
 #[test]
 fn unknown_extensions_are_refused() {
     let mut m = module("");
     assert_eq!(m.call("nope", Request::Root).unwrap_err(), "ext: no extension \"nope\"");
-    assert!(m.workers.is_empty());
+    m.fetch("nope", Request::Root);
+    assert_eq!(seen(), ["log ext: no extension \"nope\""]);
+    assert!(m.workers.is_empty() && m.pending.is_empty());
+    assert!(test_cx("", |cx| m.open("nope/v", cx)).is_none());
+    assert!(test_cx("", |cx| m.open("nope", cx)).is_none());
 }
 
 #[test]
@@ -110,9 +213,11 @@ fn a_slow_extension_never_holds_the_caller_and_its_timeout_is_reported() {
     let pids = dir.join("pids");
     let mut m = module(&entry("slow", &["sleep", "2", pids.to_str().unwrap()], 500));
     let started = Instant::now();
-    m.call("slow", Request::Root).unwrap();
+    let view = test_cx("", |cx| m.open("slow/v", cx)).unwrap();
     assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
-    assert!(m.drain().is_empty());
+    assert_eq!(view.empty, LOADING);
+    assert!(!m.drain());
+    m.hooks.visible = || false;
     let error = "slow: no reply in 500 ms; stopped";
     assert_eq!(wait_seen(&mut m), [format!("log {error}"), format!("notify slow | {error}")]);
 }
@@ -127,9 +232,9 @@ fn failures_are_logged_and_notified_with_the_name() {
 #[test]
 fn warnings_are_logged_with_a_cap() {
     let mut m = module(&entry("bad", &["bad", "20"], 2000));
-    m.call("bad", Request::Root).unwrap();
-    let got = answers(&mut m, 1);
-    assert_eq!(got[0].2.warnings.len(), 20);
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert!(settle(&mut m));
+    assert!(test_cx("", |cx| m.items(cx)).is_empty());
     let lines = seen();
     assert_eq!(lines.len(), WARNINGS_LOGGED + 1, "{lines:?}");
     assert_eq!(lines[0], "log bad: root: items[0]: no title; skipped");
@@ -142,15 +247,20 @@ fn warnings_are_logged_with_a_cap() {
 fn a_reload_keeps_only_the_workers_of_unchanged_extensions() {
     let both = format!("{}{}", entry("a", &["echo"], 2000), entry("b", &["echo"], 2000));
     let mut m = module(&both);
-    m.call("a", Request::Root).unwrap();
-    m.call("b", Request::Root).unwrap();
-    assert_eq!(answers(&mut m, 2).len(), 2);
+    event(&mut m, Event::Reloaded);
+    test_cx("", |cx| m.open("b/v", cx));
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:a/root", "ext:b/root"]);
     let changed = format!("{}{}", entry("a", &["echo"], 2000), entry("b", &["echo"], 900));
     configure(&mut m, &changed).unwrap();
     let names: Vec<&str> = m.workers.iter().map(|w| w.spec().name.as_str()).collect();
     assert_eq!(names, ["a"]);
+    assert_eq!((m.root.len(), m.views.len()), (2, 1));
+    m.error = Some(("b/v".into(), "b: x".into()));
+    configure(&mut m, &entry("a", &["echo"], 2000)).unwrap();
+    assert_eq!((m.root.len(), m.views.len(), m.error.is_some()), (1, 0, false));
     assert!(configure(&mut m, &entry("Bad Name", &[], 1)).is_err());
-    assert_eq!(m.specs.len(), 2);
+    assert_eq!(m.specs.len(), 1);
     configure(&mut m, "").unwrap();
     assert!(m.workers.is_empty() && m.specs.is_empty());
     assert!(configure(&mut m, "[ext]\nextensions = 1").unwrap_err().starts_with("[ext]"));
@@ -169,10 +279,12 @@ fn a_worker_whose_thread_died_is_started_again() {
     while m.workers[0].send(Request::Event(proto::EventKind::Wake)) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
     }
-    m.call("echo", Request::Root).unwrap();
+    // The dead worker's queued call is never answered; asking again does not wait on it.
+    m.pending.push(("echo".into(), Request::Root));
+    m.fetch("echo", Request::Root);
     assert_eq!(m.workers.len(), 1);
-    let got = answers(&mut m, 1);
-    assert_eq!(got.last().map(|a| a.1.clone()), Some(Request::Root));
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
 }
 
 #[test]
@@ -180,4 +292,5 @@ fn the_real_hooks_are_installed() {
     let m = Ext::new(socket);
     assert_eq!(m.id(), "ext");
     assert_eq!((m.hooks.job.socket)(), socket());
+    assert!(m.root.is_empty() && m.showing.is_none());
 }
