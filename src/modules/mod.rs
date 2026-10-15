@@ -83,6 +83,8 @@ const REBUILT: [&str; 1] = ["help"];
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
+// Not registered yet: only its pure protocol layer exists; the module lands in flick-6db0.
+mod ext;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;
