@@ -1,5 +1,6 @@
 //! Result items and the ids that route them to their module.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -7,7 +8,14 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Icon {
     File(PathBuf),
-    Symbol(&'static str),
+    Symbol(Cow<'static, str>),
+}
+
+impl Icon {
+    /// An SF Symbol by name: a literal from a module, or an owned name from outside Flick.
+    pub fn symbol(name: impl Into<Cow<'static, str>>) -> Icon {
+        Icon::Symbol(name.into())
+    }
 }
 
 /// Which module owns an item, and the module's key for it. Serializes as `<module>:<key>`;
@@ -88,7 +96,7 @@ pub struct Item {
     /// Extra text the fuzzy matcher searches besides the title.
     pub keywords: Vec<String>,
     /// What Enter does, shown in the footer: "Open Application", "Paste", ...
-    pub verb: &'static str,
+    pub verb: Cow<'static, str>,
     /// What Tab does on a list.
     pub tab: Tab,
     /// The status the row's icon shows: a symbol icon is tinted green, orange or red.
@@ -125,7 +133,12 @@ pub enum Tab {
 
 impl Item {
     /// An item with no subtitle, accessory or keywords.
-    pub fn new(id: ItemId, title: impl Into<String>, verb: &'static str, icon: Icon) -> Item {
+    pub fn new(
+        id: ItemId,
+        title: impl Into<String>,
+        verb: impl Into<Cow<'static, str>>,
+        icon: Icon,
+    ) -> Item {
         Item {
             id,
             title: title.into(),
@@ -133,7 +146,7 @@ impl Item {
             accessory: String::new(),
             icon,
             keywords: vec![],
-            verb,
+            verb: verb.into(),
             tab: Tab::None,
             tone: Tone::Neutral,
         }
@@ -177,7 +190,7 @@ mod tests {
             ItemId::new("builtin", "Quit Flick"),
             "Quit Flick",
             "Run Command",
-            Icon::Symbol("power"),
+            Icon::symbol("power"),
         );
         assert_eq!(item.title, "Quit Flick");
         assert!(item.subtitle.is_empty() && item.accessory.is_empty() && item.keywords.is_empty());
@@ -185,6 +198,22 @@ mod tests {
         assert_eq!((item.tone, Tone::default()), (Tone::Neutral, Tone::Neutral));
         assert_eq!(Tab::default(), Tab::None);
         assert_eq!(item.verb, "Run Command");
-        assert_eq!(item.icon, Icon::Symbol("power"));
+        assert_eq!(item.icon, Icon::symbol("power"));
+    }
+
+    #[test]
+    fn verb_and_symbol_take_owned_strings() {
+        let item = Item::new(
+            ItemId::new("ext", "x"),
+            "X",
+            String::from("Deploy"),
+            Icon::symbol(String::from("bolt")),
+        );
+        assert!(matches!(item.verb, Cow::Owned(_)));
+        assert_eq!((&*item.verb, item.icon), ("Deploy", Icon::Symbol(Cow::Borrowed("bolt"))));
+        assert!(matches!(
+            Item::new(ItemId::new("ext", "y"), "Y", "Run", Icon::symbol("app")).verb,
+            Cow::Borrowed("Run")
+        ));
     }
 }

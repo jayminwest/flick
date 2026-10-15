@@ -53,7 +53,7 @@ impl Module for Clipboard {
                     subtitle: if more > 0 { format!("+{more} lines") } else { String::new() },
                     accessory: relative_time(c.ts),
                     keywords: vec![c.text.chars().take(2000).collect()],
-                    ..Item::new(ItemId::new("clip", c.id), first, "Paste", Icon::Symbol("doc.text"))
+                    ..Item::new(ItemId::new("clip", c.id), first, "Paste", Icon::symbol("doc.text"))
                 }
             })
             .collect();

@@ -50,7 +50,7 @@ impl State {
         let query = ui::query();
         let actions = self.registry.actions(&item.id, &mut self.env.cx(&query));
         let Some(action) = actions.iter().find(|a| a.shortcut_hint == hint) else { return false };
-        let outcome = self.registry.act(&item.id, action.key, &mut self.env.cx(&query));
+        let outcome = self.registry.act(&item.id, &action.key, &mut self.env.cx(&query));
         self.apply(outcome, None);
         true
     }

@@ -84,9 +84,9 @@ impl Quicklinks {
             return vec![];
         }
         vec![
-            Action::new("open", "Open Quicklink", Icon::Symbol("link")),
-            Action::new("edit", "Edit Quicklink", Icon::Symbol("pencil")),
-            Action::new("delete", "Delete Quicklink", Icon::Symbol("trash")),
+            Action::new("open", "Open Quicklink", Icon::symbol("link")),
+            Action::new("edit", "Edit Quicklink", Icon::symbol("pencil")),
+            Action::new("delete", "Delete Quicklink", Icon::symbol("trash")),
         ]
     }
 
@@ -252,7 +252,7 @@ mod tests {
     fn forms_are_new_and_edit_slash_name() {
         let Fixture { mut m, _dir, .. } = module("forms", CONFIG);
         let new = test_cx("", |cx| m.form("new", cx)).unwrap();
-        let keys: Vec<_> = new.fields.iter().map(|f| f.key).collect();
+        let keys: Vec<_> = new.fields.iter().map(|f| &*f.key).collect();
         assert_eq!(keys, ["name", "url", "keyword", "app"]);
         assert!(new.fields.iter().all(|f| f.value.is_empty()));
         assert_eq!((new.title.as_str(), new.focused), ("Create Quicklink", 0));
@@ -303,7 +303,7 @@ mod tests {
     fn actions_are_open_edit_delete() {
         let Fixture { mut m, _dir, .. } = module("actions", CONFIG);
         let id = ItemId::new("quicklink", "Docs");
-        let keys: Vec<_> = test_cx("", |cx| m.actions(&id, cx)).iter().map(|a| a.key).collect();
+        let keys: Vec<_> = test_cx("", |cx| m.actions(&id, cx)).into_iter().map(|a| a.key).collect();
         assert_eq!(keys, ["open", "edit", "delete"]);
         let nope = ItemId::new("quicklink", "Nope");
         assert!(test_cx("", |cx| m.actions(&nope, cx)).is_empty());

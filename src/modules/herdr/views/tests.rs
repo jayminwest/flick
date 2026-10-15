@@ -78,7 +78,7 @@ fn the_agents_view_lists_waiting_first_then_machine_notes() {
     assert_eq!(items[0].title, "claude · hub");
     assert_eq!(items[0].subtitle, "blocked");
     assert_eq!(items[0].accessory, "1 min");
-    assert_eq!(items[0].icon, Icon::Symbol("exclamationmark.bubble"));
+    assert_eq!(items[0].icon, Icon::symbol("exclamationmark.bubble"));
     assert_eq!(items[2].title, "api · local");
     assert_eq!(items[2].subtitle, "working · api · claude: refactor");
     assert_eq!(items[3].subtitle, "off: unreachable");
@@ -105,7 +105,7 @@ fn icons_follow_the_status() {
     let icons: Vec<Icon> =
         [Status::Done, Status::Idle, Status::Working, Status::Unknown].into_iter().map(status_icon).collect();
     let names = ["checkmark.circle", "pause.circle", "gearshape", "questionmark.circle"];
-    assert_eq!(icons, names.map(Icon::Symbol));
+    assert_eq!(icons, names.map(Icon::symbol));
     let mut odd = agent("local", "p", Status::Idle);
     odd.cwd = Some("/".into());
     odd.title = Some(String::new());

@@ -358,7 +358,7 @@ fn the_launcher_lists_messages() {
     assert_eq!(kind(f.cx("", false, |cx| m.activate(&root[0].id, cx))), "push message/recent");
     // ⌘K on the root item opens the chat threads (flick-eedd; it had no actions before).
     let actions = f.cx("", false, |cx| m.actions(&root[0].id, cx));
-    assert_eq!(actions.iter().map(|a| a.key).collect::<Vec<_>>(), ["threads"]);
+    assert_eq!(actions.iter().map(|a| &*a.key).collect::<Vec<_>>(), ["threads"]);
     assert_eq!(view.footer, "KOTA  ·  ↵ copies  ·  ⌘K show or open");
     assert!(f.cx("", false, |cx| m.open("nope", cx)).is_none());
     let rows: Vec<_> = view.items.iter().map(|i| (i.title.as_str(), i.subtitle.as_str(), i.accessory.as_str())).collect();
@@ -381,7 +381,7 @@ fn rows_copy_reshow_and_open() {
     let link = view.items[0].id.clone();
     assert_eq!(kind(f.cx("", false, |cx| m.activate(&link, cx))), "stay Some(\"Copied message\")");
     assert_eq!(take_log(), ["copy • one\n• two"]);
-    let keys = |m: &mut Inbox, f: &mut Fixture, id| f.cx("", false, |cx| m.actions(id, cx)).iter().map(|a| a.key).collect::<Vec<_>>();
+    let keys = |m: &mut Inbox, f: &mut Fixture, id| f.cx("", false, |cx| m.actions(id, cx)).into_iter().map(|a| a.key).collect::<Vec<_>>();
     assert_eq!(keys(&mut m, &mut f, &link), ["show", "open", "copy"]);
     assert_eq!(keys(&mut m, &mut f, &view.items[1].id), ["show", "copy"]);
     assert_eq!(kind(f.cx("", false, |cx| m.act(&link, "open", cx))), "hide");

@@ -31,14 +31,14 @@ pub fn root_items(dir: &Path, ink: Vec<Item>) -> Vec<Item> {
             subtitle: format!("{how}, save to {dir}"),
             accessory: "Capture".into(),
             keywords: vec!["screenshot screen shot snap shottr".into()],
-            ..Item::new(ItemId::new("capture", key), title, "Capture", Icon::Symbol(symbol))
+            ..Item::new(ItemId::new("capture", key), title, "Capture", Icon::symbol(symbol))
         })
         .collect();
     items.extend(ink);
     items.push(Item {
         accessory: "Capture".into(),
         keywords: vec!["screenshots history".into()],
-        ..Item::new(ItemId::new("capture", "recent"), "Recent Captures", "Open", Icon::Symbol("photo.on.rectangle"))
+        ..Item::new(ItemId::new("capture", "recent"), "Recent Captures", "Open", Icon::symbol("photo.on.rectangle"))
     });
     items
 }
@@ -92,11 +92,11 @@ pub fn shot_id(key: &str) -> Option<i64> {
 /// A shot's action menu.
 pub fn actions() -> Vec<Action> {
     vec![
-        Action::new("copy-image", "Copy Image", Icon::Symbol("doc.on.doc")),
-        Action::new("annotate", "Annotate", Icon::Symbol("pencil.and.outline")),
-        Action::new("reveal", "Show in Finder", Icon::Symbol("folder")),
-        Action::new("copy-path", "Copy Path", Icon::Symbol("link")),
-        Action::new("trash", "Move to Trash", Icon::Symbol("trash")),
+        Action::new("copy-image", "Copy Image", Icon::symbol("doc.on.doc")),
+        Action::new("annotate", "Annotate", Icon::symbol("pencil.and.outline")),
+        Action::new("reveal", "Show in Finder", Icon::symbol("folder")),
+        Action::new("copy-path", "Copy Path", Icon::symbol("link")),
+        Action::new("trash", "Move to Trash", Icon::symbol("trash")),
     ]
 }
 

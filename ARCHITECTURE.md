@@ -73,6 +73,11 @@ State in the store (e.g. `activity`'s recording flag) stays for a module enabled
 `store`, `ranker`, and `hide()`. Call `cx.hide()` before an action that needs the previous app
 frontmost (open, focus, paste), then return `Outcome::Hide`.
 
+`Item::verb`, `Icon::Symbol`, `Action::key` and `Field::key` are `Cow<'static, str>`: a
+compiled-in module passes literals (borrowed, no allocation), and a module that gets them at
+run time from outside Flick passes owned strings. `Item::new`, `Icon::symbol`, `Action::new`
+and `Field::new` take `impl Into<Cow<'static, str>>`; build symbol icons with `Icon::symbol`.
+
 Panic isolation: `Registry::dispatch` (events) and `Registry::command` catch panics per module.
 A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open`, `refresh`,
 `activate`, `form`, `submit`, `actions`, `act`, `confirmed` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or

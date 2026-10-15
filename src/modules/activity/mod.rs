@@ -351,7 +351,7 @@ impl Activity {
                         ItemId::new("activity", format!("row/{kind}/{}", t.name)),
                         t.name.clone(),
                         "Show",
-                        Icon::Symbol("clock"),
+                        Icon::symbol("clock"),
                     )
                 })
             })
@@ -385,7 +385,7 @@ impl Module for Activity {
                 subtitle: "Activity".into(),
                 accessory: "Command".into(),
                 keywords: vec!["time tracking screen".into()],
-                ..Item::new(ItemId::new("activity", key), title, verb, Icon::Symbol(symbol))
+                ..Item::new(ItemId::new("activity", key), title, verb, Icon::symbol(symbol))
             })
             .chain([self.remote_item(cx.store)])
             .collect()

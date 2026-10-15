@@ -30,7 +30,7 @@ impl Module for Flick {
                 subtitle: "Flick".into(),
                 accessory: "Command".into(),
                 keywords: vec![keywords.into()],
-                ..Item::new(ItemId::new("builtin", title), title, verb, Icon::Symbol(symbol))
+                ..Item::new(ItemId::new("builtin", title), title, verb, Icon::symbol(symbol))
             })
             .collect()
     }

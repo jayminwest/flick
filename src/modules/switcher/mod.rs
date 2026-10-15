@@ -84,7 +84,7 @@ impl Module for Switcher {
                     ItemId::new("switcher", i),
                     w.title.clone(),
                     "Switch to Window",
-                    w.bundle.clone().map_or(Icon::Symbol("macwindow"), Icon::File),
+                    w.bundle.clone().map_or(Icon::symbol("macwindow"), Icon::File),
                 )
             })
             .collect();
@@ -107,7 +107,7 @@ impl Module for Switcher {
         self.window(id)
             .map(|w| Action {
                 shortcut_hint: "⌘Q",
-                ..Action::new(QUIT, format!("Quit {}", w.app), Icon::Symbol("xmark.circle"))
+                ..Action::new(QUIT, format!("Quit {}", w.app), Icon::symbol("xmark.circle"))
             })
             .into_iter()
             .collect()

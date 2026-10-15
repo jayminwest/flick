@@ -29,7 +29,7 @@ fn topic_item(t: &Topic) -> Item {
     Item {
         subtitle: t.how.into(),
         keywords: vec![t.slug.into()],
-        ..Item::new(ItemId::new(ID, format!("{TOPIC}{}", t.slug)), t.title, verb, Icon::Symbol(t.symbol))
+        ..Item::new(ItemId::new(ID, format!("{TOPIC}{}", t.slug)), t.title, verb, Icon::symbol(t.symbol))
     }
 }
 
@@ -40,7 +40,7 @@ fn key_items(t: &Topic) -> Vec<Item> {
         .map(|(i, k)| Item {
             accessory: k.press.into(),
             keywords: vec![k.press.into(), k.short.into()],
-            ..Item::new(ItemId::new(ID, format!("{KEY}{}/{i}", t.slug)), k.long, "Open Docs", Icon::Symbol("keyboard"))
+            ..Item::new(ItemId::new(ID, format!("{KEY}{}/{i}", t.slug)), k.long, "Open Docs", Icon::symbol("keyboard"))
         })
         .collect()
 }
@@ -85,7 +85,7 @@ impl Module for Help {
             subtitle: "How each feature works, and the draw keys".into(),
             accessory: "Command".into(),
             keywords: vec!["tutorial guide docs how to keys shortcuts ?".into(), titles],
-            ..Item::new(ItemId::new(ID, "index"), "Flick Help", "Open Help", Icon::Symbol("questionmark.circle"))
+            ..Item::new(ItemId::new(ID, "index"), "Flick Help", "Open Help", Icon::symbol("questionmark.circle"))
         }]
     }
 
@@ -135,8 +135,8 @@ impl Module for Help {
             return vec![];
         }
         vec![
-            Action::new("docs", "Open Docs", Icon::Symbol("book")),
-            Action::new("copy", "Copy How-To", Icon::Symbol("doc.on.doc")),
+            Action::new("docs", "Open Docs", Icon::symbol("book")),
+            Action::new("copy", "Copy How-To", Icon::symbol("doc.on.doc")),
         ]
     }
 

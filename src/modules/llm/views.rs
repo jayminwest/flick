@@ -52,7 +52,7 @@ impl Llm {
                 subtitle,
                 accessory: "Command".into(),
                 keywords: ["llm", "model", "chat", "ai", "local", "private", "incognito"].map(String::from).to_vec(),
-                ..Item::new(id(PRIVATE), "Private Model Chat", "Open Private Chat", Icon::Symbol("lock"))
+                ..Item::new(id(PRIVATE), "Private Model Chat", "Open Private Chat", Icon::symbol("lock"))
             });
         }
         items
@@ -66,7 +66,7 @@ impl Llm {
             subtitle: format!("{server} · {model}"),
             accessory: "Command".into(),
             keywords: ["llm", "model", "chat", "ai", "local"].map(String::from).to_vec(),
-            ..Item::new(id(CHAT), "Local Model Chat", "Open Chat", Icon::Symbol("brain"))
+            ..Item::new(id(CHAT), "Local Model Chat", "Open Chat", Icon::symbol("brain"))
         })
     }
 
@@ -74,10 +74,10 @@ impl Llm {
     pub(super) fn item_actions(item: &ItemId) -> Vec<Action> {
         match item.key() {
             CHAT => vec![
-                Action::new(MODELS, "Choose Model…", Icon::Symbol("cpu")),
-                Action::new(THREADS, "Chat History", Icon::Symbol("clock.arrow.circlepath")),
+                Action::new(MODELS, "Choose Model…", Icon::symbol("cpu")),
+                Action::new(THREADS, "Chat History", Icon::symbol("clock.arrow.circlepath")),
             ],
-            k if k.starts_with(THREAD) => vec![Action::new(DELETE, "Delete Chat", Icon::Symbol("trash"))],
+            k if k.starts_with(THREAD) => vec![Action::new(DELETE, "Delete Chat", Icon::symbol("trash"))],
             _ => vec![],
         }
     }
@@ -152,7 +152,7 @@ impl Llm {
         let mut items = vec![];
         for s in self.settings.servers.iter().filter(|s| !s.private) {
             let m: Models = st.models.get(&s.name).cloned().unwrap_or_default();
-            let row = |key: String, title: String, verb| Item::new(id(key), title, verb, Icon::Symbol("server.rack"));
+            let row = |key: String, title: String, verb| Item::new(id(key), title, verb, Icon::symbol("server.rack"));
             match m.result {
                 None => items.push(row(format!("{RETRY}{}", s.name), format!("{}: loading models…", s.name), "Retry")),
                 Some(Err(e)) => items.push(row(format!("{RETRY}{}", s.name), format!("{}: {e}", s.name), "Retry")),
@@ -165,7 +165,7 @@ impl Llm {
                         subtitle: about.join(" · "),
                         accessory: if current { "Current" } else { "" }.into(),
                         keywords: vec![s.name.clone()],
-                        ..Item::new(id(format!("{MODEL}{}/{}", s.name, model.id)), model.id, "Chat with Model", Icon::Symbol("cpu"))
+                        ..Item::new(id(format!("{MODEL}{}/{}", s.name, model.id)), model.id, "Chat with Model", Icon::symbol("cpu"))
                     }
                 })),
             }
@@ -185,7 +185,7 @@ impl Llm {
                 Item {
                     subtitle: format!("{} · {}  ·  {} message{s}", t.server, t.model, t.messages),
                     keywords: vec![t.model.clone()],
-                    ..Item::new(id(format!("{THREAD}{}", t.id)), t.title, "Open Chat", Icon::Symbol("bubble.left.and.bubble.right"))
+                    ..Item::new(id(format!("{THREAD}{}", t.id)), t.title, "Open Chat", Icon::symbol("bubble.left.and.bubble.right"))
                 }
             })
             .collect()

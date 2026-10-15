@@ -25,7 +25,7 @@ pub fn root_item() -> Item {
             ItemId::new("app", ROOT_KEY),
             "Quit Applications",
             "Open Command",
-            Icon::Symbol("xmark.circle"),
+            Icon::symbol("xmark.circle"),
         )
     }
 }

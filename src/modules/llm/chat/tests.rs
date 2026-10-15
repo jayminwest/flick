@@ -338,7 +338,7 @@ fn the_root_item_offers_the_picker_and_the_history() {
     let mut m = llm(&format!("{MLX}{VAULT}"));
     let item = f.cx("", |cx| m.items(cx)).remove(0);
     assert_eq!((item.id.as_str(), item.title.as_str(), item.subtitle.as_str()), ("llm:chat", "Local Model Chat", "mlx · first listed model"));
-    let keys: Vec<&str> = f.cx("", |cx| m.actions(&item.id, cx)).iter().map(|a| a.key).collect();
+    let keys: Vec<_> = f.cx("", |cx| m.actions(&item.id, cx)).into_iter().map(|a| a.key).collect();
     assert_eq!(keys, ["models", "threads"]);
     assert!(matches!(f.cx("", |cx| m.act(&item.id, "models", cx)), Outcome::Push(ListView { name, .. }) if name == "models"));
     assert!(matches!(f.cx("", |cx| m.act(&item.id, "nope", cx)), Outcome::Stay(None)));

@@ -235,7 +235,7 @@ impl Module for Remote {
             subtitle: "Remote".into(),
             accessory: "Command".into(),
             keywords: vec!["tailscale remote control peers tailnet".into()],
-            ..Item::new(ItemId::new(ID, "network"), title, "Run Command", Icon::Symbol(symbol))
+            ..Item::new(ItemId::new(ID, "network"), title, "Run Command", Icon::symbol(symbol))
         }]
     }
 

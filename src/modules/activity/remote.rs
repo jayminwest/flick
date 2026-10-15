@@ -136,7 +136,7 @@ impl Activity {
             subtitle: "Activity".into(),
             accessory: "Command".into(),
             keywords: vec!["agent remote permission privacy".into()],
-            ..Item::new(ItemId::new("activity", "remote"), title, "Run Command", Icon::Symbol(symbol))
+            ..Item::new(ItemId::new("activity", "remote"), title, "Run Command", Icon::symbol(symbol))
         }
     }
 

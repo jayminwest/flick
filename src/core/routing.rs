@@ -68,7 +68,7 @@ mod tests {
         }
 
         fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
-            vec![Action::new("edit", format!("Edit {}", id.key()), Icon::Symbol("pencil"))]
+            vec![Action::new("edit", format!("Edit {}", id.key()), Icon::symbol("pencil"))]
         }
 
         fn act(&mut self, id: &ItemId, key: &str, _cx: &mut Cx) -> Outcome {
@@ -124,7 +124,7 @@ mod tests {
             let id = ItemId::new("a", "Docs");
             let actions = r.actions(&id, cx);
             assert_eq!(actions.len(), 1);
-            assert_eq!((actions[0].key, actions[0].title.as_str()), ("edit", "Edit Docs"));
+            assert_eq!((&*actions[0].key, actions[0].title.as_str()), ("edit", "Edit Docs"));
             assert!(r.actions(&ItemId::new("bare", "x"), cx).is_empty());
             assert!(r.actions(&ItemId::new("nobody", "x"), cx).is_empty());
             let edit = r.act(&id, "edit", cx);

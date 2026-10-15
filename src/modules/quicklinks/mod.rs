@@ -69,7 +69,7 @@ fn item(q: &Quicklink, arg: Option<String>) -> Item {
             },
             q.name.clone(),
             if tab { "Enter Argument" } else { "Open Quicklink" },
-            Icon::Symbol("link"),
+            Icon::symbol("link"),
         )
     }
 }

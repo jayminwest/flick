@@ -2,11 +2,13 @@
 //! quicklink editor. The module builds the form (`Module::form`) and saves it
 //! (`Module::submit`); the controller only edits values and moves focus.
 
+use std::borrow::Cow;
+
 /// One labelled text field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     /// The module's name for the field; `Form::value` looks it up.
-    pub key: &'static str,
+    pub key: Cow<'static, str>,
     pub label: String,
     pub value: String,
     /// Shown while `value` is empty.
@@ -19,9 +21,9 @@ pub struct Field {
 
 impl Field {
     /// An optional, empty field with no placeholder.
-    pub fn new(key: &'static str, label: impl Into<String>) -> Field {
+    pub fn new(key: impl Into<Cow<'static, str>>, label: impl Into<String>) -> Field {
         Field {
-            key,
+            key: key.into(),
             label: label.into(),
             value: String::new(),
             placeholder: String::new(),
@@ -171,6 +173,13 @@ mod tests {
     }
 
     #[test]
+    fn an_owned_field_key_is_found_by_value() {
+        let f =
+            Form { fields: vec![Field::new(String::from("env"), "Env").value("prod")], ..form() };
+        assert_eq!((f.value("env"), f.value("name")), (Some("prod"), None));
+    }
+
+    #[test]
     fn submit_hint_names_cmd_return_when_a_field_is_multiline() {
         let mut f = form();
         f.submit_label = "Save".into();
@@ -216,7 +225,8 @@ mod tests {
     #[test]
     fn missing_required_ignores_optional_and_counts_blank() {
         let mut f = form();
-        let keys = |f: &Form| f.missing_required().iter().map(|x| x.key).collect::<Vec<_>>();
+        let keys =
+            |f: &Form| f.missing_required().iter().map(|x| x.key.clone()).collect::<Vec<_>>();
         assert_eq!(keys(&f), ["name", "url"]);
         f.set_value(0, "  \t");
         assert_eq!(keys(&f), ["name", "url"]);

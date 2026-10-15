@@ -84,7 +84,7 @@ fn svc(s: &Value) -> Svc<'_> {
 
 /// A service status's icon.
 pub fn status_icon(status: &str) -> Icon {
-    Icon::Symbol(match status {
+    Icon::symbol(match status {
         "ok" => "checkmark.circle",
         "warn" => "exclamationmark.triangle",
         "fail" => "xmark.octagon",
@@ -121,9 +121,9 @@ fn worst(services: &[Svc]) -> &'static str {
 /// A machine's icon: its state when it has no fresh data, else its worst service.
 pub fn machine_icon(state: &str, services: &[Svc]) -> Icon {
     match state {
-        "pending" => Icon::Symbol("hourglass"),
-        "down" => Icon::Symbol("bolt.horizontal.circle"),
-        "stale" => Icon::Symbol("clock.arrow.circlepath"),
+        "pending" => Icon::symbol("hourglass"),
+        "down" => Icon::symbol("bolt.horizontal.circle"),
+        "stale" => Icon::symbol("clock.arrow.circlepath"),
         _ => status_icon(worst(services)),
     }
 }
@@ -251,7 +251,7 @@ pub fn root_item(seen: &[Seen]) -> Option<Item> {
         tone: fleet_tone(seen),
         accessory: "sys".into(),
         keywords: vec!["fleet machines servers services health status dashboard".into()],
-        ..Item::new(ItemId::new(ID, "fleet"), "Fleet", "Show Fleet", Icon::Symbol("server.rack"))
+        ..Item::new(ItemId::new(ID, "fleet"), "Fleet", "Show Fleet", Icon::symbol("server.rack"))
     })
 }
 
@@ -261,7 +261,7 @@ fn agents_item() -> Item {
         subtitle: "Coding agents on every machine".into(),
         accessory: "herdr".into(),
         keywords: vec!["herdr agents claude codex".into()],
-        ..Item::new(ItemId::new(ID, "agents"), "Herdr Agents", "Show Agents", Icon::Symbol("terminal"))
+        ..Item::new(ItemId::new(ID, "agents"), "Herdr Agents", "Show Agents", Icon::symbol("terminal"))
     }
 }
 
@@ -280,7 +280,7 @@ pub fn fleet_items(seen: &[Seen]) -> Vec<Item> {
 
 /// A fact label's icon.
 fn fact_icon(label: &str) -> Icon {
-    Icon::Symbol(match label {
+    Icon::symbol(match label {
         "load" => "cpu",
         "memory" => "memorychip",
         "disk" => "internaldrive",
@@ -299,7 +299,7 @@ pub fn machine_items(seen: Option<&Seen>, now: u64) -> (Vec<Item>, String) {
     let title = snap.as_ref().map_or_else(|| s.name().to_string(), |snap| report::head(snap, now));
     let head = Item {
         title: format!("{} · {title}", s.state),
-        ..Item { id: ItemId::new(ID, "head"), verb: "Show Fleet", ..s.item() }
+        ..Item { id: ItemId::new(ID, "head"), verb: "Show Fleet".into(), ..s.item() }
     };
     let mut items = vec![head];
     let facts = snap.as_ref().map(report::facts).unwrap_or_default();
@@ -308,7 +308,7 @@ pub fn machine_items(seen: Option<&Seen>, now: u64) -> (Vec<Item>, String) {
         items.push(Item { subtitle: label.into(), keywords: vec![label.into()], ..item });
     }
     for svc in &s.services {
-        let item = Item { id: ItemId::new(ID, format!("check/{}", svc.name)), title: svc.name.into(), verb: "Show Status", ..s.service_item(*svc) };
+        let item = Item { id: ItemId::new(ID, format!("check/{}", svc.name)), title: svc.name.into(), verb: "Show Status".into(), ..s.service_item(*svc) };
         items.push(item);
     }
     items.push(agents_item());
@@ -340,7 +340,7 @@ pub fn log_view(tail: Option<&Tail>, now: u64) -> (Vec<Item>, String, String) {
             ItemId::new(ID, "log"),
             format!("{} · {}", t.service, t.machine),
             "Tail Again",
-            Icon::Symbol("doc.text.magnifyingglass"),
+            Icon::symbol("doc.text.magnifyingglass"),
         )
     };
     (vec![item], format!("{} log · {}  ·  esc to go back", t.service, t.machine), text)
