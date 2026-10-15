@@ -12,6 +12,7 @@
 //! "confirm": "Delete it?"}`. `do` is the card vocabulary (`core::card::Do`, checked by its
 //! policy as a local card's) without `shell` (an extension runs commands itself, in `act`),
 //! plus `"ext"` (send `op: act`, the default), `{"push": "<view>"}` and `{"form": "<form>"}`.
+//! The card's `"dismiss"` (close the card) hides the launcher, whatever `after` says.
 
 use std::path::{Path, PathBuf};
 

@@ -219,10 +219,14 @@ pub fn on_event(event: Event) {
             let changed = match &s.screen {
                 Screen::List(view) => stale.contains(&view.module),
                 Screen::Root => matches!(event, Event::ModuleChanged { .. }),
+                Screen::Form(form) => stale.contains(&form.module),
                 _ => false,
             };
             if changed && ui::is_visible() {
-                s.refresh_keeping_selection();
+                match s.screen {
+                    Screen::Form(_) => s.refresh_form(),
+                    _ => s.refresh_keeping_selection(),
+                }
             }
             // A screen the open panel was on may have moved or gone.
             if event == Event::DisplaysChanged && ui::is_visible() {
@@ -296,6 +300,7 @@ impl State {
 
     /// Put `screen` on the panel with `query` in the search field.
     fn show(&mut self, screen: Screen, query: &str) {
+        self.leave_form();
         if let Some((module, name)) = screen::hold(&mut self.held, &screen) {
             self.registry.closed(module, &name, &mut self.env.cx(""));
         }
@@ -359,7 +364,8 @@ impl State {
         let item = self.results.get(self.selected);
         let (title, footer, empty, action) = match &self.screen {
             Screen::Form(form) => {
-                ui::render_form(form, self.status.as_deref().unwrap_or("⇥  Next Field"));
+                let footer = form.pending.as_deref().or(self.status.as_deref());
+                ui::render_form(form, footer.unwrap_or("⇥  Next Field"));
                 return;
             }
             Screen::Root => {
@@ -445,6 +451,7 @@ impl State {
                     self.set_status(status);
                 }
             }
+            Outcome::Root => _ = self.enter(None),
             Outcome::Push(view) => {
                 if !self.enter(Some(view))
                     && let Some(back) = back

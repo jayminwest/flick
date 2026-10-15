@@ -137,7 +137,7 @@ pub fn agent_item(agent: &Agent, now: u64) -> Item {
         subtitle: agent_subtitle(agent),
         accessory: if agent.changed_at == 0 { String::new() } else { age(now.saturating_sub(agent.changed_at)) },
         keywords,
-        tab: Tab::Act("output"),
+        tab: Tab::act("output"),
         tone: status_tone(agent.status),
         ..Item::new(
             ItemId::new(ID, agent_key(&agent.machine, &agent.pane_id)),

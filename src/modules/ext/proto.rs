@@ -111,7 +111,7 @@ impl EventKind {
 /// One call to an extension.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "actions and forms (flick-b46d), queries (flick-f4e6), events (flick-d894)")
+    expect(dead_code, reason = "queries and keywords (flick-f4e6), events (flick-d894)")
 )]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {

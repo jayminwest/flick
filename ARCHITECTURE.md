@@ -51,7 +51,9 @@ the main thread.
 | `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font. It scrolls; it starts at its top, or at its end with `view.text_tail` (output that grows: it follows the end while the user is there). A view with `view.title` is read-only, so the vim keys scroll the text (see Screens). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab` is `Tab::Activate`) | Run an item this module created. |
 | `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
-| `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. |
+| `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. A `Form::background` form (one that saves off the main thread): `Ok(text)` only started the save; the form stays open with `Form::pending = Some(text)` (e.g. `Saving…`) until `refresh_form` ends it. |
+| `refresh_form(&mut Form, &mut Cx) -> Option<String>` | an event made this module's views stale while its form is on the screen and the launcher shows | Update the form: fill one that was loading, or end a pending save by clearing `pending` (and setting `error`). `Some(status)`: the form is done; back to root search with `status` in the footer. |
+| `form_closed(&Form, &mut Cx)` | the screen stops showing the module's form (Escape, another screen, done) | A save the form still waits on must report its answer some other way (a toast); never reopen the form. |
 | `actions(&ItemId, &mut Cx) -> Vec<Action>` | each render of a list, ⌘K | The item's action menu, in display order. Asked again each time, so keep it cheap and current (e.g. "Quit" only while running). Empty: no menu, and no "Actions ⌘K" hint. |
 | `act(&ItemId, key, &mut Cx) -> Outcome` | Enter in the action menu; Tab on a list item whose `tab` is `Tab::Act(key)` | Run action `key` (an `Action::key` from `actions`) on the item. `cx.query` is the search text of the list the menu came from. |
 | `confirmed(token, &mut Cx) -> Outcome` | the user confirms an `Outcome::Confirm` | Do what `Confirm::token` names. `cx.query` is the search text of the screen the question came from. |
@@ -73,14 +75,16 @@ State in the store (e.g. `activity`'s recording flag) stays for a module enabled
 `store`, `ranker`, and `hide()`. Call `cx.hide()` before an action that needs the previous app
 frontmost (open, focus, paste), then return `Outcome::Hide`.
 
-`Item::verb`, `Icon::Symbol`, `Action::key` and `Field::key` are `Cow<'static, str>`: a
-compiled-in module passes literals (borrowed, no allocation), and a module that gets them at
-run time from outside Flick passes owned strings. `Item::new`, `Icon::symbol`, `Action::new`
-and `Field::new` take `impl Into<Cow<'static, str>>`; build symbol icons with `Icon::symbol`.
+`Item::verb`, `Icon::Symbol`, `Action::key`, `Field::key` and the key of `Tab::Act` are
+`Cow<'static, str>`: a compiled-in module passes literals (borrowed, no allocation), and a
+module that gets them at run time from outside Flick passes owned strings. `Item::new`,
+`Icon::symbol`, `Action::new`, `Field::new` and `Tab::act` take `impl Into<Cow<'static, str>>`;
+build symbol icons with `Icon::symbol`. `Action::shortcut_hint` stays `&'static str`: hints are
+Flick's own (⌘Q is bound), so an extension's actions have none.
 
 Panic isolation: `Registry::dispatch` (events) and `Registry::command` catch panics per module.
 A panicking command returns `"<id>: command panicked"`. `items`, `direct`, `open`, `refresh`,
-`activate`, `form`, `submit`, `actions`, `act`, `confirmed` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
+`activate`, `form`, `submit`, `refresh_form`, `form_closed`, `actions`, `act`, `confirmed` and `hotkey` are not isolated. Report errors as `Outcome::Stay(Some(text))` or
 `Err(text)`; do not panic.
 
 Registration order (the `modules!` list in `src/modules/mod.rs`) is significant. It sets root order for
@@ -116,6 +120,8 @@ tints only for a problem, so all-well stays quiet in root search.
 
 - `Hide`: close the launcher.
 - `Stay(Option<String>)`: stay; `Some` shows a status line in the footer.
+- `Root`: back to root search, the launcher still showing (an extension action's
+  `after: "root"`).
 - `Push(ListView)`: a request for a view by `module` and `name`. The registry asks the owning
   module's `open`, so any module can push another module's view by name (`builtin` pushes
   `clip/history`). Views by name, item ids (above) and hotkey keys (status item `Open`
@@ -129,7 +135,7 @@ tints only for a problem, so all-well stays quiet in root search.
 
 An `Outcome` from `act` or `confirmed` applies to the list the menu or question came from:
 `Stay` returns there (refreshed, same search text and selection) and shows its status;
-`Push`, `Form` and `Confirm` replace it; `Hide` hides the launcher.
+`Push`, `Form` and `Confirm` replace it; `Root` goes to root search; `Hide` hides the launcher.
 
 ## Screens
 
@@ -166,7 +172,11 @@ A form takes none of them, so they keep their text-editing defaults there.
   not shown. Focus on `Form::focused`. Tab and Shift-Tab move focus (wrapping), Enter or ⌘↵
   submits; in a multiline field Return inserts a newline and only ⌘↵ submits, and the footer
   shows `⌘↵` (`Form::submit_hint`). Escape goes back to root search. A blank required field is an inline
-  `<Label> is required` error, and `submit` is not called.
+  `<Label> is required` error, and `submit` is not called. A form with `pending` set (a
+  `background` form loading or saving) shows that text as its footer and does not submit;
+  Tab, typing and Escape still work. While it shows, an event that makes its module stale
+  calls `refresh_form` (`app::overlay`); every screen change away from a form calls
+  `form_closed` first (`State::show`). No controller code waits for the module.
 
 `Actions` and `Confirm` hold the screen under them in `back`, so Escape restores it.
 `State::show` (every screen change) tracks the module view the screen holds, directly or in
@@ -323,7 +333,11 @@ and every hotkey.
   (spawn, stdin, stdout, exit, all with the call's budget; past it the process group is
   killed). Answers go into the module's inbox and each posts `ModuleChanged`; the main
   thread only queues and drains. A reload drops the workers of changed extensions (the
-  queue's sender), and each thread ends after its current call.
+  queue's sender), and each thread ends after its current call. Actions are optimistic:
+  `after` (hide, stay, root) applies at once, the reply's status or error arrives later in
+  the footer of the view if it still shows, else as a HUD toast (errors always toast). A
+  card `script` or `flick` action runs Flick's own CLI on a thread of its own, answered
+  into the same inbox. Forms are `background`: `Saving…` until the submit reply.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
   `core::control::PeerHooks`, or `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5

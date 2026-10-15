@@ -120,15 +120,23 @@ pub enum Tone {
 }
 
 /// What Tab does to a selected item in root search or a module list.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
     /// Nothing.
     #[default]
     None,
     /// The same as Enter (a quicklink that still needs its argument).
     Activate,
-    /// Run the item's action with this key (`Module::act`), as if picked in the ⌘K menu.
-    Act(&'static str),
+    /// Run the item's action with this key (`Module::act`), as if picked in the ⌘K menu: a
+    /// literal from a module, or an owned key from outside Flick (an extension's).
+    Act(Cow<'static, str>),
+}
+
+impl Tab {
+    /// `Act` with `key`.
+    pub fn act(key: impl Into<Cow<'static, str>>) -> Tab {
+        Tab::Act(key.into())
+    }
 }
 
 impl Item {
@@ -215,5 +223,11 @@ mod tests {
             Item::new(ItemId::new("ext", "y"), "Y", "Run", Icon::symbol("app")).verb,
             Cow::Borrowed("Run")
         ));
+    }
+
+    #[test]
+    fn tab_acts_on_a_literal_or_an_owned_key() {
+        assert_eq!(Tab::act("output"), Tab::Act(Cow::Borrowed("output")));
+        assert_eq!(Tab::act(String::from("copy")), Tab::Act(Cow::Owned("copy".into())));
     }
 }

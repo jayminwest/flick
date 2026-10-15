@@ -12,7 +12,8 @@ pub const ICON: &str = "puzzlepiece.extension";
 /// A view's empty text until its first answer.
 pub const LOADING: &str = "Loading…";
 
-/// Extension `ext`'s item `e`. Enter's verb is its first action's title.
+/// Extension `ext`'s item `e`. Enter's verb is its first action's title; Tab runs the action
+/// its `tab` names.
 pub fn item(ext: &str, e: &ExtItem) -> Item {
     let verb = e.actions.first().map_or_else(|| "Open".to_string(), |a| a.title.clone());
     Item {
@@ -23,8 +24,7 @@ pub fn item(ext: &str, e: &ExtItem) -> Item {
         icon: e.icon.clone().unwrap_or_else(|| Icon::symbol(ICON)),
         keywords: e.keywords.clone(),
         verb: verb.into(),
-        // Tab runs `e.tab` once `Tab::Act` can hold a key from outside Flick (flick-de94).
-        tab: Tab::None,
+        tab: e.tab.clone().map_or(Tab::None, Tab::act),
         tone: e.tone,
     }
 }
@@ -93,13 +93,14 @@ mod tests {
     fn items_carry_the_extension_and_key_in_their_id() {
         let json = r#"{"items": [{"key": "n/1", "title": "One", "subtitle": "s", "accessory": "a",
             "icon": "star", "keywords": ["k"], "tone": "warn",
-            "actions": [{"key": "copy", "title": "Copy"}]}, {"key": "2", "title": "Two"}]}"#;
+            "actions": [{"key": "copy", "title": "Copy"}], "tab": "copy"}, {"key": "2", "title": "Two"}]}"#;
         let got: Vec<Item> = items(json).iter().map(|e| item("notes", e)).collect();
         assert_eq!((got[0].id.as_str(), got[0].id.module(), got[0].id.key()), ("ext:notes/n/1", "ext", "notes/n/1"));
         assert_eq!((got[0].subtitle.as_str(), got[0].accessory.as_str()), ("s", "a"));
         assert_eq!((&got[0].icon, &*got[0].verb, got[0].tone), (&Icon::symbol("star"), "Copy", Tone::Warn));
         assert_eq!(got[0].keywords, ["k"]);
-        assert_eq!((&got[1].icon, &*got[1].verb, got[1].tab), (&Icon::symbol(ICON), "Open", Tab::None));
+        assert_eq!((&got[1].icon, &*got[1].verb, &got[1].tab), (&Icon::symbol(ICON), "Open", &Tab::None));
+        assert_eq!(got[0].tab, Tab::act("copy"));
         let none = ExtItem { actions: vec![], ..items(json)[1].clone() };
         assert_eq!(item("x", &none).verb, "Open");
     }

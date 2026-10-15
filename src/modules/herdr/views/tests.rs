@@ -143,7 +143,7 @@ fn the_detail_view_puts_jump_first_then_the_reply() {
     assert_eq!(ids, ["herdr:agent/hub/w1:p1", "herdr:reply"]);
     assert_eq!((items[1].subtitle.as_str(), text.as_str()), ("2 lines", "a\nb"));
     // Jump has no Tab; an agent row in the list does.
-    assert_eq!((items[0].tab, agent_item(a.unwrap(), 0).tab), (Tab::None, Tab::Act("output")));
+    assert_eq!((&items[0].tab, agent_item(a.unwrap(), 0).tab), (&Tab::None, Tab::act("output")));
     let one = detail(a, Some(&p(Some(Ok("a".into())))), 1_000).0;
     assert_eq!(one[1].subtitle, "1 line");
     // Another agent's preview is not this one's.
