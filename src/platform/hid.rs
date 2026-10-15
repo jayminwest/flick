@@ -128,13 +128,26 @@ fn to_json(mappings: &[Mapping]) -> String {
 /// )
 /// ```
 ///
-/// On a Mac with several HID services and no global mapping, `--get` prints a per-service
-/// table (`RegistryID  Key  Value` header, one row per service); all `(null)` means unset.
+/// On a Mac with several HID services, `--get` prints a per-service table instead: a
+/// `RegistryID  Key  Value` header, then one row per service whose value is `(null)` or a list
+/// like the above, continued on the following lines. It is accepted only when every service
+/// holds the same mappings; services that differ are `None`, so `set` never collapses them.
 ///
 /// `None` for anything else, so a format change never writes back a list that lost entries.
 fn parse(out: &str) -> Option<Vec<Mapping>> {
     let out = out.trim();
-    if out.is_empty() || out == "(null)" || all_null_table(out) {
+    let mut lines = out.lines();
+    let header: Vec<&str> = lines.next().unwrap_or_default().split_whitespace().collect();
+    if header == ["RegistryID", "Key", "Value"] {
+        return parse_table(lines);
+    }
+    parse_list(out)
+}
+
+/// One global value: `(null)`, empty, or the plist array.
+fn parse_list(out: &str) -> Option<Vec<Mapping>> {
+    let out = out.trim();
+    if out.is_empty() || out == "(null)" {
         return Some(Vec::new());
     }
     let body = out.strip_prefix('(')?.strip_suffix(')')?.trim();
@@ -149,14 +162,26 @@ fn parse(out: &str) -> Option<Vec<Mapping>> {
     Some(mappings)
 }
 
-/// The per-service table with every value `(null)`.
-fn all_null_table(out: &str) -> bool {
-    let mut lines = out.lines();
-    let header: Vec<&str> = lines.next().unwrap_or_default().split_whitespace().collect();
-    header == ["RegistryID", "Key", "Value"]
-        && lines.all(|l| {
-            matches!(l.split_whitespace().collect::<Vec<_>>()[..], [_, "UserKeyMapping", "(null)"])
-        })
+/// The table rows after the header: the one list every service shares, else `None`.
+fn parse_table<'a>(lines: impl Iterator<Item = &'a str>) -> Option<Vec<Mapping>> {
+    let mut values: Vec<String> = Vec::new();
+    for line in lines {
+        let mut words = line.split_whitespace();
+        let id = words.next().unwrap_or_default();
+        if !id.is_empty()
+            && id.bytes().all(|b| b.is_ascii_hexdigit())
+            && words.next() == Some("UserKeyMapping")
+        {
+            values.push(line.split_once("UserKeyMapping")?.1.to_owned());
+        } else {
+            let value = values.last_mut()?;
+            value.push('\n');
+            value.push_str(line);
+        }
+    }
+    let mut lists = values.iter().map(|v| parse_list(v));
+    let first = lists.next()??;
+    lists.all(|l| l.as_ref() == Some(&first)).then_some(first)
 }
 
 /// `Key = value;` pairs; exactly Src and Dst.
@@ -202,6 +227,16 @@ mod tests {
             })
             .collect();
         format!("(\n{}\n)\n", entries.join(",\n"))
+    }
+
+    /// The per-service table `hidutil --get` prints on a Mac with several HID services.
+    fn table(services: &[&[Mapping]]) -> String {
+        let rows: Vec<String> = services
+            .iter()
+            .enumerate()
+            .map(|(i, m)| format!("10000075{i:x}   UserKeyMapping   {}", listing(m).trim_end()))
+            .collect();
+        format!("RegistryID  Key                   Value\n{}\n", rows.join("\n"))
     }
 
     /// A stub `hidutil`: answers `--get` from `state`, applies `--set` to it, logs every call.
@@ -281,6 +316,34 @@ mod tests {
         ] {
             assert_eq!(parse(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_per_service_table_parses_only_when_every_service_agrees() {
+        assert_eq!(parse(&table(&[&[OTHER, OURS], &[OTHER, OURS]])), Some(vec![OTHER, OURS]));
+        assert_eq!(parse(&table(&[&[OURS]])), Some(vec![OURS]));
+        assert_eq!(parse(&table(&[&[], &[]])), Some(vec![]));
+        assert_eq!(parse(&table(&[&[OURS], &[OTHER]])), None);
+        assert_eq!(parse(&table(&[&[OURS], &[]])), None);
+        assert_eq!(parse("RegistryID  Key  Value\n"), None);
+        assert_eq!(
+            parse("RegistryID  Key  Value\n    {\n10000075d   UserKeyMapping   (null)\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn set_over_an_agreeing_table_writes_and_over_a_split_one_does_not() {
+        let mut stub = Stub::new(&[]);
+        stub.state = table(&[&[OTHER], &[OTHER]]);
+        set_with(&mut |a| stub.run(a)).unwrap();
+        assert_eq!(stub.mappings(), vec![OTHER, OURS]);
+
+        let mut split = Stub::new(&[]);
+        split.state = table(&[&[OTHER], &[]]);
+        assert!(set_with(&mut |a| split.run(a)).unwrap_err().contains("unrecognized"));
+        assert!(clear_with(&mut |a| split.run(a)).is_err());
+        assert_eq!(split.sets(), 0);
     }
 
     #[test]
