@@ -93,6 +93,19 @@
 # Optional: a global hotkey that types it.
 #hotkey = "cmd+ctrl+alt+shift+KeyY"
 
+# --- ext: extensions, programs in any language that add to the launcher. Each call runs
+# the program once (no shell) with one JSON request on stdin and reads one JSON reply from
+# stdout; it gets FLICK_EXT (its name), FLICK_SOCKET and FLICK_VERSION. A failed call shows
+# "<name>: <last stderr line>" and is logged. Repeat the table for each extension. Example:
+#[[ext.extensions]]
+# Its id: 1-32 of a-z, 0-9 and - (renaming it loses its items' usage history).
+#name = "notes"
+# The program and its arguments; a leading "~/" is the home folder.
+#argv = ["~/bin/notes-ext", "--flick"]
+# Time a call may take before the program is killed, in milliseconds; act and submit get
+# at least 10 s.
+#timeout_ms = 2000
+
 # --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
 #[builtin]
 #enabled = true

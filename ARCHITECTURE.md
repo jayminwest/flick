@@ -244,7 +244,8 @@ Sources:
   event never carries chat text, `Event` being `Copy`), `app` (its uninstall sizing thread:
   Uninstall… pushes view `app/uninstall`, which lists the paths with "Sizing…" until the
   sizes arrive, and Enter there asks for the confirmation; `app uninstall --dry-run` answers
-  later through `core::later`).
+  later through `core::later`), `ext` (its worker threads, one per extension, after
+  each call).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a
@@ -316,6 +317,12 @@ and every hotkey.
   cache and starts a refresh on a thread, at most once per 5 s. Only the first call with an
   empty cache waits for that thread on a `Condvar`, bounded (2.25 s for the 2 s probe); the
   child itself never runs on the main thread. Nothing refreshes unless a verb asks.
+- A queue per external program (`src/modules/ext/`): each extension gets one worker
+  thread, started on its first call, that runs its calls one at a time in queue order
+  (spawn, stdin, stdout, exit, all with the call's budget; past it the process group is
+  killed). Answers go into the module's inbox and each posts `ModuleChanged`; the main
+  thread only queues and drains. A reload drops the workers of changed extensions (the
+  queue's sender), and each thread ends after its current call.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
   `core::control::PeerHooks`, or `/usr/bin/ssh -o BatchMode=yes -o ConnectTimeout=5
