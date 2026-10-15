@@ -30,6 +30,10 @@ fn every_action_target() {
         (WindowAction::Center, rect(400.0, 275.0, 400.0, 300.0)),
         (WindowAction::NextDisplay, WIN),
         (WindowAction::PreviousDisplay, WIN),
+        (WindowAction::DisplayLeft, WIN),
+        (WindowAction::DisplayRight, WIN),
+        (WindowAction::DisplayAbove, WIN),
+        (WindowAction::DisplayBelow, WIN),
         (WindowAction::Minimize, WIN),
         (WindowAction::Hide, WIN),
     ];
@@ -129,4 +133,24 @@ fn display_moves_keep_relative_position_and_wrap() {
     let huge = rect(1200.0, 0.0, 2400.0, 1600.0);
     assert_eq!(frame_for(WindowAction::NextDisplay, huge, &areas), Ok(AREA));
     assert_eq!(frame_for(WindowAction::NextDisplay, WIN, &[AREA]), Ok(WIN));
+}
+
+#[test]
+fn directional_display_moves_pick_the_nearest_screen_that_way() {
+    // Laptop AREA at the origin, a monitor to its right, one above it and one off to the left
+    // and lower (staggered).
+    let right = rect(1200.0, 0.0, 2400.0, 1600.0);
+    let above = rect(0.0, -1055.0, 1920.0, 1080.0);
+    let left = rect(-1920.0, 300.0, 1920.0, 1080.0);
+    let areas = [AREA, right, above, left];
+    let at = |action, win| frame_for(action, win, &areas).unwrap();
+    assert_eq!(at(WindowAction::DisplayRight, WIN), rect(1450.0, 195.0, 400.0, 300.0));
+    assert_eq!(at(WindowAction::DisplayAbove, WIN), rect(190.0, -938.0, 400.0, 300.0));
+    assert_eq!(at(WindowAction::DisplayLeft, WIN), rect(-1730.0, 417.0, 400.0, 300.0));
+    // Back from the monitor on the right: the laptop is the nearest screen to the left.
+    let on_right = rect(1450.0, 195.0, 400.0, 300.0);
+    assert_eq!(at(WindowAction::DisplayLeft, on_right), WIN);
+    // No screen below the laptop, and none right of the right monitor: the window stays put.
+    assert_eq!(at(WindowAction::DisplayBelow, WIN), WIN);
+    assert_eq!(at(WindowAction::DisplayRight, on_right), on_right);
 }

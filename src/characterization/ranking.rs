@@ -92,14 +92,19 @@ fn fuzzy_score_plus_frecency() {
             "app:/Applications/Slack.app",
             "app:/Applications/Safari.app",
             "quicklink:GitHub Search",
+            "window:Display Above",
             "builtin:Switch Windows",
-            "app:/Applications/Visual Studio Code.app",
         ]
     );
     assert_eq!(ranked("vsc", 8), ["app:/Applications/Visual Studio Code.app"]);
     assert_eq!(
         ranked("left", 8),
-        ["window:Left Half", "window:Top Left Quarter", "window:Bottom Left Quarter"]
+        [
+            "window:Left Half",
+            "window:Display Left",
+            "window:Top Left Quarter",
+            "window:Bottom Left Quarter"
+        ]
     );
     assert_eq!(ranked("clip", 8), ["builtin:Clipboard History"]);
     assert!(ranked("zzz", 8).is_empty());
@@ -113,8 +118,8 @@ fn keywords_match_quicklinks() {
             "quicklink:Google",
             "quicklink:GitHub Search",
             "window:Right Half",
+            "window:Display Right",
             "app:/System/Applications/System Settings.app",
-            "builtin:Open Flick Config",
         ]
     );
     assert_eq!(
@@ -122,6 +127,7 @@ fn keywords_match_quicklinks() {
         [
             "quicklink:GitHub Search",
             "window:Right Half",
+            "window:Display Right",
             "window:Top Right Quarter",
             "window:Bottom Right Quarter",
         ]

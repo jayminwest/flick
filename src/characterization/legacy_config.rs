@@ -84,6 +84,10 @@ fn window_key_names_are_action_slugs() {
             "center",
             "next-display",
             "previous-display",
+            "display-left",
+            "display-right",
+            "display-above",
+            "display-below",
             "minimize",
             "hide",
         ]

@@ -38,12 +38,16 @@ pub enum WindowAction {
     Center,
     NextDisplay,
     PreviousDisplay,
+    DisplayLeft,
+    DisplayRight,
+    DisplayAbove,
+    DisplayBelow,
     Minimize,
     Hide,
 }
 
 impl WindowAction {
-    pub const ALL: [WindowAction; 20] = [
+    pub const ALL: [WindowAction; 24] = [
         Self::LeftHalf,
         Self::RightHalf,
         Self::TopHalf,
@@ -62,6 +66,10 @@ impl WindowAction {
         Self::Center,
         Self::NextDisplay,
         Self::PreviousDisplay,
+        Self::DisplayLeft,
+        Self::DisplayRight,
+        Self::DisplayAbove,
+        Self::DisplayBelow,
         Self::Minimize,
         Self::Hide,
     ];
@@ -86,6 +94,10 @@ impl WindowAction {
             Self::Center => "Center",
             Self::NextDisplay => "Next Display",
             Self::PreviousDisplay => "Previous Display",
+            Self::DisplayLeft => "Display Left",
+            Self::DisplayRight => "Display Right",
+            Self::DisplayAbove => "Display Above",
+            Self::DisplayBelow => "Display Below",
             Self::Minimize => "Minimize",
             Self::Hide => "Hide",
         }
@@ -107,6 +119,10 @@ impl WindowAction {
             Self::Maximize => "rectangle.inset.filled",
             Self::AlmostMaximize => "rectangle.dashed",
             Self::NextDisplay | Self::PreviousDisplay => "display.2",
+            Self::DisplayLeft => "arrow.left.to.line",
+            Self::DisplayRight => "arrow.right.to.line",
+            Self::DisplayAbove => "arrow.up.to.line",
+            Self::DisplayBelow => "arrow.down.to.line",
             Self::Minimize => "minus.square",
             Self::Hide => "eye.slash",
         }
@@ -146,7 +162,14 @@ impl WindowAction {
                 let (w, h) = (current.w.min(a.w), current.h.min(a.h));
                 r((a.w - w) / 2.0, (a.h - h) / 2.0, w, h)
             }
-            Self::NextDisplay | Self::PreviousDisplay | Self::Minimize | Self::Hide => current,
+            Self::NextDisplay
+            | Self::PreviousDisplay
+            | Self::DisplayLeft
+            | Self::DisplayRight
+            | Self::DisplayAbove
+            | Self::DisplayBelow
+            | Self::Minimize
+            | Self::Hide => current,
         }
     }
 
@@ -188,8 +211,27 @@ fn move_between(current: Rect, from: Rect, to: Rect) -> Rect {
     }
 }
 
+/// The nearest of `areas` whose center lies within 45 degrees of `(dx, dy)` from `from`'s (a unit
+/// step: left is `(-1, 0)`), else `from`. A staggered screen still counts as to the left; one
+/// mostly above does not.
+fn toward(from: Rect, areas: &[Rect], (dx, dy): (f64, f64)) -> Rect {
+    let (fx, fy) = from.center();
+    let distance = |a: &Rect| {
+        let (x, y) = a.center();
+        let along = (x - fx) * dx + (y - fy) * dy;
+        let across = (x - fx) * dy - (y - fy) * dx;
+        (along > across.abs()).then(|| (x - fx).hypot(y - fy))
+    };
+    areas
+        .iter()
+        .filter_map(|a| Some((distance(a)?, *a)))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or(from, |(_, a)| a)
+}
+
 /// The frame `action` gives a window at `current`, on the screen (of usable `areas`) that
-/// holds its center, else the first. Display moves wrap around.
+/// holds its center, else the first. Next and previous wrap around; a directional move with
+/// no screen that way keeps the window where it is.
 pub fn frame_for(
     action: WindowAction,
     current: Rect,
@@ -201,6 +243,10 @@ pub fn frame_for(
     Ok(match action {
         WindowAction::NextDisplay => move_between(current, area, areas[(index + 1) % n]),
         WindowAction::PreviousDisplay => move_between(current, area, areas[(index + n - 1) % n]),
+        WindowAction::DisplayLeft => move_between(current, area, toward(area, areas, (-1.0, 0.0))),
+        WindowAction::DisplayRight => move_between(current, area, toward(area, areas, (1.0, 0.0))),
+        WindowAction::DisplayAbove => move_between(current, area, toward(area, areas, (0.0, -1.0))),
+        WindowAction::DisplayBelow => move_between(current, area, toward(area, areas, (0.0, 1.0))),
         _ => action.cycled(area, current),
     })
 }

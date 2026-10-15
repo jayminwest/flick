@@ -40,7 +40,8 @@ hotkey = "alt+shift+Space"
 # Global window hotkeys: <action> = "<hotkey>". Actions are the window command
 # titles in kebab case: left-half, right-half, top-half, bottom-half,
 # top-left-quarter, ..., first-third, center-third, last-third, first-two-thirds,
-# last-two-thirds, maximize, almost-maximize, center, next-display, previous-display.
+# last-two-thirds, maximize, almost-maximize, center, next-display, previous-display,
+# display-left, display-right, display-above, display-below (nearest screen that way).
 # Repeating a half cycles 1/2 -> 2/3 -> 1/3.
 [window.keys]
 # left-half = "ctrl+alt+ArrowLeft"
