@@ -46,6 +46,7 @@ modules! {
         pub mod quicklinks => "quicklink", quicklinks::Quicklinks::default;
         mod scripts => "script", scripts::Scripts::default;
         mod snippet => "snippet", snippet::Snippets::default;
+        mod ext => "ext", || ext::Ext::new(crate::control::socket_path);
         mod flick => "builtin", || flick::Flick;
         mod clipboard => "clip", || clipboard::Clipboard;
         mod activity => "activity", activity::Activity::default;
@@ -83,8 +84,6 @@ const REBUILT: [&str; 1] = ["help"];
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
-// Not registered yet: only its pure protocol layer exists; the module lands in flick-6db0.
-mod ext;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;
