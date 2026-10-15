@@ -86,7 +86,6 @@ impl Op {
 }
 
 /// What happened in Flick, for an extension that subscribes to events.
-#[cfg_attr(not(test), expect(dead_code, reason = "events are sent from flick-d894"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
     Started,
@@ -97,6 +96,10 @@ pub enum EventKind {
 }
 
 impl EventKind {
+    /// Every kind, in a fixed order (a worker's bit for a kind is its index).
+    pub const ALL: [EventKind; 5] =
+        [EventKind::Started, EventKind::Reloaded, EventKind::Wake, EventKind::Unlocked, EventKind::LauncherOpened];
+
     pub fn name(self) -> &'static str {
         match self {
             EventKind::Started => "started",
@@ -126,7 +129,6 @@ pub enum Request {
     /// Submit the form `form` with each field's text.
     Submit { form: String, values: Vec<(String, String)> },
     /// Something happened in Flick.
-    #[cfg_attr(not(test), expect(dead_code, reason = "events are sent from flick-d894"))]
     Event(EventKind),
 }
 

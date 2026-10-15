@@ -217,6 +217,7 @@ fn answers_of_removed_extensions_and_to_events_change_nothing() {
     m.inbox.push(answer("gone", Request::Root, Ok(Reply::Items(vec![]))));
     m.inbox.push(answer("gone", Request::Root, Err("gone: x")));
     m.inbox.push(answer("echo", Request::Event(proto::EventKind::Wake), Ok(Reply::Ack)));
+    m.inbox.push(answer("echo", Request::Root, Ok(Reply::Ack)));
     assert!(!m.drain());
     assert!(seen().is_empty() && m.root.is_empty());
 }
@@ -265,6 +266,38 @@ fn failures_are_logged_and_notified_with_the_name() {
     let mut m = module(&entry("broken", &["fail"], 2000));
     m.call("broken", Request::Root).unwrap();
     assert_eq!(wait_seen(&mut m), ["log broken: bad token", "notify broken | broken: bad token"]);
+}
+
+#[test]
+fn subscribed_events_are_sent_and_a_failed_one_is_only_logged() {
+    let table = format!("{}subscribe = [\"wake\", \"unlocked\"]\n{}", entry("broken", &["fail"], 2000), entry("other", &["echo"], 2000));
+    let mut m = module(&table);
+    // Not subscribed to, or not an extension event: no call, no worker.
+    assert!(!event(&mut m, Event::Locked) && !event(&mut m, Event::Started));
+    assert!(m.workers.is_empty());
+    assert!(!event(&mut m, Event::Wake) && !event(&mut m, Event::Unlocked));
+    assert_eq!(m.workers.len(), 1);
+    assert!(m.pending.is_empty());
+    // Logged, never notified.
+    let mut got = wait_seen(&mut m);
+    if got.len() < 2 {
+        got.extend(wait_seen(&mut m));
+    }
+    assert_eq!(got, ["log broken: bad token", "log broken: bad token"]);
+}
+
+#[test]
+fn a_quiet_event_answer_leaves_only_the_last_call() {
+    let mut m = module(&format!("{}subscribe = [\"reloaded\"]\n", entry("echo", &["echo"], 2000)));
+    assert!(!event(&mut m, Event::Reloaded));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let last = |m: &Ext| m.workers.iter().find_map(Worker::last).filter(|l| l.op == "event");
+    while last(&m).is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(last(&m).unwrap().error, None);
+    settle(&mut m);
+    assert!(seen().is_empty());
 }
 
 #[test]

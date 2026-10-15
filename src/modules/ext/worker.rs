@@ -13,17 +13,24 @@
 //! it was queued, on the worker, and runs only if no newer one came; a newer one kills the
 //! child that answers an older one (`transport::call`'s `stop`). A superseded query leaves no
 //! answer and no `Last`.
+//!
+//! Events (`op: event`) are fire-and-forget and wait behind every other call: one runs only
+//! when nothing else is queued, so a user's call waits at most for the event already running.
+//! They coalesce per kind: one waits per kind at most (another of that kind while it waits is
+//! dropped), and the worker runs them one at a time. An event that answered with no warnings
+//! leaves no answer, only `Last`.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::core::later::Answer as Said;
 
-use super::proto::{Parsed, Request};
+use super::proto::{EventKind, Parsed, Request};
 use super::settings::Spec;
 
 /// One call: the extension, the request, `FLICK_SOCKET` and `stop` (true: kill the child).
@@ -110,6 +117,16 @@ enum Call {
     Query(u64, Instant, Request),
     /// A raw request text and the verb waiting for its reply.
     Raw(String, Sender<Said>),
+    /// An event waits (`Worker::waiting`): wake the thread.
+    Events,
+}
+
+/// Take the first waiting event out of `waiting`.
+fn next_event(waiting: &AtomicU8) -> Option<EventKind> {
+    let i = waiting.load(Ordering::SeqCst).trailing_zeros() as usize;
+    let kind = *EventKind::ALL.get(i)?;
+    waiting.fetch_and(!(1 << i), Ordering::SeqCst);
+    Some(kind)
 }
 
 /// The queue of one extension's worker thread.
@@ -120,6 +137,8 @@ pub struct Worker {
     last: Arc<Mutex<Option<Last>>>,
     /// The number of the newest query; a query with another number is superseded.
     newest: Arc<AtomicU64>,
+    /// The events waiting to run, bit `i` for `EventKind::ALL[i]`.
+    waiting: Arc<AtomicU8>,
 }
 
 impl Worker {
@@ -130,6 +149,8 @@ impl Worker {
         let kept = Arc::clone(&last);
         let newest = Arc::new(AtomicU64::new(0));
         let latest = Arc::clone(&newest);
+        let waiting = Arc::new(AtomicU8::new(0));
+        let events = Arc::clone(&waiting);
         let keep = move |op, error: Option<&String>, started: Instant| {
             let last = Last { op, error: error.cloned(), took: started.elapsed() };
             *kept.lock().unwrap_or_else(PoisonError::into_inner) = Some(last);
@@ -137,9 +158,23 @@ impl Worker {
         let thread = thread::Builder::new().name(format!("flick-ext-{}", spec.name));
         let thread = thread
             .spawn(move || {
-                for call in calls {
+                let mut backlog = VecDeque::new();
+                loop {
+                    backlog.extend(calls.try_iter());
+                    let call = match backlog.pop_front() {
+                        Some(call) => call,
+                        // Nothing else waits: an event, else the next call.
+                        None => match next_event(&events) {
+                            Some(kind) => Call::Ext(Request::Event(kind)),
+                            None => match calls.recv() {
+                                Ok(call) => call,
+                                Err(_) => break,
+                            },
+                        },
+                    };
                     // A query's number: it runs and answers only while it is the newest.
                     let (request, n) = match call {
+                        Call::Events => continue,
                         Call::Ext(request) => (request, None),
                         Call::Query(n, queued, request) => {
                             thread::sleep((queued + DEBOUNCE).saturating_duration_since(Instant::now()));
@@ -163,12 +198,16 @@ impl Worker {
                         continue;
                     }
                     keep(request.op().name(), result.as_ref().err(), started);
+                    let quiet = result.as_ref().is_ok_and(|p| p.warnings.is_empty());
+                    if quiet && matches!(request, Request::Event(_)) {
+                        continue;
+                    }
                     inbox.push(Answer { ext: ext.name.clone(), request, result });
                     (job.post)();
                 }
             })
             .map_err(|e| format!("{}: cannot start a thread: {e}", spec.name))?;
-        Ok(Worker { spec, queue, thread, last, newest })
+        Ok(Worker { spec, queue, thread, last, newest, waiting })
     }
 
     /// How its last finished call went; `None` before the first.
@@ -202,6 +241,17 @@ impl Worker {
         self.newest.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Queue event `kind`, unless one of that kind waits already; it runs once no other call
+    /// waits. `false` when the thread is gone.
+    pub fn event(&self, kind: EventKind) -> bool {
+        let i = EventKind::ALL.iter().position(|k| *k == kind).unwrap_or_default();
+        let bit = 1 << i;
+        if self.waiting.fetch_or(bit, Ordering::SeqCst) & bit != 0 {
+            return self.alive();
+        }
+        self.queue.send(Call::Events).is_ok()
+    }
+
     /// Queue the raw request `text`; its stdout or error goes to `reply`. `false` when the
     /// thread is gone.
     pub fn raw(&self, text: String, reply: Sender<Said>) -> bool {
@@ -215,7 +265,7 @@ mod tests {
     use crate::modules::ext::proto::Reply;
 
     fn spec() -> Spec {
-        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1), hotkeys: vec![], keywords: vec![] }
+        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1), hotkeys: vec![], keywords: vec![], subscribe: vec![] }
     }
 
     fn fake(spec: &Spec, request: &Request, socket: &Path, stop: &dyn Fn() -> bool) -> Result<Parsed, String> {
@@ -230,6 +280,12 @@ mod tests {
                 Err(format!("{}: stopped {}", spec.name, stop()))
             }
             Request::Query { query, .. } => Ok(Parsed { reply: Reply::Ack, warnings: vec![query.clone()] }),
+            Request::Open { view } if view == "slow" => {
+                thread::sleep(DEBOUNCE * 3);
+                Ok(Parsed { reply: Reply::Ack, warnings: vec![] })
+            }
+            Request::Event(EventKind::Reloaded) => Ok(Parsed { reply: Reply::Ack, warnings: vec![] }),
+            Request::Event(EventKind::Wake) => Ok(Parsed { reply: Reply::Ack, warnings: vec!["woke".into()] }),
             _ => Err(format!("{}: {}", spec.name, request.op().name())),
         }
     }
@@ -359,6 +415,30 @@ mod tests {
     }
 
     #[test]
+    fn events_coalesce_per_kind_and_wait_behind_other_calls() {
+        let inbox = Inbox::default();
+        let job = Job { run: fake, socket, post: || {}, flick: no_flick, raw: echo };
+        let w = Worker::start(spec(), job, inbox.clone()).unwrap();
+        assert!(w.send(Request::Open { view: "slow".into() }));
+        // Queued while the slow call runs: one wake, one unlocked, after the root call.
+        assert!(w.event(EventKind::Wake) && w.event(EventKind::Unlocked) && w.event(EventKind::Wake));
+        assert!(w.send(Request::Root));
+        let got = wait(&inbox, 4);
+        let requests: Vec<&Request> = got.iter().map(|a| &a.request).collect();
+        let want = [Request::Open { view: "slow".into() }, Request::Root, Request::Event(EventKind::Wake), Request::Event(EventKind::Unlocked)];
+        assert_eq!(requests, want.iter().collect::<Vec<_>>());
+        assert_eq!(got[3].result, Err("w: event".into()));
+        // A quiet answer leaves only `Last`.
+        assert!(w.event(EventKind::Reloaded));
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while w.last().is_some_and(|l| l.error.is_some()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!((w.last().unwrap().op, w.last().unwrap().error), ("event", None));
+        assert_eq!(inbox.len(), 0);
+    }
+
+    #[test]
     fn a_worker_whose_thread_died_refuses_calls() {
         fn panics(_: &Spec, _: &Request, _: &Path, _: &dyn Fn() -> bool) -> Result<Parsed, String> {
             panic!("extension call panicked")
@@ -372,5 +452,6 @@ mod tests {
         }
         assert!(!w.send(Request::Root));
         assert!(!w.alive());
+        assert!(!w.event(EventKind::Wake) && !w.event(EventKind::Wake));
     }
 }

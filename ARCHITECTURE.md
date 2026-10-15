@@ -257,7 +257,9 @@ Sources:
   Uninstall… pushes view `app/uninstall`, which lists the paths with "Sizing…" until the
   sizes arrive, and Enter there asks for the confirmation; `app uninstall --dry-run` answers
   later through `core::later`), `ext` (its worker threads, one per extension, after
-  each call).
+  each call; an `op: event` call, which `Started`, `Reloaded`, `Wake`, `Unlocked` and
+  `LauncherOpened` queue for each extension that subscribes, runs only when no other call
+  waits, coalesced per kind, and posts only when it failed or warned).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a

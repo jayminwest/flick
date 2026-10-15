@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::proto::{KEYWORDS_MAX, Op, SHORT_MAX, hidden};
+use super::proto::{EventKind, KEYWORDS_MAX, Op, SHORT_MAX, hidden};
 use crate::core::card::valid_id;
 
 /// `timeout_ms` when an entry does not set it.
@@ -40,6 +40,9 @@ pub struct Entry {
     /// Words that send `<keyword> <text>` in root search to it (`op: keyword`).
     #[serde(default)]
     keywords: Vec<String>,
+    /// Events sent to it (`op: event`), by `EventKind::name`.
+    #[serde(default)]
+    subscribe: Vec<String>,
 }
 
 fn timeout_ms() -> u64 {
@@ -56,6 +59,8 @@ pub struct Spec {
     pub hotkeys: Vec<(String, String)>,
     /// Its root search keywords: one word each, unique among all extensions.
     pub keywords: Vec<String>,
+    /// The events it gets, each once.
+    pub subscribe: Vec<EventKind>,
 }
 
 impl Spec {
@@ -72,7 +77,7 @@ impl Spec {
 /// The extensions in `settings`, each argument's leading `~/` replaced by `home`. Names are
 /// 1-`NAME_MAX` of `a-z 0-9 -` and unique; argv names a program; the timeout is not 0;
 /// hotkey views are valid view names; up to `KEYWORDS_MAX` keywords, each one word of at
-/// most `SHORT_MAX` chars that no other extension has.
+/// most `SHORT_MAX` chars that no other extension has; `subscribe` names event kinds.
 pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String> {
     let mut specs: Vec<Spec> = Vec::new();
     for e in settings.extensions {
@@ -101,10 +106,20 @@ pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String
         if e.keywords.len() > KEYWORDS_MAX || !e.keywords.iter().enumerate().all(word) {
             return bad(&format!("keywords: at most {KEYWORDS_MAX} words of 1-{SHORT_MAX} chars, each used once"));
         }
+        let mut subscribe = vec![];
+        for word in &e.subscribe {
+            let Some(kind) = EventKind::ALL.into_iter().find(|k| k.name() == word) else {
+                let all: Vec<&str> = EventKind::ALL.iter().map(|k| k.name()).collect();
+                return bad(&format!("subscribe: \"{word}\" is not one of {}", all.join(", ")));
+            };
+            if !subscribe.contains(&kind) {
+                subscribe.push(kind);
+            }
+        }
         let hotkeys = e.hotkeys.into_iter().filter(|(_, spec)| !spec.trim().is_empty()).collect();
         let argv = e.argv.into_iter().map(|a| expand(a, home)).collect();
         let timeout = Duration::from_millis(e.timeout_ms);
-        specs.push(Spec { name, argv, timeout, hotkeys, keywords: e.keywords });
+        specs.push(Spec { name, argv, timeout, hotkeys, keywords: e.keywords, subscribe });
     }
     Ok(specs)
 }
@@ -130,13 +145,16 @@ mod tests {
     fn entries_expand_home_and_default_the_timeout() {
         let text = "[[ext.extensions]]\nname = \"notes-2\"\nargv = [\"~/bin/notes\", \"--json\", \"~/n\", \"a~/b\"]\n\
                     [[ext.extensions]]\nname = \"gh\"\nargv = [\"/usr/bin/env\", \"gh-ext\"]\ntimeout_ms = 500\n\
-                    hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }\nkeywords = [\"pr\", \"is\"]";
+                    hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }\nkeywords = [\"pr\", \"is\"]\n\
+                    subscribe = [\"wake\", \"launcher_opened\", \"wake\"]";
         let got = specs(text).unwrap();
         assert_eq!(got[0].argv, ["/Users/me/bin/notes", "--json", "/Users/me/n", "a~/b"]);
         assert_eq!(got[0].timeout, Duration::from_millis(TIMEOUT_MS));
         assert_eq!((got[1].name.as_str(), got[1].timeout), ("gh", Duration::from_millis(500)));
         assert!(got[0].hotkeys.is_empty() && got[0].keywords.is_empty());
         assert_eq!(got[1].keywords, ["pr", "is"]);
+        assert!(got[0].subscribe.is_empty());
+        assert_eq!(got[1].subscribe, [EventKind::Wake, EventKind::LauncherOpened]);
         assert_eq!(got[1].hotkeys, [("prs".to_string(), "cmd+KeyP".to_string())]);
         assert!(specs("").unwrap().is_empty());
         let none = read(Settings { extensions: vec![] }, None).unwrap();
@@ -146,7 +164,7 @@ mod tests {
 
     #[test]
     fn act_and_submit_get_at_least_ten_seconds() {
-        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![], keywords: vec![] };
+        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![], keywords: vec![], subscribe: vec![] };
         assert_eq!(spec(2000).budget(Op::Root), Duration::from_secs(2));
         assert_eq!(spec(2000).budget(Op::Act), LONG);
         assert_eq!(spec(2000).budget(Op::Submit), LONG);
@@ -173,6 +191,9 @@ mod tests {
         let many = format!("[{}]", (0..=KEYWORDS_MAX).map(|i| format!("\"k{i}\"")).collect::<Vec<_>>().join(", "));
         let other = format!("{}\n{}", keywords("[\"k\"]"), entry("b", &format!("{argv}\nkeywords = [\"j\", \"k\"]")));
         assert_eq!(err(&other), "[ext] extensions: \"b\": keywords: at most 16 words of 1-80 chars, each used once");
+        let event = entry("a", &format!("{argv}\nsubscribe = [\"wake\", \"boot\"]"));
+        let want = "[ext] extensions: \"a\": subscribe: \"boot\" is not one of started, reloaded, wake, unlocked, launcher_opened";
+        assert_eq!(err(&event), want);
         let long = format!("[\"{}\"]", "k".repeat(SHORT_MAX + 1));
         for bad in [&many, "[\"\"]", "[\"a b\"]", "[\"a\\u0007\"]", &long, "[\"k\", \"k\"]"] {
             assert!(err(&keywords(bad)).ends_with("keywords: at most 16 words of 1-80 chars, each used once"), "{bad}");
