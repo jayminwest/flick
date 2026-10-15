@@ -110,6 +110,9 @@
 # Root search keywords: "<keyword> <text>" asks the extension for rows (op keyword) shown
 # above the ranked results. One word each, at most 16, unique among extensions.
 #keywords = ["n"]
+# Events sent to it (op event; its reply is ignored, a failure only logged): started,
+# reloaded, wake, unlocked, launcher_opened.
+#subscribe = ["wake"]
 
 # --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
 #[builtin]

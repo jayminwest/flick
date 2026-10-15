@@ -13,6 +13,11 @@
 //! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
 //! Actions (`act`) and forms (`forms`) build on these answers; `query` searches through the
 //! extension (`filter: "ext"` views, keywords). `cli` holds the verbs.
+//!
+//! An extension's `subscribe` list names the events it gets (`op: event`): `Started`,
+//! `Reloaded`, `Wake`, `Unlocked` and `LauncherOpened`. They are fire-and-forget: queued
+//! behind its other calls and coalesced per kind (`worker`), the reply ignored, a failure
+//! only logged.
 
 mod act;
 mod cli;
@@ -36,7 +41,7 @@ use act::Asked;
 use forms::Phase;
 use proto::form::ExtForm;
 use proto::item::ExtItem;
-use proto::{Filter, Reply, Request, View};
+use proto::{EventKind, Filter, Reply, Request, View};
 use settings::Spec;
 use worker::{Answer, Inbox, Job, Worker};
 
@@ -189,6 +194,12 @@ impl Ext {
                 Request::Form { form } => self.loaded(&ext, &form, result),
                 Request::Submit { form, .. } => self.saved(&ext, &form, result),
                 request @ (Request::Query { .. } | Request::Keyword { .. }) => self.queried(&ext, request, result),
+                Request::Event(_) => {
+                    if let Err(e) = result {
+                        (self.hooks.log)(&e);
+                    }
+                    false
+                }
                 request => match result {
                     Ok(reply) => self.keep(ext, request, reply),
                     Err(e) => self.failed(&ext, &request, e),
@@ -212,7 +223,6 @@ impl Ext {
                 self.views.insert(name, answer);
                 true
             }
-            // Events need no answer.
             _ => false,
         }
     }
@@ -232,6 +242,17 @@ impl Ext {
         }
         (self.hooks.notify)(ext, &error);
         false
+    }
+
+    /// Queue event `kind` for each extension that subscribes to it.
+    fn announce(&mut self, kind: EventKind) {
+        let names: Vec<String> =
+            self.specs.iter().filter(|s| s.subscribe.contains(&kind)).map(|s| s.name.clone()).collect();
+        let log = self.hooks.log;
+        for name in names {
+            // A worker that cannot start is logged, as `fetch` does.
+            _ = self.worker(&name).map(|w| w.event(kind)).inspect_err(|e| log(e));
+        }
     }
 
     /// Log the first `WARNINGS_LOGGED` of `warnings`, then how many more there were.
@@ -352,7 +373,7 @@ impl Module for Ext {
     }
 
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
-        match event {
+        let stale = match event {
             Event::ModuleChanged { module: "ext" } => self.drain(),
             Event::LauncherOpened | Event::Reloaded => {
                 let names: Vec<String> = self.specs.iter().map(|s| s.name.clone()).collect();
@@ -362,7 +383,19 @@ impl Module for Ext {
                 false
             }
             _ => false,
+        };
+        let kind = match event {
+            Event::Started => Some(EventKind::Started),
+            Event::Reloaded => Some(EventKind::Reloaded),
+            Event::Wake => Some(EventKind::Wake),
+            Event::Unlocked => Some(EventKind::Unlocked),
+            Event::LauncherOpened => Some(EventKind::LauncherOpened),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            self.announce(kind);
         }
+        stale
     }
 
     /// Each extension's `hotkeys`, keyed `<name>/<view>`.

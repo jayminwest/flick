@@ -179,7 +179,7 @@ mod tests {
 
     fn spec(mode: &[&str], timeout: Duration) -> Spec {
         let argv = std::iter::once(FIXTURE).chain(mode.iter().copied()).map(String::from);
-        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![], keywords: vec![] }
+        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![], keywords: vec![], subscribe: vec![] }
     }
 
     fn run(mode: &[&str]) -> Result<Parsed, String> {
