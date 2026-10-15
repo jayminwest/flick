@@ -37,6 +37,7 @@
     "src/modules/dictation/transcript.rs": 100.0,
     "src/modules/dictation/worker.rs": 100.0,
     "src/modules/ext/act.rs": 100.0,
+    "src/modules/ext/cli.rs": 100.0,
     "src/modules/ext/forms.rs": 100.0,
     "src/modules/ext/icons.rs": 100.0,
     "src/modules/ext/items.rs": 100.0,

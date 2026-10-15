@@ -11,9 +11,10 @@
 //! already queued is not queued again. A failed call is logged, and shown in the footer of
 //! the view it was for when that view is on the screen, else posted as a notification,
 //! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
-//! Actions (`act`) and forms (`forms`) build on these answers.
+//! Actions (`act`) and forms (`forms`) build on these answers. `cli` holds the verbs.
 
 mod act;
+mod cli;
 mod forms;
 mod icons;
 mod items;
@@ -54,6 +55,8 @@ struct Hooks {
     card: fn(&Do) -> Result<(), String>,
     /// The launcher is on the screen.
     visible: fn() -> bool,
+    /// Run module `.0`'s hotkey `.1` on a later main-queue turn, like a press of it.
+    open: fn(&str, &str),
 }
 
 pub struct Ext {
@@ -85,11 +88,12 @@ pub struct Ext {
 }
 
 impl Ext {
-    /// `socket` is the control socket path the extensions get as `FLICK_SOCKET`.
-    pub fn new(socket: fn() -> PathBuf) -> Ext {
-        let job = Job { run: transport::call, socket, post: wire::post, flick: wire::flick };
+    /// `socket` is the control socket path the extensions get as `FLICK_SOCKET`; `open`
+    /// runs a module's hotkey later (`ext open`).
+    pub fn new(socket: fn() -> PathBuf, open: fn(&str, &str)) -> Ext {
+        let job = Job { run: transport::call, socket, post: wire::post, flick: wire::flick, raw: transport::raw };
         let (log, notify, toast, visible, card) = (wire::log, wire::notify, wire::toast, wire::visible, wire::card);
-        Ext::with(Hooks { job, log, notify, toast, card, visible })
+        Ext::with(Hooks { job, log, notify, toast, card, visible, open })
     }
 
     fn with(hooks: Hooks) -> Ext {
@@ -133,20 +137,28 @@ impl Ext {
     /// Queue `request` for extension `name`; returns at once. The answer arrives with
     /// `ModuleChanged`.
     pub fn call(&mut self, name: &str, request: Request) -> Result<(), String> {
+        self.worker(name)?.send(request);
+        Ok(())
+    }
+
+    /// Extension `name`'s worker, started (again) when it has none or its thread died (a
+    /// panic).
+    fn worker(&mut self, name: &str) -> Result<&Worker, String> {
         let Some(spec) = self.specs.iter().find(|s| s.name == name) else {
             return Err(format!("ext: no extension \"{name}\""));
         };
-        if let Some(i) = self.workers.iter().position(|w| w.spec().name == name) {
-            if self.workers[i].send(request.clone()) {
-                return Ok(());
+        let i = match self.workers.iter().position(|w| w.spec().name == name) {
+            Some(i) if self.workers[i].alive() => i,
+            found => {
+                let worker = Worker::start(spec.clone(), self.hooks.job, self.inbox.clone())?;
+                if let Some(i) = found {
+                    self.workers.swap_remove(i);
+                }
+                self.workers.push(worker);
+                self.workers.len() - 1
             }
-            // Its thread died (a panic); start another.
-            self.workers.swap_remove(i);
-        }
-        let worker = Worker::start(spec.clone(), self.hooks.job, self.inbox.clone())?;
-        worker.send(request);
-        self.workers.push(worker);
-        Ok(())
+        };
+        Ok(&self.workers[i])
     }
 
     /// Keep the answers that arrived; true when a root item or view changed. Answers of an
@@ -335,6 +347,14 @@ impl Module for Ext {
         let (name, _) = items::split(key)?;
         self.spec(name)?;
         Some(ListView::new("ext", key))
+    }
+
+    fn command(&mut self, args: &[String], cx: &mut Cx) -> Result<String, String> {
+        self.run_verb(args, cx.json)
+    }
+
+    fn verbs(&self) -> &'static str {
+        cli::VERBS
     }
 }
 

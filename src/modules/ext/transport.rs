@@ -7,6 +7,7 @@
 //! this Mac. Every error starts with `<name>: `; a failed exit gives the last stderr line.
 //!
 //! `flick` runs Flick's own CLI for an action's card `script` or `flick` `do`, the same way.
+//! `raw` (`ext call`) sends a request text as given and returns the stdout unparsed.
 
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
@@ -17,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::icons;
-use super::proto::{self, Done, Parsed, REPLY_MAX, Reply, Request, TEXT_MAX};
+use super::proto::{self, Done, Op, Parsed, REPLY_MAX, Reply, Request, TEXT_MAX};
 use super::settings::Spec;
 
 /// Time a card `script` or `flick` request may take: `script run` only starts the script,
@@ -35,12 +36,19 @@ const DRAIN: Duration = Duration::from_secs(1);
 /// `FLICK_SOCKET`.
 pub fn call(spec: &Spec, req: &Request, socket: &Path) -> Result<Parsed, String> {
     let name = &spec.name;
-    let out = exec(spec, req, socket).map_err(|e| format!("{name}: {e}"))?;
+    let out = exec(spec, req.to_json(), spec.budget(req.op()), socket).map_err(|e| format!("{name}: {e}"))?;
     proto::parse(req.op(), &out).map(icons::check).map_err(|e| format!("{name}: {e}"))
 }
 
+/// Send `text` to `spec` as it is and return its stdout, trailing whitespace trimmed,
+/// without parsing it. It gets the long budget of `act`, whatever op it names.
+pub fn raw(spec: &Spec, text: &str, socket: &Path) -> Result<String, String> {
+    let out = exec(spec, text.to_string(), spec.budget(Op::Act), socket).map_err(|e| format!("{}: {e}", spec.name))?;
+    Ok(String::from_utf8_lossy(&out).trim_end().to_string())
+}
+
 /// The child's stdout, or why the call failed (without the name).
-fn exec(spec: &Spec, req: &Request, socket: &Path) -> Result<Vec<u8>, String> {
+fn exec(spec: &Spec, json: String, budget: Duration, socket: &Path) -> Result<Vec<u8>, String> {
     let (program, args) = spec.argv.split_first().ok_or("nothing to run")?;
     let mut child = Command::new(program)
         .args(args)
@@ -57,12 +65,11 @@ fn exec(spec: &Spec, req: &Request, socket: &Path) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("{program}: {e}"))?;
     // Write on a thread: a child that never reads must not hold us past the budget.
     if let Some(mut stdin) = child.stdin.take() {
-        let json = req.to_json();
         thread::spawn(move || {
             let _ = stdin.write_all(json.as_bytes()).and_then(|()| stdin.write_all(b"\n"));
         });
     }
-    finish(child, spec.budget(req.op()))
+    finish(child, budget)
 }
 
 /// Run Flick's CLI `exe` with `words`, without stdin, as a local request to this Mac
@@ -210,6 +217,23 @@ mod tests {
         assert_eq!(flick(Path::new(FIXTURE), &words(&["fail"])).unwrap_err(), "bad token");
         let e = flick(Path::new("/nonexistent/flick"), &[]).unwrap_err();
         assert!(e.starts_with("/nonexistent/flick: "), "{e}");
+    }
+
+    #[test]
+    fn a_raw_call_sends_the_text_as_given_and_returns_the_stdout() {
+        let echo = spec(&["echo"], Duration::from_secs(10));
+        let out = raw(&echo, r#"{"op":"root"}"#, Path::new("/s")).unwrap();
+        let want = format!(r#"{{"v":1,"status":"root done","items":[{{"key":"root","title":"echo {}","subtitle":"/s"}}]}}"#, env!("CARGO_PKG_VERSION"));
+        assert_eq!(out, want);
+        // Not parsed: an error reply or text that is not JSON comes back as it is.
+        assert_eq!(raw(&spec(&["error"], LONG), "{}", Path::new("/s")).unwrap(), r#"{"error":"no such view"}"#);
+        assert_eq!(raw(&spec(&["garbage"], LONG), "x", Path::new("/s")).unwrap(), "not json");
+        assert_eq!(raw(&spec(&["fail"], LONG), "{}", Path::new("/s")).unwrap_err(), "echo: bad token");
+        // Any op gets the long budget of `act`.
+        let dir = crate::core::scratch::Scratch::new("ext-raw");
+        let pids = dir.join("pids");
+        let slow = spec(&["sleep", "1", pids.to_str().unwrap()], Duration::from_millis(100));
+        assert_eq!(raw(&slow, r#"{"op":"root"}"#, Path::new("/s")), Ok(String::new()));
     }
 
     #[test]

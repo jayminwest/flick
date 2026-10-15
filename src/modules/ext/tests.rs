@@ -12,7 +12,7 @@ const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ext-e
 
 thread_local! {
     /// What the hooks saw on this thread: `log <line>`, `notify <ext> | <error>`,
-    /// `toast <ext> | <line>` and `card <do>`.
+    /// `toast <ext> | <line>`, `card <do>` and `open <module> <key>`.
     static SEEN: RefCell<Vec<String>> = const { RefCell::new(vec![]) };
 }
 
@@ -45,6 +45,11 @@ fn flick(words: &[String]) -> Result<Parsed, String> {
     }
 }
 
+/// Records the hotkey `ext open` runs.
+fn open(module: &str, key: &str) {
+    SEEN.with(|s| s.borrow_mut().push(format!("open {module} {key}")));
+}
+
 pub(super) fn seen() -> Vec<String> {
     SEEN.with(RefCell::take)
 }
@@ -55,8 +60,8 @@ pub(super) fn socket() -> PathBuf {
 
 /// An `ext` over the real transport and the fixture, with recording hooks.
 pub(super) fn module(table: &str) -> Ext {
-    let job = Job { run: transport::call, socket, post: || {}, flick };
-    let mut m = Ext::with(Hooks { job, log, notify, toast, card, visible: || true });
+    let job = Job { run: transport::call, socket, post: || {}, flick, raw: transport::raw };
+    let mut m = Ext::with(Hooks { job, log, notify, toast, card, visible: || true, open });
     configure(&mut m, table).unwrap();
     m
 }
@@ -337,7 +342,7 @@ fn a_worker_whose_thread_died_is_started_again() {
 
 #[test]
 fn the_real_hooks_are_installed() {
-    let m = Ext::new(socket);
+    let m = Ext::new(socket, open);
     assert_eq!(m.id(), "ext");
     assert_eq!((m.hooks.job.socket)(), socket());
     assert!(m.root.is_empty() && m.showing.is_none());
