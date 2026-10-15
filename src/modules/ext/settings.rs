@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::proto::Op;
+use super::proto::{KEYWORDS_MAX, Op, SHORT_MAX, hidden};
 use crate::core::card::valid_id;
 
 /// `timeout_ms` when an entry does not set it.
@@ -37,6 +37,9 @@ pub struct Entry {
     /// Global hotkeys that open its views: `<view> = "<hotkey>"`.
     #[serde(default)]
     hotkeys: BTreeMap<String, String>,
+    /// Words that send `<keyword> <text>` in root search to it (`op: keyword`).
+    #[serde(default)]
+    keywords: Vec<String>,
 }
 
 fn timeout_ms() -> u64 {
@@ -51,6 +54,8 @@ pub struct Spec {
     pub timeout: Duration,
     /// `(view, hotkey)`, by view name; blank hotkeys left out.
     pub hotkeys: Vec<(String, String)>,
+    /// Its root search keywords: one word each, unique among all extensions.
+    pub keywords: Vec<String>,
 }
 
 impl Spec {
@@ -66,7 +71,8 @@ impl Spec {
 
 /// The extensions in `settings`, each argument's leading `~/` replaced by `home`. Names are
 /// 1-`NAME_MAX` of `a-z 0-9 -` and unique; argv names a program; the timeout is not 0;
-/// hotkey views are valid view names.
+/// hotkey views are valid view names; up to `KEYWORDS_MAX` keywords, each one word of at
+/// most `SHORT_MAX` chars that no other extension has.
 pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String> {
     let mut specs: Vec<Spec> = Vec::new();
     for e in settings.extensions {
@@ -88,10 +94,17 @@ pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String
         if let Some(view) = e.hotkeys.keys().find(|v| !valid_id(v)) {
             return bad(&format!("hotkeys: view \"{view}\" must be 1-64 of A-Z a-z 0-9 . _ -"));
         }
+        let word = |(i, k): (usize, &String)| {
+            let taken = specs.iter().any(|s| s.keywords.contains(k)) || e.keywords[..i].contains(k);
+            !taken && !k.is_empty() && k.chars().count() <= SHORT_MAX && !k.chars().any(|c| c.is_whitespace() || hidden(c))
+        };
+        if e.keywords.len() > KEYWORDS_MAX || !e.keywords.iter().enumerate().all(word) {
+            return bad(&format!("keywords: at most {KEYWORDS_MAX} words of 1-{SHORT_MAX} chars, each used once"));
+        }
         let hotkeys = e.hotkeys.into_iter().filter(|(_, spec)| !spec.trim().is_empty()).collect();
         let argv = e.argv.into_iter().map(|a| expand(a, home)).collect();
         let timeout = Duration::from_millis(e.timeout_ms);
-        specs.push(Spec { name, argv, timeout, hotkeys });
+        specs.push(Spec { name, argv, timeout, hotkeys, keywords: e.keywords });
     }
     Ok(specs)
 }
@@ -117,12 +130,13 @@ mod tests {
     fn entries_expand_home_and_default_the_timeout() {
         let text = "[[ext.extensions]]\nname = \"notes-2\"\nargv = [\"~/bin/notes\", \"--json\", \"~/n\", \"a~/b\"]\n\
                     [[ext.extensions]]\nname = \"gh\"\nargv = [\"/usr/bin/env\", \"gh-ext\"]\ntimeout_ms = 500\n\
-                    hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }";
+                    hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }\nkeywords = [\"pr\", \"is\"]";
         let got = specs(text).unwrap();
         assert_eq!(got[0].argv, ["/Users/me/bin/notes", "--json", "/Users/me/n", "a~/b"]);
         assert_eq!(got[0].timeout, Duration::from_millis(TIMEOUT_MS));
         assert_eq!((got[1].name.as_str(), got[1].timeout), ("gh", Duration::from_millis(500)));
-        assert!(got[0].hotkeys.is_empty());
+        assert!(got[0].hotkeys.is_empty() && got[0].keywords.is_empty());
+        assert_eq!(got[1].keywords, ["pr", "is"]);
         assert_eq!(got[1].hotkeys, [("prs".to_string(), "cmd+KeyP".to_string())]);
         assert!(specs("").unwrap().is_empty());
         let none = read(Settings { extensions: vec![] }, None).unwrap();
@@ -132,7 +146,7 @@ mod tests {
 
     #[test]
     fn act_and_submit_get_at_least_ten_seconds() {
-        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![] };
+        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![], keywords: vec![] };
         assert_eq!(spec(2000).budget(Op::Root), Duration::from_secs(2));
         assert_eq!(spec(2000).budget(Op::Act), LONG);
         assert_eq!(spec(2000).budget(Op::Submit), LONG);
@@ -155,6 +169,14 @@ mod tests {
         assert!(err(&entry("a", "argv = \"/bin/x\"")).starts_with("[ext]"));
         let view = format!("{argv}\nhotkeys = {{ \"a b\" = \"cmd+KeyA\" }}");
         assert_eq!(err(&entry("a", &view)), "[ext] extensions: \"a\": hotkeys: view \"a b\" must be 1-64 of A-Z a-z 0-9 . _ -");
+        let keywords = |list: &str| entry("a", &format!("{argv}\nkeywords = {list}"));
+        let many = format!("[{}]", (0..=KEYWORDS_MAX).map(|i| format!("\"k{i}\"")).collect::<Vec<_>>().join(", "));
+        let other = format!("{}\n{}", keywords("[\"k\"]"), entry("b", &format!("{argv}\nkeywords = [\"j\", \"k\"]")));
+        assert_eq!(err(&other), "[ext] extensions: \"b\": keywords: at most 16 words of 1-80 chars, each used once");
+        let long = format!("[\"{}\"]", "k".repeat(SHORT_MAX + 1));
+        for bad in [&many, "[\"\"]", "[\"a b\"]", "[\"a\\u0007\"]", &long, "[\"k\", \"k\"]"] {
+            assert!(err(&keywords(bad)).ends_with("keywords: at most 16 words of 1-80 chars, each used once"), "{bad}");
+        }
     }
 
     #[test]

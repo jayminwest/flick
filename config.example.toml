@@ -107,6 +107,9 @@
 #timeout_ms = 2000
 # Global hotkeys that open the extension's views: <view> = "<hotkey>".
 #hotkeys = { inbox = "cmd+ctrl+alt+shift+KeyE" }
+# Root search keywords: "<keyword> <text>" asks the extension for rows (op keyword) shown
+# above the ranked results. One word each, at most 16, unique among extensions.
+#keywords = ["n"]
 
 # --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
 #[builtin]

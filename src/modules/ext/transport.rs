@@ -1,6 +1,7 @@
 //! One call to an extension: spawn its argv (no shell) in its own process group, write the
 //! request to stdin, read one reply from stdout, wait for exit 0. Past the call's budget the
-//! group is killed. Only the extension's worker thread calls this.
+//! group is killed, and so it is when `stop` says a newer query came (newest wins). Only
+//! the extension's worker thread calls this.
 //!
 //! The child gets `FLICK_EXT` (its name), `FLICK_SOCKET` (this Flick's control socket, for
 //! `flick ...` calls back) and `FLICK_VERSION`, and `FLICK_HOST` removed so the CLI talks to
@@ -29,26 +30,28 @@ pub const FLICK_BUDGET: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(10);
 /// Bytes of stderr kept, from the end: enough for the last line.
 const TAIL: usize = 4096;
+/// The error of a call killed because a newer query came; never shown.
+pub const STOPPED: &str = "a newer query came; stopped";
 /// How long to wait for the pipes after exit; a grandchild may hold them open.
 const DRAIN: Duration = Duration::from_secs(1);
 
 /// Run `req` on `spec` and parse its reply, its icon files checked. `socket` is
-/// `FLICK_SOCKET`.
-pub fn call(spec: &Spec, req: &Request, socket: &Path) -> Result<Parsed, String> {
+/// `FLICK_SOCKET`; `stop`, asked while the child runs, kills it when true.
+pub fn call(spec: &Spec, req: &Request, socket: &Path, stop: &dyn Fn() -> bool) -> Result<Parsed, String> {
     let name = &spec.name;
-    let out = exec(spec, req.to_json(), spec.budget(req.op()), socket).map_err(|e| format!("{name}: {e}"))?;
+    let out = exec(spec, req.to_json(), spec.budget(req.op()), socket, stop).map_err(|e| format!("{name}: {e}"))?;
     proto::parse(req.op(), &out).map(icons::check).map_err(|e| format!("{name}: {e}"))
 }
 
 /// Send `text` to `spec` as it is and return its stdout, trailing whitespace trimmed,
 /// without parsing it. It gets the long budget of `act`, whatever op it names.
 pub fn raw(spec: &Spec, text: &str, socket: &Path) -> Result<String, String> {
-    let out = exec(spec, text.to_string(), spec.budget(Op::Act), socket).map_err(|e| format!("{}: {e}", spec.name))?;
+    let out = exec(spec, text.to_string(), spec.budget(Op::Act), socket, &|| false).map_err(|e| format!("{}: {e}", spec.name))?;
     Ok(String::from_utf8_lossy(&out).trim_end().to_string())
 }
 
 /// The child's stdout, or why the call failed (without the name).
-fn exec(spec: &Spec, json: String, budget: Duration, socket: &Path) -> Result<Vec<u8>, String> {
+fn exec(spec: &Spec, json: String, budget: Duration, socket: &Path, stop: &dyn Fn() -> bool) -> Result<Vec<u8>, String> {
     let (program, args) = spec.argv.split_first().ok_or("nothing to run")?;
     let mut child = Command::new(program)
         .args(args)
@@ -69,7 +72,7 @@ fn exec(spec: &Spec, json: String, budget: Duration, socket: &Path) -> Result<Ve
             let _ = stdin.write_all(json.as_bytes()).and_then(|()| stdin.write_all(b"\n"));
         });
     }
-    finish(child, budget)
+    finish(child, budget, stop)
 }
 
 /// Run Flick's CLI `exe` with `words`, without stdin, as a local request to this Mac
@@ -85,7 +88,7 @@ pub fn flick(exe: &Path, words: &[String]) -> Result<Parsed, String> {
         .process_group(0)
         .spawn()
         .map_err(|e| format!("{}: {e}", exe.display()))?;
-    let out = finish(child, FLICK_BUDGET)?;
+    let out = finish(child, FLICK_BUDGET, &|| false)?;
     let status = last_line(&out).filter(|l| !l.chars().any(proto::hidden));
     let status = status.map(|l| l.chars().take(TEXT_MAX).collect());
     Ok(Parsed { reply: Reply::Done(Done { status, refresh: false }), warnings: vec![] })
@@ -97,15 +100,19 @@ fn last_line(bytes: &[u8]) -> Option<String> {
     text.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(String::from)
 }
 
-/// Wait for `child` to exit within `budget`, else kill its group. Its stdout on exit 0, else
-/// the last stderr line.
-fn finish(mut child: Child, budget: Duration) -> Result<Vec<u8>, String> {
+/// Wait for `child` to exit within `budget` and before `stop` is true, else kill its group.
+/// Its stdout on exit 0, else the last stderr line.
+fn finish(mut child: Child, budget: Duration, stop: &dyn Fn() -> bool) -> Result<Vec<u8>, String> {
     let out = reader(child.stdout.take(), Keep::Head(REPLY_MAX + 1));
     let err = reader(child.stderr.take(), Keep::Tail(TAIL));
     let deadline = Instant::now() + budget;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
+            Ok(None) if stop() => {
+                kill(&mut child);
+                return Err(STOPPED.into());
+            }
             Ok(None) if Instant::now() < deadline => thread::sleep(POLL),
             Ok(None) => {
                 kill(&mut child);
@@ -172,11 +179,11 @@ mod tests {
 
     fn spec(mode: &[&str], timeout: Duration) -> Spec {
         let argv = std::iter::once(FIXTURE).chain(mode.iter().copied()).map(String::from);
-        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![] }
+        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![], keywords: vec![] }
     }
 
     fn run(mode: &[&str]) -> Result<Parsed, String> {
-        call(&spec(mode, Duration::from_secs(10)), &Request::Root, Path::new("/tmp/flick.sock"))
+        call(&spec(mode, Duration::from_secs(10)), &Request::Root, Path::new("/tmp/flick.sock"), &|| false)
     }
 
     #[test]
@@ -188,7 +195,7 @@ mod tests {
         assert_eq!(items[0].subtitle, "/tmp/flick.sock");
         assert!(p.warnings.is_empty(), "{:?}", p.warnings);
         let act = Request::Act { view: None, item: "a".into(), action: "open".into() };
-        let p = call(&spec(&["echo"], Duration::from_secs(10)), &act, Path::new("/s")).unwrap();
+        let p = call(&spec(&["echo"], Duration::from_secs(10)), &act, Path::new("/s"), &|| false).unwrap();
         assert_eq!(p.reply, Reply::Done(Done { status: Some("act done".into()), refresh: false }));
     }
 
@@ -201,10 +208,10 @@ mod tests {
         assert!(run(&["garbage"]).unwrap_err().starts_with("echo: reply is not JSON"));
         assert_eq!(run(&["huge"]).unwrap_err(), format!("echo: reply over {REPLY_MAX} bytes"));
         let missing = Spec { argv: vec!["/nonexistent/ext".into()], ..spec(&[], LONG) };
-        let e = call(&missing, &Request::Root, Path::new("/s")).unwrap_err();
+        let e = call(&missing, &Request::Root, Path::new("/s"), &|| false).unwrap_err();
         assert!(e.starts_with("echo: /nonexistent/ext: "), "{e}");
         let empty = Spec { argv: vec![], ..missing };
-        assert_eq!(call(&empty, &Request::Root, Path::new("/s")).unwrap_err(), "echo: nothing to run");
+        assert_eq!(call(&empty, &Request::Root, Path::new("/s"), &|| false).unwrap_err(), "echo: nothing to run");
     }
 
     #[test]
@@ -237,6 +244,18 @@ mod tests {
     }
 
     #[test]
+    fn a_call_is_killed_when_a_newer_query_stops_it() {
+        let dir = crate::core::scratch::Scratch::new("ext-stop");
+        let pids = dir.join("pids");
+        let slow = spec(&["sleep", "30", pids.to_str().unwrap()], Duration::from_secs(30));
+        let started = Instant::now();
+        let query = Request::Query { view: "v".into(), query: "q".into() };
+        let e = call(&slow, &query, Path::new("/s"), &|| pids.exists()).unwrap_err();
+        assert_eq!(e, format!("echo: {STOPPED}"));
+        assert!(started.elapsed() < Duration::from_secs(15), "{:?}", started.elapsed());
+    }
+
+    #[test]
     fn a_child_that_does_not_read_stdin_still_answers() {
         assert!(run(&["deaf"]).is_ok());
     }
@@ -247,7 +266,7 @@ mod tests {
         let pids = dir.join("pids");
         let slow = spec(&["sleep", "30", pids.to_str().unwrap()], Duration::from_millis(1000));
         let started = Instant::now();
-        let e = call(&slow, &Request::Root, Path::new("/s")).unwrap_err();
+        let e = call(&slow, &Request::Root, Path::new("/s"), &|| false).unwrap_err();
         assert_eq!(e, "echo: no reply in 1000 ms; stopped");
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
         // The script and the sleep it started are both gone (launchd reaps the orphan).

@@ -47,9 +47,17 @@ pub fn list(name: &str, ext: &str, cached: Option<&View>) -> ListView {
 }
 
 /// Fill `view` of extension `ext` for `cx.query` from `cached`. A `filter: "flick"` view is
-/// ranked here, by fuzzy score plus frecency; an `"ext"` one keeps the extension's order.
-/// The footer is `error` (the view's last failed call), else the view's title.
-pub fn fill(view: &mut ListView, ext: &str, cached: Option<&View>, error: Option<&str>, cx: &mut Cx) {
+/// ranked here, by fuzzy score plus frecency; an `"ext"` one shows `found` (the answer to
+/// its query) or else its own items, in the extension's order. The footer is `error` (the
+/// view's last failed call), else the view's title.
+pub fn fill(
+    view: &mut ListView,
+    ext: &str,
+    cached: Option<&View>,
+    found: Option<&[ExtItem]>,
+    error: Option<&str>,
+    cx: &mut Cx,
+) {
     let title = cached.and_then(|v| v.title.as_deref());
     view.footer = error.or(title).unwrap_or(ext).to_string();
     view.empty = if cached.is_some() || error.is_some() { "No Results" } else { LOADING }.into();
@@ -57,13 +65,14 @@ pub fn fill(view: &mut ListView, ext: &str, cached: Option<&View>, error: Option
         view.items = vec![];
         return;
     };
-    let items: Vec<Item> = cached.items.iter().map(|e| item(ext, e)).collect();
+    let list = if cached.filter == Filter::Ext { found.unwrap_or(&cached.items) } else { &cached.items };
+    let items: Vec<Item> = list.iter().map(|e| item(ext, e)).collect();
     view.items = match cached.filter {
         Filter::Flick => {
             let (usage, now) = (cx.store.usage(), store::now());
             cx.ranker.rank(cx.query, items, |i| frecency(&usage, i.id.as_str(), now))
         }
-        // The extension filters (`op: query`, flick-f4e6).
+        // The extension filtered them (`op: query`).
         Filter::Ext => items,
     };
 }
@@ -122,9 +131,9 @@ mod tests {
         let cached = list("notes/inbox", "notes", Some(&view(Filter::Flick)));
         assert_eq!((cached.placeholder.as_str(), cached.empty.as_str()), ("Find…", "No Results"));
         let mut v = fresh;
-        test_cx("", |cx| fill(&mut v, "notes", None, None, cx));
+        test_cx("", |cx| fill(&mut v, "notes", None, None, None, cx));
         assert_eq!((v.footer.as_str(), v.empty.as_str(), v.items.len()), ("notes", LOADING, 0));
-        test_cx("", |cx| fill(&mut v, "notes", None, Some("notes: boom"), cx));
+        test_cx("", |cx| fill(&mut v, "notes", None, None, Some("notes: boom"), cx));
         assert_eq!((v.footer.as_str(), v.empty.as_str()), ("notes: boom", "No Results"));
     }
 
@@ -132,15 +141,18 @@ mod tests {
     fn flick_filters_and_ranks_a_flick_view_with_frecency() {
         let mut v = list("notes/inbox", "notes", None);
         test_cx("", |cx| {
-            fill(&mut v, "notes", Some(&view(Filter::Flick)), None, cx);
+            fill(&mut v, "notes", Some(&view(Filter::Flick)), None, None, cx);
             assert_eq!((titles(&v), v.footer.as_str()), (vec!["Alpha", "Beta"], "Notes"));
             cx.store.record_use("ext:notes/b");
-            fill(&mut v, "notes", Some(&view(Filter::Flick)), None, cx);
+            fill(&mut v, "notes", Some(&view(Filter::Flick)), None, None, cx);
             assert_eq!(titles(&v), ["Beta", "Alpha"]);
         });
-        test_cx("alp", |cx| fill(&mut v, "notes", Some(&view(Filter::Flick)), Some("e"), cx));
+        test_cx("alp", |cx| fill(&mut v, "notes", Some(&view(Filter::Flick)), None, Some("e"), cx));
         assert_eq!((titles(&v), v.footer.as_str()), (vec!["Alpha"], "e"));
-        test_cx("alp", |cx| fill(&mut v, "notes", Some(&view(Filter::Ext)), None, cx));
+        test_cx("alp", |cx| fill(&mut v, "notes", Some(&view(Filter::Ext)), None, None, cx));
         assert_eq!(titles(&v), ["Beta", "Alpha"]);
+        let found = items(r#"{"items": [{"key": "c", "title": "Gamma"}]}"#);
+        test_cx("alp", |cx| fill(&mut v, "notes", Some(&view(Filter::Ext)), Some(&found), None, cx));
+        assert_eq!(titles(&v), ["Gamma"]);
     }
 }

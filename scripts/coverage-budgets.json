@@ -44,6 +44,7 @@
     "src/modules/ext/mod.rs": 99.0,
     "src/modules/ext/proto.rs": 100.0,
     "src/modules/ext/proto/": 100.0,
+    "src/modules/ext/query.rs": 100.0,
     "src/modules/ext/settings.rs": 100.0,
     "src/modules/ext/transport.rs": 94.0,
     "src/modules/ext/worker.rs": 96.0,

@@ -11,7 +11,8 @@
 //! already queued is not queued again. A failed call is logged, and shown in the footer of
 //! the view it was for when that view is on the screen, else posted as a notification,
 //! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
-//! Actions (`act`) and forms (`forms`) build on these answers. `cli` holds the verbs.
+//! Actions (`act`) and forms (`forms`) build on these answers; `query` searches through the
+//! extension (`filter: "ext"` views, keywords). `cli` holds the verbs.
 
 mod act;
 mod cli;
@@ -19,6 +20,7 @@ mod forms;
 mod icons;
 mod items;
 pub mod proto;
+mod query;
 mod settings;
 mod transport;
 mod wire;
@@ -34,7 +36,7 @@ use act::Asked;
 use forms::Phase;
 use proto::form::ExtForm;
 use proto::item::ExtItem;
-use proto::{Reply, Request, View};
+use proto::{Filter, Reply, Request, View};
 use settings::Spec;
 use worker::{Answer, Inbox, Job, Worker};
 
@@ -85,6 +87,10 @@ pub struct Ext {
     forms: HashMap<String, ExtForm>,
     /// The ext form on the screen, `(<name>/<form>, phase)`.
     form: Option<(String, Phase)>,
+    /// The newest query (`op: query` or `keyword`) sent, by extension.
+    sent: Vec<(String, Request)>,
+    /// The last answer to a query, by extension: the query and its items.
+    found: Vec<(String, Request, Vec<ExtItem>)>,
 }
 
 impl Ext {
@@ -111,6 +117,8 @@ impl Ext {
             asked: None,
             forms: HashMap::new(),
             form: None,
+            sent: vec![],
+            found: vec![],
         }
     }
 
@@ -180,6 +188,7 @@ impl Ext {
                 Request::Act { view, .. } => self.acted(&ext, view.as_deref(), result),
                 Request::Form { form } => self.loaded(&ext, &form, result),
                 Request::Submit { form, .. } => self.saved(&ext, &form, result),
+                request @ (Request::Query { .. } | Request::Keyword { .. }) => self.queried(&ext, request, result),
                 request => match result {
                     Ok(reply) => self.keep(ext, request, reply),
                     Err(e) => self.failed(&ext, &request, e),
@@ -203,7 +212,7 @@ impl Ext {
                 self.views.insert(name, answer);
                 true
             }
-            // Queries (flick-f4e6); events need no answer.
+            // Events need no answer.
             _ => false,
         }
     }
@@ -256,6 +265,11 @@ impl Module for Ext {
         self.forms.retain(|form, _| view_kept(form));
         self.form.take_if(|(form, _)| !view_kept(form));
         self.asked.take_if(|a| !kept(&a.run.ext));
+        let queried: Vec<String> = self.sent.iter().map(|(n, _)| n.clone()).collect();
+        for name in queried {
+            self.hush(&name);
+        }
+        self.found.clear();
         self.specs = specs;
         Ok(())
     }
@@ -266,10 +280,16 @@ impl Module for Ext {
         cached.flat_map(|(name, items)| items.iter().map(|e| items::item(name, e))).collect()
     }
 
+    /// `<keyword> <text>` rows of the extension with that keyword.
+    fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
+        self.keyword_rows(cx)
+    }
+
     /// View `<name>/<view>`: its cached items (or `Loading…`) at once; it is asked again.
     fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
         let (name, inner) = items::split(view)?;
         self.spec(name)?;
+        self.hush(name);
         (self.error, self.status) = (None, None);
         self.showing = Some(view.to_string());
         self.fetch(name, Request::Open { view: inner.to_string() });
@@ -280,13 +300,23 @@ impl Module for Ext {
         if self.showing.as_deref() == Some(view) {
             (self.showing, self.error, self.status) = (None, None, None);
         }
+        if let Some((name, _)) = items::split(view) {
+            self.hush(name);
+        }
     }
 
+    /// A `filter: "ext"` view asks the extension for `cx.query` and shows its answer.
     fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
-        let name = items::split(&view.name).map_or("", |(name, _)| name).to_string();
+        let (name, inner) = items::split(&view.name).unwrap_or_default();
+        let (name, inner) = (name.to_string(), inner.to_string());
+        let cached = self.views.get(&view.name);
+        if cached.is_some_and(|v| v.filter == Filter::Ext) {
+            self.typed(&name, &inner, cx.query);
+        }
+        let found = self.found_in_view(&name, &inner);
         let footer = [&self.error, &self.status].into_iter().flatten().find(|(v, _)| *v == view.name);
         let footer = footer.map(|(_, line)| line.as_str());
-        items::fill(view, &name, self.views.get(&view.name), footer, cx);
+        items::fill(view, &name, self.views.get(&view.name), found, footer, cx);
     }
 
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {

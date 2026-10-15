@@ -66,7 +66,7 @@ pub(super) fn module(table: &str) -> Ext {
     m
 }
 
-fn configure(m: &mut Ext, table: &str) -> Result<(), String> {
+pub(super) fn configure(m: &mut Ext, table: &str) -> Result<(), String> {
     let config = crate::config::parse(table)?;
     m.configure(&config.section("ext")?.unwrap_or_else(|| Section::empty("ext")))
 }
@@ -321,9 +321,9 @@ fn a_reload_keeps_only_the_workers_of_unchanged_extensions() {
 
 #[test]
 fn a_worker_whose_thread_died_is_started_again() {
-    fn panics_on_open(spec: &Spec, request: &Request, socket: &std::path::Path) -> Result<Parsed, String> {
+    fn panics_on_open(spec: &Spec, request: &Request, socket: &std::path::Path, stop: &dyn Fn() -> bool) -> Result<Parsed, String> {
         assert_ne!(request.op(), proto::Op::Open, "extension call panicked");
-        transport::call(spec, request, socket)
+        transport::call(spec, request, socket, stop)
     }
     let mut m = module(&entry("echo", &["echo"], 2000));
     m.hooks.job.run = panics_on_open;

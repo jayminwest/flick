@@ -90,7 +90,7 @@ fn a_submit_stays_pending_until_the_reply_closes_it() {
 fn a_failed_submit_shows_in_the_form_and_toasts() {
     let mut m = module(&entry("echo", &["echo"], 2000));
     let mut form = loaded(&mut m);
-    m.hooks.job.run = |_, _, _| Err("echo: bad token".into());
+    m.hooks.job.run = |_, _, _, _| Err("echo: bad token".into());
     m.workers.clear();
     test_cx("", |cx| m.submit(&form, cx)).unwrap();
     assert!(answered(&mut m, 1));

@@ -1,7 +1,8 @@
 //! Actions: Enter runs an item's first action, ⌘K lists them all, Tab runs the one its `tab`
 //! names. An item is looked up in what the screen shows: the view on it when that is one of
-//! the item's extension, else that extension's root items. One no longer there (the cache
-//! moved on) says so in the footer and asks for the root items again.
+//! the item's extension (the answer to its query, for a `filter: "ext"` view), else that
+//! extension's keyword rows and root items. One no longer there (the cache moved on) says so
+//! in the footer and asks for the root items again.
 //!
 //! An action with `confirm` asks first (`Outcome::Confirm`, its title on the button). Then:
 //!
@@ -49,11 +50,13 @@ impl Ext {
         let (ext, key) = id.key().split_once('/')?;
         let showing = self.showing.as_deref();
         let view = showing.and_then(items::split).filter(|(e, _)| *e == ext).map(|(_, v)| v);
-        let list = match view {
-            Some(_) => &self.views.get(showing?)?.items,
-            None => self.root.get(ext)?,
+        let item = if let Some(v) = view {
+            let list = self.found_in_view(ext, v).unwrap_or(&self.views.get(showing?)?.items);
+            list.iter().find(|i| i.key == key)?
+        } else {
+            let rows = self.found_by_keyword(ext).unwrap_or_default().iter();
+            rows.chain(self.root.get(ext).into_iter().flatten()).find(|i| i.key == key)?
         };
-        let item = list.iter().find(|i| i.key == key)?;
         let ran = Ran { ext: ext.into(), view: view.map(String::from), item: key.into() };
         Some((ran, item))
     }
