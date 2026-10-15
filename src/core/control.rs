@@ -153,6 +153,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("feedback", &["resolve"]),
     ("task", &["rm"]),
     ("script", &["run"]),
+    ("snippet", &["type"]),
     ("message", &["card press", "card focus", "chat", "ask"]),
     ("dictation", &[]),
     ("kota", &["ask"]),

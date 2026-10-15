@@ -45,6 +45,7 @@ modules! {
         pub mod windows => "window", windows::Windows::default;
         pub mod quicklinks => "quicklink", quicklinks::Quicklinks::default;
         mod scripts => "script", scripts::Scripts::default;
+        mod snippet => "snippet", snippet::Snippets::default;
         mod flick => "builtin", || flick::Flick;
         mod clipboard => "clip", || clipboard::Clipboard;
         mod activity => "activity", activity::Activity::default;

@@ -78,6 +78,17 @@
 # Optional: the word that runs the command from root search.
 #keyword = "n"
 
+# --- snippet: text Flick types into the frontmost app, from root search (Enter), a hotkey
+# or "flick snippet type <name>". In text, {date} is today's local date (YYYY-MM-DD) and
+# {time} the local time (HH:MM). Repeat the table for each snippet. Example:
+#[[snippet.texts]]
+# Shown in search; also the snippet's id (renaming it loses its usage history).
+#name = "Today's Date"
+# The text to type.
+#text = "{date}"
+# Optional: a global hotkey that types it.
+#hotkey = "cmd+ctrl+alt+shift+KeyY"
+
 # --- builtin: Flick's own commands (Open/Reload Flick Config, Quit Flick, ...). No settings.
 #[builtin]
 #enabled = true

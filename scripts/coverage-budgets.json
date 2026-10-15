@@ -95,6 +95,7 @@
     "src/modules/quicklinks/validate.rs": 100.0,
     "src/modules/remote/mod.rs": 99.4,
     "src/modules/remote/store.rs": 100.0,
+    "src/modules/snippet/mod.rs": 100.0,
     "src/modules/sys/act.rs": 100.0,
     "src/modules/sys/check.rs": 100.0,
     "src/modules/sys/fleet.rs": 100.0,
