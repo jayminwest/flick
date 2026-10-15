@@ -132,7 +132,7 @@ fn enter_and_actions_jump_and_show_output() {
     wait("local list", || status(&h, "local", "w1:p1").is_some());
     let id = ItemId::new(ID, "agent/local/w1:p1");
     test_cx("", |cx| {
-        let keys: Vec<&str> = h.actions(&id, cx).iter().map(|a| a.key).collect();
+        let keys: Vec<_> = h.actions(&id, cx).into_iter().map(|a| a.key).collect();
         assert_eq!(keys, ["jump", "output"]);
         assert!(matches!(h.activate(&id, cx), Outcome::Hide));
         wait("focus", || server.calls().contains(&"agent.focus w1:p1".to_string()));

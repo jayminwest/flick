@@ -162,7 +162,7 @@ mod tests {
         }
 
         fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
-            vec![Item::new(ItemId::new(self.id, "one"), "One", "Run", Icon::Symbol("app"))]
+            vec![Item::new(ItemId::new(self.id, "one"), "One", "Run", Icon::symbol("app"))]
         }
 
         fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
@@ -184,7 +184,7 @@ mod tests {
 
         fn direct(&mut self, cx: &mut Cx) -> Vec<Item> {
             (cx.query == "now")
-                .then(|| Item::new(ItemId::new(self.id, "now"), "Now", "Run", Icon::Symbol("app")))
+                .then(|| Item::new(ItemId::new(self.id, "now"), "Now", "Run", Icon::symbol("app")))
                 .into_iter()
                 .collect()
         }

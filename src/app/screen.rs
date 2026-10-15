@@ -66,7 +66,7 @@ pub fn hold(held: &mut Option<Held>, next: &Screen) -> Option<Held> {
 pub fn action_items(ranker: &mut Ranker, query: &str, actions: &[Action]) -> Vec<Item> {
     let items = actions.iter().map(|a| {
         let mut item =
-            Item::new(ItemId::new("action", a.key), &a.title, "Run Action", a.icon.clone());
+            Item::new(ItemId::new("action", &a.key), &a.title, "Run Action", a.icon.clone());
         item.accessory = a.shortcut_hint.into();
         item
     });
@@ -83,7 +83,7 @@ pub fn confirm_items(confirm: &Confirm) -> Vec<Item> {
 }
 
 fn confirm_item(index: usize, row: &ConfirmRow) -> Item {
-    let icon = Icon::Symbol("smallcircle.filled.circle");
+    let icon = Icon::symbol("smallcircle.filled.circle");
     Item {
         subtitle: row.subtitle.clone(),
         accessory: row.accessory.clone(),
@@ -178,12 +178,12 @@ mod tests {
 
     fn actions() -> Vec<Action> {
         vec![
-            Action::new("open", "Open", Icon::Symbol("arrow.up.right")),
+            Action::new("open", "Open", Icon::symbol("arrow.up.right")),
             Action {
                 shortcut_hint: "⌘E",
-                ..Action::new("edit", "Edit Quicklink", Icon::Symbol("pencil"))
+                ..Action::new("edit", "Edit Quicklink", Icon::symbol("pencil"))
             },
-            Action::new("delete", "Delete Quicklink", Icon::Symbol("trash")),
+            Action::new("delete", "Delete Quicklink", Icon::symbol("trash")),
         ]
     }
 
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn hints_name_the_keys() {
-        let item = Item::new(ItemId::new("app", "x"), "X", "Open Application", Icon::Symbol("app"));
+        let item = Item::new(ItemId::new("app", "x"), "X", "Open Application", Icon::symbol("app"));
         assert_eq!(list_hint(Some(&item), false), "Open Application  ↵");
         assert_eq!(list_hint(Some(&item), true), "Open Application  ↵    Actions  ⌘K");
         assert_eq!(list_hint(None, true), "");
@@ -311,7 +311,7 @@ mod tests {
         // Opened again (a hotkey on a hidden launcher): still the same view.
         assert_eq!(hold(&mut held, &list("fleet")), None);
         // An action menu and a confirmation over it still hold it.
-        let target = Item::new(ItemId::new("sys", "x"), "X", "", Icon::Symbol("app"));
+        let target = Item::new(ItemId::new("sys", "x"), "X", "", Icon::symbol("app"));
         let actions = Screen::Actions { target, actions: vec![], back: over(list("fleet")) };
         assert_eq!(actions.view().map(|v| v.name.as_str()), Some("fleet"));
         assert_eq!(hold(&mut held, &actions), None);

@@ -128,7 +128,7 @@ impl Module for Snippets {
                     ItemId::new("snippet", &s.name),
                     s.name.clone(),
                     "Type Snippet",
-                    Icon::Symbol("text.cursor"),
+                    Icon::symbol("text.cursor"),
                 )
             })
             .collect()

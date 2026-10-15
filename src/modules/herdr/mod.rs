@@ -365,8 +365,8 @@ impl Module for Herdr {
     fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
         match Key::parse(id.key()) {
             Some(Key::Agent { .. }) => vec![
-                Action::new("jump", "Jump to Agent", Icon::Symbol("arrow.up.forward.app")),
-                Action::new("output", "Show Output", Icon::Symbol("text.alignleft")),
+                Action::new("jump", "Jump to Agent", Icon::symbol("arrow.up.forward.app")),
+                Action::new("output", "Show Output", Icon::symbol("text.alignleft")),
             ],
             _ => vec![],
         }

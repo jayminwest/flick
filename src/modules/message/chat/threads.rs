@@ -32,7 +32,7 @@ pub fn view() -> ListView {
 
 /// The root item's action that opens the view.
 pub fn action() -> Action {
-    Action::new(VIEW, "Chat Threads", Icon::Symbol("bubble.left.and.text.bubble.right"))
+    Action::new(VIEW, "Chat Threads", Icon::symbol("bubble.left.and.text.bubble.right"))
 }
 
 /// The thread a row's item key names.
@@ -55,7 +55,7 @@ impl Inbox {
                 Item {
                     subtitle: format!("{time}  ·  {count}"),
                     keywords: vec![t.id.clone()],
-                    ..Item::new(id, model::title(&t.first_body), "Open Chat", Icon::Symbol("bubble.left.and.bubble.right"))
+                    ..Item::new(id, model::title(&t.first_body), "Open Chat", Icon::symbol("bubble.left.and.bubble.right"))
                 }
             })
             .collect();

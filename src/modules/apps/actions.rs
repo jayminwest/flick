@@ -24,19 +24,19 @@ impl Apps {
             return vec![];
         }
         let mut menu = vec![
-            Action::new(OPEN, "Open Application", Icon::Symbol("arrow.up.forward.app")),
-            Action::new(REVEAL, "Show in Finder", Icon::Symbol("folder")),
+            Action::new(OPEN, "Open Application", Icon::symbol("arrow.up.forward.app")),
+            Action::new(REVEAL, "Show in Finder", Icon::symbol("folder")),
         ];
         if !self.is_own(path) && self.is_running(path) {
-            menu.push(Action::new(QUIT, "Quit", Icon::Symbol("xmark.circle")));
+            menu.push(Action::new(QUIT, "Quit", Icon::symbol("xmark.circle")));
             menu.push(Action::new(
                 FORCE_QUIT,
                 "Force Quit",
-                Icon::Symbol("exclamationmark.octagon"),
+                Icon::symbol("exclamationmark.octagon"),
             ));
         }
         if self.uninstallable(path) {
-            menu.push(Action::new(UNINSTALL, "Uninstall…", Icon::Symbol("trash")));
+            menu.push(Action::new(UNINSTALL, "Uninstall…", Icon::symbol("trash")));
         }
         menu
     }
@@ -124,8 +124,8 @@ mod tests {
         Apps { own: Some(OWN.into()), running, ..Apps::new(apps) }
     }
 
-    fn keys(actions: &[Action]) -> Vec<&'static str> {
-        actions.iter().map(|a| a.key).collect()
+    fn keys(actions: &[Action]) -> Vec<&str> {
+        actions.iter().map(|a| &*a.key).collect()
     }
 
     #[test]

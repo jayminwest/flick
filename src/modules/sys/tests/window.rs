@@ -196,7 +196,7 @@ fn snapshot_draws_without_showing_and_bad_words_get_usage() {
 fn the_root_item_offers_open_fleet_window() {
     let mut m = started();
     let menu = test_cx("", |cx| m.actions(&ItemId::new(ID, "fleet"), cx));
-    assert_eq!(menu.iter().map(|a| (a.key, a.title.as_str())).collect::<Vec<_>>(), [("window", "Open Fleet Window")]);
+    assert_eq!(menu.iter().map(|a| (&*a.key, a.title.as_str())).collect::<Vec<_>>(), [("window", "Open Fleet Window")]);
     assert!(matches!(test_cx("", |cx| m.act(&ItemId::new(ID, "fleet"), "window", cx)), Outcome::Hide));
     assert!(visible());
     settle(&m);

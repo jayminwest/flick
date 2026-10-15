@@ -73,7 +73,7 @@ impl Module for Windows {
                     ItemId::new("window", w.title()),
                     w.title(),
                     "Move Window",
-                    Icon::Symbol(w.symbol()),
+                    Icon::symbol(w.symbol()),
                 )
             })
             .collect()

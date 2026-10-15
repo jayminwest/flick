@@ -237,12 +237,12 @@ impl Module for Kota {
         let q = cx.query.trim();
         let ask = (!q.is_empty()).then(|| Item {
             subtitle: "KOTA's reply replaces the pending card".into(),
-            ..Item::new(ItemId::new(ID, ASK).with_arg(q), format!("Ask KOTA: {q}"), "Send", Icon::Symbol("paperplane"))
+            ..Item::new(ItemId::new(ID, ASK).with_arg(q), format!("Ask KOTA: {q}"), "Send", Icon::symbol("paperplane"))
         });
         // The `message` module's item: Enter goes to it (`Registry::activate` routes by id).
         let chat = Item {
             subtitle: "The KOTA chat window, on its last thread".into(),
-            ..Item::new(ItemId::new(CHAT.0, CHAT.1), "Open Chat", "Open", Icon::Symbol("bubble.left.and.bubble.right"))
+            ..Item::new(ItemId::new(CHAT.0, CHAT.1), "Open Chat", "Open", Icon::symbol("bubble.left.and.bubble.right"))
         };
         let verb = if ask.is_some() { "sends" } else { "opens chat" };
         view.items = ask.into_iter().chain([chat]).collect();
