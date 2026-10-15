@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use super::proto::{Parsed, Request};
 use super::settings::Spec;
@@ -39,7 +39,7 @@ pub struct Answer {
 pub struct Inbox(Arc<Mutex<Vec<Answer>>>);
 
 impl Inbox {
-    fn push(&self, answer: Answer) {
+    pub fn push(&self, answer: Answer) {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).push(answer);
     }
 
@@ -52,6 +52,7 @@ impl Inbox {
 pub struct Worker {
     spec: Spec,
     queue: Sender<Request>,
+    thread: JoinHandle<()>,
 }
 
 impl Worker {
@@ -60,7 +61,7 @@ impl Worker {
         let (queue, calls) = mpsc::channel::<Request>();
         let ext = spec.clone();
         let thread = thread::Builder::new().name(format!("flick-ext-{}", spec.name));
-        thread
+        let thread = thread
             .spawn(move || {
                 for request in calls {
                     let result = (job.run)(&ext, &request, &(job.socket)());
@@ -69,11 +70,16 @@ impl Worker {
                 }
             })
             .map_err(|e| format!("{}: cannot start a thread: {e}", spec.name))?;
-        Ok(Worker { spec, queue })
+        Ok(Worker { spec, queue, thread })
     }
 
     pub fn spec(&self) -> &Spec {
         &self.spec
+    }
+
+    /// Its thread still runs: what it was sent will be answered.
+    pub fn alive(&self) -> bool {
+        !self.thread.is_finished()
     }
 
     /// Queue `request`; `false` when the thread is gone.
@@ -89,7 +95,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn spec() -> Spec {
-        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1) }
+        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1), hotkeys: vec![] }
     }
 
     fn fake(spec: &Spec, request: &Request, socket: &Path) -> Result<Parsed, String> {
@@ -120,6 +126,7 @@ mod tests {
         let job = Job { run: fake, socket, post: || {} };
         let w = Worker::start(spec(), job, inbox.clone()).unwrap();
         assert_eq!(w.spec().name, "w");
+        assert!(w.alive());
         assert!(w.send(Request::Root));
         assert!(w.send(Request::Form { form: "f".into() }));
         let got = wait(&inbox, 2);
@@ -138,9 +145,10 @@ mod tests {
         let w = w.unwrap();
         assert!(w.send(Request::Root));
         let deadline = Instant::now() + Duration::from_secs(15);
-        while w.send(Request::Root) && Instant::now() < deadline {
+        while (w.send(Request::Root) || w.alive()) && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(!w.send(Request::Root));
+        assert!(!w.alive());
     }
 }

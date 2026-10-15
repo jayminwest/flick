@@ -2,12 +2,14 @@
 //! string work on the home folder the caller passes, so `configure` never touches the disk
 //! (a missing program fails its first call, on the worker).
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
 
 use super::proto::Op;
+use crate::core::card::valid_id;
 
 /// `timeout_ms` when an entry does not set it.
 pub const TIMEOUT_MS: u64 = 2000;
@@ -32,6 +34,9 @@ pub struct Entry {
     /// Time each call may take before the process is killed, in milliseconds.
     #[serde(default = "timeout_ms")]
     timeout_ms: u64,
+    /// Global hotkeys that open its views: `<view> = "<hotkey>"`.
+    #[serde(default)]
+    hotkeys: BTreeMap<String, String>,
 }
 
 fn timeout_ms() -> u64 {
@@ -44,6 +49,8 @@ pub struct Spec {
     pub name: String,
     pub argv: Vec<String>,
     pub timeout: Duration,
+    /// `(view, hotkey)`, by view name; blank hotkeys left out.
+    pub hotkeys: Vec<(String, String)>,
 }
 
 impl Spec {
@@ -58,7 +65,8 @@ impl Spec {
 }
 
 /// The extensions in `settings`, each argument's leading `~/` replaced by `home`. Names are
-/// 1-`NAME_MAX` of `a-z 0-9 -` and unique; argv names a program; the timeout is not 0.
+/// 1-`NAME_MAX` of `a-z 0-9 -` and unique; argv names a program; the timeout is not 0;
+/// hotkey views are valid view names.
 pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String> {
     let mut specs: Vec<Spec> = Vec::new();
     for e in settings.extensions {
@@ -77,8 +85,13 @@ pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String
         if e.timeout_ms == 0 {
             return bad("timeout_ms must be over 0");
         }
+        if let Some(view) = e.hotkeys.keys().find(|v| !valid_id(v)) {
+            return bad(&format!("hotkeys: view \"{view}\" must be 1-64 of A-Z a-z 0-9 . _ -"));
+        }
+        let hotkeys = e.hotkeys.into_iter().filter(|(_, spec)| !spec.trim().is_empty()).collect();
         let argv = e.argv.into_iter().map(|a| expand(a, home)).collect();
-        specs.push(Spec { name, argv, timeout: Duration::from_millis(e.timeout_ms) });
+        let timeout = Duration::from_millis(e.timeout_ms);
+        specs.push(Spec { name, argv, timeout, hotkeys });
     }
     Ok(specs)
 }
@@ -103,11 +116,14 @@ mod tests {
     #[test]
     fn entries_expand_home_and_default_the_timeout() {
         let text = "[[ext.extensions]]\nname = \"notes-2\"\nargv = [\"~/bin/notes\", \"--json\", \"~/n\", \"a~/b\"]\n\
-                    [[ext.extensions]]\nname = \"gh\"\nargv = [\"/usr/bin/env\", \"gh-ext\"]\ntimeout_ms = 500";
+                    [[ext.extensions]]\nname = \"gh\"\nargv = [\"/usr/bin/env\", \"gh-ext\"]\ntimeout_ms = 500\n\
+                    hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }";
         let got = specs(text).unwrap();
         assert_eq!(got[0].argv, ["/Users/me/bin/notes", "--json", "/Users/me/n", "a~/b"]);
         assert_eq!(got[0].timeout, Duration::from_millis(TIMEOUT_MS));
         assert_eq!((got[1].name.as_str(), got[1].timeout), ("gh", Duration::from_millis(500)));
+        assert!(got[0].hotkeys.is_empty());
+        assert_eq!(got[1].hotkeys, [("prs".to_string(), "cmd+KeyP".to_string())]);
         assert!(specs("").unwrap().is_empty());
         let none = read(Settings { extensions: vec![] }, None).unwrap();
         assert!(none.is_empty());
@@ -116,7 +132,7 @@ mod tests {
 
     #[test]
     fn act_and_submit_get_at_least_ten_seconds() {
-        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms) };
+        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![] };
         assert_eq!(spec(2000).budget(Op::Root), Duration::from_secs(2));
         assert_eq!(spec(2000).budget(Op::Act), LONG);
         assert_eq!(spec(2000).budget(Op::Submit), LONG);
@@ -137,6 +153,8 @@ mod tests {
         assert!(err(&entry("a", "argv = [\" \"]")).ends_with("argv must name a program"));
         assert!(err(&entry("a", &format!("{argv}\ntimeout_ms = 0"))).ends_with("timeout_ms must be over 0"));
         assert!(err(&entry("a", "argv = \"/bin/x\"")).starts_with("[ext]"));
+        let view = format!("{argv}\nhotkeys = {{ \"a b\" = \"cmd+KeyA\" }}");
+        assert_eq!(err(&entry("a", &view)), "[ext] extensions: \"a\": hotkeys: view \"a b\" must be 1-64 of A-Z a-z 0-9 . _ -");
     }
 
     #[test]

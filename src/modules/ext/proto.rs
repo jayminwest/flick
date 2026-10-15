@@ -86,6 +86,7 @@ impl Op {
 }
 
 /// What happened in Flick, for an extension that subscribes to events.
+#[cfg_attr(not(test), expect(dead_code, reason = "events are sent from flick-d894"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
     Started,
@@ -108,6 +109,10 @@ impl EventKind {
 }
 
 /// One call to an extension.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "actions and forms (flick-b46d), queries (flick-f4e6), events (flick-d894)")
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     /// The root search items.

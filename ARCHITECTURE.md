@@ -95,7 +95,8 @@ and SIGTERM turn it on again, a crash leaves it off until Flick starts again or 
 `ItemId::new(module, key)` serializes as `<module>:<key>`. That string is the key of the `usage`
 table. Do not change how a module builds keys: existing frecency history would split.
 `src/characterization/item_ids.rs` pins the current formats: `app:<path>`, `window:<title>`,
-`quicklink:<name>`, `script:<name>`, `builtin:<title>`. `with_arg` attaches data (a quicklink's typed query)
+`quicklink:<name>`, `script:<name>`, `builtin:<title>`, `ext:<extension>/<key>` (an
+extension's root and view items: its configured name and the item's `key` in the reply). `with_arg` attaches data (a quicklink's typed query)
 that `activate` reads with `id.arg()`. It is not part of the serialized id.
 
 `Registry::activate` routes by `id.module()`, so a view may list another module's item by its

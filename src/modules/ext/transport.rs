@@ -14,6 +14,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::icons;
 use super::proto::{self, Parsed, REPLY_MAX, Request};
 use super::settings::Spec;
 
@@ -24,11 +25,12 @@ const TAIL: usize = 4096;
 /// How long to wait for the pipes after exit; a grandchild may hold them open.
 const DRAIN: Duration = Duration::from_secs(1);
 
-/// Run `req` on `spec` and parse its reply. `socket` is `FLICK_SOCKET`.
+/// Run `req` on `spec` and parse its reply, its icon files checked. `socket` is
+/// `FLICK_SOCKET`.
 pub fn call(spec: &Spec, req: &Request, socket: &Path) -> Result<Parsed, String> {
     let name = &spec.name;
     let out = exec(spec, req, socket).map_err(|e| format!("{name}: {e}"))?;
-    proto::parse(req.op(), &out).map_err(|e| format!("{name}: {e}"))
+    proto::parse(req.op(), &out).map(icons::check).map_err(|e| format!("{name}: {e}"))
 }
 
 /// The child's stdout, or why the call failed (without the name).
@@ -130,7 +132,7 @@ mod tests {
 
     fn spec(mode: &[&str], timeout: Duration) -> Spec {
         let argv = std::iter::once(FIXTURE).chain(mode.iter().copied()).map(String::from);
-        Spec { name: "echo".into(), argv: argv.collect(), timeout }
+        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![] }
     }
 
     fn run(mode: &[&str]) -> Result<Parsed, String> {

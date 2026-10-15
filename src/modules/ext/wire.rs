@@ -1,7 +1,8 @@
-//! The real hooks: post `ModuleChanged`, log to stderr, post a notification.
+//! The real hooks: post `ModuleChanged`, log to stderr, post a notification, ask whether
+//! the launcher shows.
 
 use crate::core::Event;
-use crate::platform::{events, notify};
+use crate::platform::{events, notify, panel};
 
 /// Worker thread: the inbox has an answer.
 pub fn post() {
@@ -15,4 +16,9 @@ pub fn log(line: &str) {
 /// Main thread: a banner for a failed call of `ext` (logged already).
 pub fn notify(ext: &str, error: &str) {
     let _ = notify::post(&format!("ext:{ext}"), "Flick extension failed", error);
+}
+
+/// The launcher is on the screen.
+pub fn visible() -> bool {
+    panel::is_visible()
 }
