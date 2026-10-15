@@ -101,10 +101,22 @@ pub trait Module {
     }
 
     /// Save `form` (one this module built), its required fields already filled. `Ok` is a
-    /// status for root search; `Err` is shown in the form, which stays open.
+    /// status for root search; `Err` is shown in the form, which stays open. For a
+    /// `Form::background` form, `Ok` only started the save: its text is `Form::pending`.
     fn submit(&mut self, form: &Form, _cx: &mut Cx) -> Result<String, String> {
         Err(format!("{}: cannot submit form \"{}\"", self.id(), form.name))
     }
+
+    /// Update `form` (this module's, on the screen) after an event made this module's views
+    /// stale, e.g. fill a loading form or end a pending save (clear `pending`, set `error`).
+    /// `Some(status)`: the form is done; back to root search with `status`.
+    fn refresh_form(&mut self, _form: &mut Form, _cx: &mut Cx) -> Option<String> {
+        None
+    }
+
+    /// `form` (this module's) left the screen: Escape, another screen, or done. A save it
+    /// still waits on reports its answer some other way.
+    fn form_closed(&mut self, _form: &Form, _cx: &mut Cx) {}
 
     /// The action menu (cmd+K) for item `id`, asked each time the menu opens so state such
     /// as "running" is current. Empty when the item has none.

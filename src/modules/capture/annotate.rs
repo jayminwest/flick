@@ -134,7 +134,7 @@ fn item(key: &'static str, title: &str, symbol: &'static str, subtitle: &str) ->
         subtitle: subtitle.into(),
         accessory: "Capture".into(),
         keywords: vec!["annotate draw presentify highlight cursor screenshot".into()],
-        ..Item::new(ItemId::new("capture", key), title, "Run", Icon::Symbol(symbol))
+        ..Item::new(ItemId::new("capture", key), title, "Run", Icon::symbol(symbol))
     }
 }
 

@@ -60,7 +60,7 @@ impl Sys {
     /// Cheap (no I/O): the launcher asks on every render.
     pub(super) fn menu(&self, id: &ItemId) -> Vec<Action> {
         if id.key() == "fleet" {
-            return vec![Action::new("window", "Open Fleet Window", Icon::Symbol("macwindow"))];
+            return vec![Action::new("window", "Open Fleet Window", Icon::symbol("macwindow"))];
         }
         if let Some(m) = self.machine_of(id.key()) {
             return act::machine_menu(&m);

@@ -173,7 +173,7 @@ impl Rebuild {
                 subtitle: busy.clone().unwrap_or(subtitle),
                 accessory: "Flick".into(),
                 keywords: vec!["update install build compile restart".into()],
-                ..Item::new(ItemId::new("flick", key), title, "Run Command", Icon::Symbol("hammer"))
+                ..Item::new(ItemId::new("flick", key), title, "Run Command", Icon::symbol("hammer"))
             })
             .collect()
     }
@@ -184,15 +184,15 @@ impl Rebuild {
         let status = Item {
             subtitle: p.last_line.clone(),
             tone: p.tone(),
-            ..Item::new(ItemId::new("flick", "build-status"), p.title(Instant::now()), "Open Log", Icon::Symbol("hammer"))
+            ..Item::new(ItemId::new("flick", "build-status"), p.title(Instant::now()), "Open Log", Icon::symbol("hammer"))
         };
         let mut items = vec![status];
         if p.phase == build::Phase::Building {
-            items.push(Item::new(ItemId::new("flick", "cancel-build"), "Cancel Build", "Run Command", Icon::Symbol("xmark.circle")));
+            items.push(Item::new(ItemId::new("flick", "cancel-build"), "Cancel Build", "Run Command", Icon::symbol("xmark.circle")));
         }
         items.push(Item {
             subtitle: tilde(&self.runner.paths.log),
-            ..Item::new(ItemId::new("flick", "build-log"), "Open Build Log", "Open", Icon::Symbol("doc.text"))
+            ..Item::new(ItemId::new("flick", "build-log"), "Open Build Log", "Open", Icon::symbol("doc.text"))
         });
         items
     }
@@ -217,7 +217,7 @@ impl Rebuild {
             subtitle,
             accessory: "Flick".into(),
             keywords: vec!["about build commit sha update".into()],
-            ..Item::new(ItemId::new("flick", "version"), "Flick Version", "Show Version", Icon::Symbol("info.circle"))
+            ..Item::new(ItemId::new("flick", "version"), "Flick Version", "Show Version", Icon::symbol("info.circle"))
         }
     }
 
@@ -281,7 +281,7 @@ impl Module for Rebuild {
                     ItemId::new("flick", "rebuild-available"),
                     "Rebuild Available",
                     "Run Command",
-                    Icon::Symbol("arrow.triangle.2.circlepath"),
+                    Icon::symbol("arrow.triangle.2.circlepath"),
                 )
             });
         }

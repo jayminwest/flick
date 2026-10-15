@@ -1,12 +1,17 @@
 //! Forms: a module-owned set of labelled text fields that replaces root search, e.g. the
 //! quicklink editor. The module builds the form (`Module::form`) and saves it
 //! (`Module::submit`); the controller only edits values and moves focus.
+//!
+//! A `background` form saves off the main thread (an extension's): `submit` only starts the
+//! save, and the form stays open, `pending`, until the module ends it in `refresh_form`.
+
+use std::borrow::Cow;
 
 /// One labelled text field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     /// The module's name for the field; `Form::value` looks it up.
-    pub key: &'static str,
+    pub key: Cow<'static, str>,
     pub label: String,
     pub value: String,
     /// Shown while `value` is empty.
@@ -19,9 +24,9 @@ pub struct Field {
 
 impl Field {
     /// An optional, empty field with no placeholder.
-    pub fn new(key: &'static str, label: impl Into<String>) -> Field {
+    pub fn new(key: impl Into<Cow<'static, str>>, label: impl Into<String>) -> Field {
         Field {
-            key,
+            key: key.into(),
             label: label.into(),
             value: String::new(),
             placeholder: String::new(),
@@ -76,6 +81,11 @@ pub struct Form {
     pub submit_label: String,
     /// The last submit's error, shown under the fields.
     pub error: Option<String>,
+    /// `Module::submit`'s `Ok` only starts the save; its text becomes `pending`.
+    pub background: bool,
+    /// The module is still loading or saving the form: this text (e.g. "Saving…") is the
+    /// footer and the form does not submit. The module clears it in `Module::refresh_form`.
+    pub pending: Option<String>,
 }
 
 impl Form {
@@ -89,6 +99,8 @@ impl Form {
             focused: 0,
             submit_label: "Submit".into(),
             error: None,
+            background: false,
+            pending: None,
         }
     }
 
@@ -164,10 +176,18 @@ mod tests {
         assert!(!f.is("quicklink", "edit") && !f.is("clip", "new"));
         assert_eq!((f.title.as_str(), f.submit_label.as_str()), ("Create Quicklink", "Submit"));
         assert!(f.fields.is_empty() && f.focused == 0 && f.error.is_none());
+        assert!(!f.background && f.pending.is_none());
         let field = Field::new("k", "Key");
         assert_eq!(field.label, "Key");
         assert!(field.value.is_empty() && field.placeholder.is_empty() && !field.required);
         assert!(!field.multiline && Field::new("k", "Key").multiline().multiline);
+    }
+
+    #[test]
+    fn an_owned_field_key_is_found_by_value() {
+        let f =
+            Form { fields: vec![Field::new(String::from("env"), "Env").value("prod")], ..form() };
+        assert_eq!((f.value("env"), f.value("name")), (Some("prod"), None));
     }
 
     #[test]
@@ -216,7 +236,8 @@ mod tests {
     #[test]
     fn missing_required_ignores_optional_and_counts_blank() {
         let mut f = form();
-        let keys = |f: &Form| f.missing_required().iter().map(|x| x.key).collect::<Vec<_>>();
+        let keys =
+            |f: &Form| f.missing_required().iter().map(|x| x.key.clone()).collect::<Vec<_>>();
         assert_eq!(keys(&f), ["name", "url"]);
         f.set_value(0, "  \t");
         assert_eq!(keys(&f), ["name", "url"]);

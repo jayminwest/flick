@@ -29,7 +29,7 @@ fn delete_chat_asks_first_then_drops_the_thread() {
     let shown = m.chat.thread.as_ref().unwrap().id.clone();
     keep(&f, "old", "mlx", "an old chat");
     // ⌘K on a kept thread: Delete Chat, which asks first (⌘↵ only).
-    let keys: Vec<&str> = f.cx("", |cx| m.actions(&thread_item("old"), cx)).iter().map(|a| a.key).collect();
+    let keys: Vec<_> = f.cx("", |cx| m.actions(&thread_item("old"), cx)).into_iter().map(|a| a.key).collect();
     assert_eq!(keys, ["delete"]);
     let Outcome::Confirm(c) = f.cx("", |cx| m.act(&thread_item("old"), "delete", cx)) else { panic!("delete asks first") };
     assert_eq!((c.module, c.token.as_str(), c.title.as_str()), (ID, "delete:old", "Delete chat \"an old chat\"?"));

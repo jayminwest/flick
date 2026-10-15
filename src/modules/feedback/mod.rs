@@ -129,7 +129,7 @@ impl Feedback {
                 ItemId::new("feedback", "save").with_arg(text),
                 format!("Save feedback: {text}"),
                 "Save Feedback",
-                Icon::Symbol("text.bubble"),
+                Icon::symbol("text.bubble"),
             )
         }
     }
@@ -149,7 +149,7 @@ impl Feedback {
                     ItemId::new("feedback", format!("{ENTRY}{i}")).with_arg(e.text.clone()),
                     e.text,
                     "Copy Text",
-                    Icon::Symbol("text.bubble"),
+                    Icon::symbol("text.bubble"),
                 )
             })
             .collect();
@@ -254,12 +254,12 @@ impl Module for Feedback {
                 subtitle: self.subtitle(),
                 accessory: "Command".into(),
                 keywords: vec!["note".into(), "bug".into(), self.settings.keyword.clone()],
-                ..Item::new(ItemId::new("feedback", "new"), "Add Feedback…", "Write Feedback", Icon::Symbol("text.bubble"))
+                ..Item::new(ItemId::new("feedback", "new"), "Add Feedback…", "Write Feedback", Icon::symbol("text.bubble"))
             },
             Item {
                 subtitle: "Feedback".into(),
                 accessory: "Command".into(),
-                ..Item::new(ItemId::new("feedback", "list"), "Recent Feedback", "Open", Icon::Symbol("list.bullet"))
+                ..Item::new(ItemId::new("feedback", "list"), "Recent Feedback", "Open", Icon::symbol("list.bullet"))
             },
         ]
     }
@@ -317,7 +317,7 @@ impl Module for Feedback {
 
     fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
         if id.key().starts_with(ENTRY) {
-            vec![Action::new("resolve", "Mark Resolved", Icon::Symbol("checkmark.circle"))]
+            vec![Action::new("resolve", "Mark Resolved", Icon::symbol("checkmark.circle"))]
         } else {
             vec![]
         }

@@ -9,6 +9,8 @@ pub enum Outcome {
     Hide,
     /// Keep the launcher as it is; `Some` shows a status line in the footer.
     Stay(Option<String>),
+    /// Back to root search, the launcher still showing.
+    Root,
     /// Show a module's list. The registry asks the owning module (`ListView::module`) to
     /// open it, so any module may push any other module's view by name.
     Push(ListView),

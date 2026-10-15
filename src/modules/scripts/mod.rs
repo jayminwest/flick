@@ -142,7 +142,7 @@ fn item(s: &Script, arg: Option<String>) -> Item {
             },
             s.name.clone(),
             if tab { "Enter Argument" } else { "Run Command" },
-            Icon::Symbol("terminal"),
+            Icon::symbol("terminal"),
         )
     }
 }

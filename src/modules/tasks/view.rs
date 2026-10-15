@@ -31,7 +31,7 @@ pub fn clock(secs: i64) -> String {
 }
 
 fn item(key: impl std::fmt::Display, title: impl Into<String>, verb: &'static str, symbol: &'static str) -> Item {
-    Item { accessory: "Task".into(), ..Item::new(ItemId::new("task", key), title, verb, Icon::Symbol(symbol)) }
+    Item { accessory: "Task".into(), ..Item::new(ItemId::new("task", key), title, verb, Icon::symbol(symbol)) }
 }
 
 /// 'Start Task' while none runs; 'Stop Task: <title> · 0:42' (`secs` today) and 'Switch
@@ -120,7 +120,7 @@ fn task_row(task: &Task, secs: i64, running: Option<i64>) -> Item {
         subtitle: task.project.as_ref().map(|p| format!("#{p}")).unwrap_or_default(),
         accessory,
         keywords: task.project.iter().cloned().collect(),
-        ..Item::new(ItemId::new("task", format!("{RUN}{}", task.id)), &task.title, verb, Icon::Symbol("circle"))
+        ..Item::new(ItemId::new("task", format!("{RUN}{}", task.id)), &task.title, verb, Icon::symbol("circle"))
     }
 }
 
@@ -162,7 +162,7 @@ pub fn pick_items(
                 ItemId::new("task", NEW).with_arg(query.trim()),
                 format!("Start new task \"{title}\""),
                 "Start Task",
-                Icon::Symbol("plus.circle"),
+                Icon::symbol("plus.circle"),
             )
         };
         items.insert(0, new);
@@ -198,7 +198,7 @@ pub fn list_items(
                 _ if Some(t.id) == running => ("play.circle", Tone::Ok),
                 _ => ("circle", Tone::Neutral),
             };
-            Item { icon: Icon::Symbol(symbol), tone, ..task_row(t, secs.get(&t.id).copied().unwrap_or(0), running) }
+            Item { icon: Icon::symbol(symbol), tone, ..task_row(t, secs.get(&t.id).copied().unwrap_or(0), running) }
         })
         .collect();
     let order: HashMap<String, f64> =
@@ -228,7 +228,7 @@ pub fn today_items(query: &str, report: &Report, running: Option<&Task>, ranker:
         rows.push(Item {
             subtitle: "Project total".into(),
             accessory: clock(p.secs),
-            ..Item::new(ItemId::new("task", format!("{PROJECT}{name}")), title, "Total", Icon::Symbol("folder"))
+            ..Item::new(ItemId::new("task", format!("{PROJECT}{name}")), title, "Total", Icon::symbol("folder"))
         });
     }
     let order: HashMap<String, f64> =
@@ -241,17 +241,17 @@ pub fn today_items(query: &str, report: &Report, running: Option<&Task>, ranker:
 pub fn actions(running: bool, done: bool) -> Vec<Action> {
     vec![
         if running {
-            Action::new("stop", "Stop Task", Icon::Symbol("stop.circle"))
+            Action::new("stop", "Stop Task", Icon::symbol("stop.circle"))
         } else {
-            Action::new("start", "Start Task", Icon::Symbol("play.circle"))
+            Action::new("start", "Start Task", Icon::symbol("play.circle"))
         },
         if done {
-            Action::new("reopen", "Reopen Task", Icon::Symbol("arrow.uturn.backward.circle"))
+            Action::new("reopen", "Reopen Task", Icon::symbol("arrow.uturn.backward.circle"))
         } else {
-            Action::new("done", "Mark Done", Icon::Symbol("checkmark.circle"))
+            Action::new("done", "Mark Done", Icon::symbol("checkmark.circle"))
         },
-        Action::new("rename", "Rename Task", Icon::Symbol("pencil")),
-        Action::new("delete", "Delete Task", Icon::Symbol("trash")),
+        Action::new("rename", "Rename Task", Icon::symbol("pencil")),
+        Action::new("delete", "Delete Task", Icon::symbol("trash")),
     ]
 }
 
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(ids(&pick("", None)), ["task:run/1", "task:run/2", "task:run/3"]);
         let items = pick("", Some(2));
         assert_eq!(ids(&items), ["task:run/2", "task:run/1", "task:run/3"]);
-        assert_eq!((items[0].accessory.as_str(), items[0].verb, items[1].verb), ("Running · 0:02", "Keep Running", "Switch to Task"));
+        assert_eq!((items[0].accessory.as_str(), &*items[0].verb, &*items[1].verb), ("Running · 0:02", "Keep Running", "Switch to Task"));
         let items = pick("Review PR #kota", None);
         assert_eq!(ids(&items), ["task:new"]);
         assert_eq!((items[0].title.as_str(), items[0].subtitle.as_str()), ("Start new task \"Review PR\"", "#kota"));
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(ids(&list("", None)), ["task:run/1", "task:run/3", "task:run/4"]);
         let items = list("", Some(3));
         assert_eq!(ids(&items), ["task:run/3", "task:run/1", "task:run/4"]);
-        assert_eq!(items.iter().map(|i| &i.icon).collect::<Vec<_>>(), [&Icon::Symbol("play.circle"), &Icon::Symbol("circle"), &Icon::Symbol("checkmark.circle")]);
+        assert_eq!(items.iter().map(|i| &i.icon).collect::<Vec<_>>(), [&Icon::symbol("play.circle"), &Icon::symbol("circle"), &Icon::symbol("checkmark.circle")]);
         assert_eq!((items[0].accessory.as_str(), items[2].accessory.as_str()), ("Running · 0:00", "Done · 0:01"));
         assert_eq!(items.iter().map(|i| i.tone).collect::<Vec<_>>(), [Tone::Ok, Tone::Neutral, Tone::Ok]);
         // A done task that matches better still comes after the open ones.

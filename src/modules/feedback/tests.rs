@@ -265,7 +265,7 @@ fn mark_resolved_in_recent_feedback() {
     let titles: Vec<_> = view.items.iter().map(|i| i.title.as_str()).collect();
     assert_eq!(titles, ["three", "two"]);
     let actions = test_cx("", |cx| f.actions(&view.items[1].id, cx));
-    assert_eq!(actions.iter().map(|a| a.key).collect::<Vec<_>>(), ["resolve"]);
+    assert_eq!(actions.iter().map(|a| &*a.key).collect::<Vec<_>>(), ["resolve"]);
     assert!(test_cx("", |cx| f.actions(&ItemId::new("feedback", "list"), cx)).is_empty());
     let out = test_cx("", |cx| f.act(&view.items[1].id, "resolve", cx));
     assert!(matches!(out, Outcome::Stay(Some(s)) if s == "Feedback resolved"));

@@ -192,7 +192,7 @@ fn results_say_what_happened() {
 }
 
 fn keys(actions: &[Action]) -> Vec<&str> {
-    actions.iter().map(|a| a.key).collect()
+    actions.iter().map(|a| &*a.key).collect()
 }
 
 #[test]

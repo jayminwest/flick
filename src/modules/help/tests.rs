@@ -86,7 +86,7 @@ fn a_topic_without_keys_opens_its_docs_page() {
 fn actions_open_docs_or_copy_the_how_to() {
     let mut h = help();
     let keys = |h: &mut Help, k: &str| {
-        test_cx("", |cx| h.actions(&id(k), cx)).iter().map(|a| a.key).collect::<Vec<_>>()
+        test_cx("", |cx| h.actions(&id(k), cx)).into_iter().map(|a| a.key).collect::<Vec<_>>()
     };
     assert_eq!(keys(&mut h, "topic/draw"), ["docs", "copy"]);
     assert_eq!(keys(&mut h, "key/draw/3"), ["docs", "copy"]);
@@ -102,8 +102,8 @@ fn actions_open_docs_or_copy_the_how_to() {
 
 #[test]
 fn unknown_rows_rank_last() {
-    let item = Item::new(id("other"), "x", "Open", Icon::Symbol("x"));
-    assert!(items_pos(&item, 3) < items_pos(&Item::new(id("key/draw/2"), "y", "Open", Icon::Symbol("x")), 3));
+    let item = Item::new(id("other"), "x", "Open", Icon::symbol("x"));
+    assert!(items_pos(&item, 3) < items_pos(&Item::new(id("key/draw/2"), "y", "Open", Icon::symbol("x")), 3));
     assert!(help().topic_of("key/").is_none());
 }
 

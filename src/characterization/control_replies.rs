@@ -224,6 +224,11 @@ fn network_callers_are_refused_side_effecting_requests() {
         // make it write a snapshot PNG.
         (&["sys", "window"], "sys window"),
         (&["sys", "window", "--snapshot", "/tmp/x.png"], "sys window"),
+        // Extensions (flick-f594): a peer must not pop the launcher on a view or make this
+        // Mac run an extension with a request of its choosing.
+        (&["ext", "open", "todo", "inbox"], "ext open"),
+        (&["ext", "call", "todo", "{\"op\":\"root\"}"], "ext call"),
+        (&["ext", "call"], "ext call"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
@@ -399,4 +404,20 @@ fn peers_may_read_kota_presence() {
         net_reply(&["kota", "status", "--json"]),
         r#"{"error":"kota is off: turn it on in its [kota] table in config.toml"}"#
     );
+}
+
+#[test]
+fn peers_may_list_and_refresh_extensions() {
+    // `ext ls` reads what the workers recorded and `ext refresh` asks the configured
+    // extensions again, as a launcher open does (flick-f594); only `open` and `call` are
+    // denied.
+    for verb in ["ls", "refresh"] {
+        assert_eq!(net_policy(&["ext", verb].map(String::from)), Ok(()), "{verb}");
+    }
+    assert_eq!(
+        net_reply(&["ext", "ls"]),
+        r#"{"ok":"ext: no extensions (add [[ext.extensions]] to config.toml)"}"#
+    );
+    assert_eq!(net_reply(&["ext", "ls", "--json"]), r#"{"ok":[]}"#);
+    assert_eq!(net_reply(&["ext", "refresh", "todo"]), r#"{"error":"ext: no extension \"todo\""}"#);
 }

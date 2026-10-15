@@ -254,3 +254,36 @@ fn sys_ids_are_fixed_keys() {
     let mut registry = with_apps(&crate::config::parse(text).unwrap(), vec![]).unwrap();
     assert_eq!(sys(test_cx("", |cx| registry.items(cx))), ["sys:fleet"]);
 }
+
+#[test]
+fn ext_ids_are_the_extension_and_its_key() {
+    // `ext:<name>/<key>`, for root items and for rows of the extension's views (which
+    // record use). The fixture answers each op with one item keyed by the op.
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ext-echo.sh");
+    let text = format!("[[ext.extensions]]\nname = \"echo\"\nargv = [{fixture:?}, \"echo\"]\n");
+    let mut registry = with_apps(&crate::config::parse(&text).unwrap(), vec![]).unwrap();
+    let ext = |items: Vec<Item>| {
+        items
+            .into_iter()
+            .map(|i| i.id.to_string())
+            .filter(|id| id.starts_with("ext:"))
+            .collect::<Vec<_>>()
+    };
+    let changed = crate::core::Event::ModuleChanged { module: "ext" };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let (root, view) = test_cx("", |cx| {
+        registry.dispatch(crate::core::Event::LauncherOpened, cx);
+        let mut view = registry.open(&ListView::new("ext", "echo/inbox"), cx).unwrap();
+        let (mut root, mut rows) = (vec![], vec![]);
+        while (root.is_empty() || rows.is_empty()) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            registry.dispatch(changed, cx);
+            root = ext(registry.items(cx));
+            registry.refresh(&mut view, cx);
+            rows = ext(std::mem::take(&mut view.items));
+        }
+        (root, rows)
+    });
+    assert_eq!(root, ["ext:echo/root"]);
+    assert_eq!(view, ["ext:echo/open"]);
+}

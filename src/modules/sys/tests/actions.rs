@@ -53,8 +53,8 @@ fn id(key: &str) -> ItemId {
     ItemId::new(ID, key)
 }
 
-fn menu(m: &mut Sys, key: &str) -> Vec<&'static str> {
-    test_cx("", |cx| m.actions(&id(key), cx)).iter().map(|a| a.key).collect()
+fn menu(m: &mut Sys, key: &str) -> Vec<String> {
+    test_cx("", |cx| m.actions(&id(key), cx)).into_iter().map(|a| a.key.into_owned()).collect()
 }
 
 fn act(m: &mut Sys, key: &str, action: &str) -> Outcome {

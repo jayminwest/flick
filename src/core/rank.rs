@@ -83,7 +83,7 @@ mod tests {
     use crate::core::{Icon, ItemId};
 
     fn item(title: &str) -> Item {
-        Item::new(ItemId::new("test", title), title, "Run", Icon::Symbol("app"))
+        Item::new(ItemId::new("test", title), title, "Run", Icon::symbol("app"))
     }
 
     fn titles(items: &[Item]) -> Vec<&str> {

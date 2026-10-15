@@ -33,7 +33,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Three modules are opt-in: `kota`, `llm` and `dictation` (KOTA and the local models). Flick registers them only when their table sets a key, so a Mac whose config never names them runs none of their code and shows no item, hotkey, help topic or verb of theirs. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `ext`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Three modules are opt-in: `kota`, `llm` and `dictation` (KOTA and the local models). Flick registers them only when their table sets a key, so a Mac whose config never names them runs none of their code and shows no item, hotkey, help topic or verb of theirs. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 ## Per-host overlay
 
@@ -130,6 +130,24 @@ In Raycast, run **Export Quicklinks**. Then:
 ```
 
 Flick appends the links as `[[quicklink.links]]` entries to the file that holds the links (config.toml, or the overlay when it sets them). It changes `{argument}` placeholders to `{query}` and skips links with the same name or URL as an existing link. It reports placeholders that it cannot fill, such as `{clipboard}`.
+
+## Extensions
+
+An extension is a program, in any language, that adds to the launcher. Add one `[[ext.extensions]]` table for each:
+
+```toml
+[[ext.extensions]]
+name = "notes"                          # 1-32 of a-z, 0-9 and -; unique
+argv = ["~/bin/notes-ext", "--flick"]   # no shell; a leading ~/ is the home folder
+timeout_ms = 2000                       # the default
+hotkeys = { inbox = "cmd+ctrl+alt+shift+KeyE" }   # <view> = "<hotkey>": opens the view
+keywords = ["n"]                        # "n <text>" in root search asks the extension
+subscribe = ["wake"]                    # events it gets, as op: event
+```
+
+Each call runs the program once, without a shell. Flick writes one JSON request to its stdin and reads one JSON reply from its stdout; the program exits 0. Calls to one extension run one at a time on its own thread, never on the launcher's, so a slow extension does not slow the launcher. A call that takes longer than `timeout_ms` is stopped: Flick kills the program and everything it started. Actions and form submits get at least 10 s. A failed call shows `<name>: <why>` (for a failed exit, the last line of stderr) in a notification, a toast or a footer, and goes to the log.
+
+Root search shows the extension's root items with the other modules' items, ranked by the same fuzzy match and usage. Its views open by hotkey, from an item or with `flick ext open <name> <view>`. `flick ext ls` shows how each extension's last call went. [Extensions](extensions.md) has the protocol (requests, replies, actions, forms, limits, errors), the `ext` verbs, an example extension and a manual checklist.
 
 ## Launcher keys
 

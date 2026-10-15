@@ -235,15 +235,15 @@ pub fn tailed(got: Result<Exit, String>) -> Result<String, String> {
 
 /// The action menu of a machine row: Screen Sharing (`vnc`), Open Dash (`dash`).
 pub fn machine_menu(m: &Machine) -> Vec<Action> {
-    let vnc = m.vnc.as_ref().map(|_| Action::new("vnc", "Screen Sharing", Icon::Symbol("display")));
-    let dash = m.dash.as_ref().map(|_| Action::new("dash", "Open Dash", Icon::Symbol("safari")));
+    let vnc = m.vnc.as_ref().map(|_| Action::new("vnc", "Screen Sharing", Icon::symbol("display")));
+    let dash = m.dash.as_ref().map(|_| Action::new("dash", "Open Dash", Icon::symbol("safari")));
     vnc.into_iter().chain(dash).collect()
 }
 
 /// The action menu of a service row: Tail Log with a `log`, Restart with `restart = true`.
 pub fn service_menu(t: &Target) -> Vec<Action> {
-    let tail = t.service.log.as_ref().map(|_| Action::new("tail", "Tail Log", Icon::Symbol("doc.text.magnifyingglass")));
-    let restart = t.service.restart.then(|| Action::new("restart", "Restart…", Icon::Symbol("arrow.clockwise")));
+    let tail = t.service.log.as_ref().map(|_| Action::new("tail", "Tail Log", Icon::symbol("doc.text.magnifyingglass")));
+    let restart = t.service.restart.then(|| Action::new("restart", "Restart…", Icon::symbol("arrow.clockwise")));
     tail.into_iter().chain(restart).collect()
 }
 

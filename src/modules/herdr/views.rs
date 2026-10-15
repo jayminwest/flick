@@ -86,12 +86,12 @@ pub fn root_item(fleet: &Fleet) -> Item {
         subtitle: summary_line(fleet),
         accessory: "herdr".into(),
         keywords: vec!["herdr agents claude codex pi waiting blocked".into()],
-        ..Item::new(ItemId::new(ID, "agents"), "Herdr Agents", "Show Agents", Icon::Symbol("terminal"))
+        ..Item::new(ItemId::new(ID, "agents"), "Herdr Agents", "Show Agents", Icon::symbol("terminal"))
     }
 }
 
 pub fn status_icon(status: Status) -> Icon {
-    Icon::Symbol(match status {
+    Icon::symbol(match status {
         Status::Blocked => "exclamationmark.bubble",
         Status::Done => "checkmark.circle",
         Status::Idle => "pause.circle",
@@ -137,7 +137,7 @@ pub fn agent_item(agent: &Agent, now: u64) -> Item {
         subtitle: agent_subtitle(agent),
         accessory: if agent.changed_at == 0 { String::new() } else { age(now.saturating_sub(agent.changed_at)) },
         keywords,
-        tab: Tab::Act("output"),
+        tab: Tab::act("output"),
         tone: status_tone(agent.status),
         ..Item::new(
             ItemId::new(ID, agent_key(&agent.machine, &agent.pane_id)),
@@ -171,7 +171,7 @@ pub fn machine_items(fleet: &Fleet, now: u64) -> Vec<Item> {
             Some(Item {
                 subtitle: note.clone(),
                 keywords: vec![note],
-                ..Item::new(ItemId::new(ID, format!("machine/{m}")), m, "Show Error", Icon::Symbol(icon))
+                ..Item::new(ItemId::new(ID, format!("machine/{m}")), m, "Show Error", Icon::symbol(icon))
             })
         })
         .collect()
@@ -205,7 +205,7 @@ pub fn detail(agent: Option<&Agent>, preview: Option<&Preview>, now: u64) -> (Ve
         ..agent_item(agent, now)
     };
     let line = |text: String, icon: &'static str| {
-        Item::new(ItemId::new(ID, "line/0"), text, "Jump to Agent", Icon::Symbol(icon))
+        Item::new(ItemId::new(ID, "line/0"), text, "Jump to Agent", Icon::symbol(icon))
     };
     let mine = preview.filter(|p| p.machine == agent.machine && p.pane_id == agent.pane_id);
     let (second, text) = match (mine.and_then(|p| p.reply.as_ref()), loaded_reply(agent, preview)) {
@@ -213,7 +213,7 @@ pub fn detail(agent: Option<&Agent>, preview: Option<&Preview>, now: u64) -> (Ve
             let lines = text.lines().count();
             let copy = Item {
                 subtitle: format!("{lines} line{}", if lines == 1 { "" } else { "s" }),
-                ..Item::new(ItemId::new(ID, "reply"), "Copy Reply", "Copy Reply", Icon::Symbol("doc.on.doc"))
+                ..Item::new(ItemId::new(ID, "reply"), "Copy Reply", "Copy Reply", Icon::symbol("doc.on.doc"))
             };
             (copy, reply::wrapped(text, reply::WIDTH))
         }

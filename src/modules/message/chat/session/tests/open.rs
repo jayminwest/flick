@@ -11,7 +11,7 @@ fn the_threads_view_lists_and_opens_threads() {
     take_log();
     let list = ItemId::new("message", "list");
     let actions = f.cx("", false, |cx| m.actions(&list, cx));
-    assert_eq!(actions.iter().map(|a| a.key).collect::<Vec<_>>(), ["threads"]);
+    assert_eq!(actions.iter().map(|a| &*a.key).collect::<Vec<_>>(), ["threads"]);
     let Outcome::Push(mut view) = f.cx("", false, |cx| m.act(&list, "threads", cx)) else { panic!("no view") };
     assert_eq!(view.name, "threads");
     let mut opened = f.cx("", false, |cx| m.open("threads", cx)).unwrap();

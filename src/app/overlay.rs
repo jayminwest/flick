@@ -50,7 +50,7 @@ impl State {
         let query = ui::query();
         let actions = self.registry.actions(&item.id, &mut self.env.cx(&query));
         let Some(action) = actions.iter().find(|a| a.shortcut_hint == hint) else { return false };
-        let outcome = self.registry.act(&item.id, action.key, &mut self.env.cx(&query));
+        let outcome = self.registry.act(&item.id, &action.key, &mut self.env.cx(&query));
         self.apply(outcome, None);
         true
     }
@@ -64,7 +64,7 @@ impl State {
             Tab::Activate => self.activate(),
             Tab::Act(key) => {
                 let query = ui::query();
-                let outcome = self.registry.act(&item.id, key, &mut self.env.cx(&query));
+                let outcome = self.registry.act(&item.id, &key, &mut self.env.cx(&query));
                 self.apply(outcome, None);
             }
         }
@@ -179,25 +179,53 @@ impl State {
     }
 
     /// Submit the form: a blank required field is an inline error, without asking the
-    /// module. On `Ok` back to root search with the module's status; on `Err` the form
-    /// stays with the error.
+    /// module. On `Ok` back to root search with the module's status, or for a background
+    /// form, pending with it as the footer; on `Err` the form stays with the error. A
+    /// pending form does not submit.
     fn submit(&mut self) {
         let Screen::Form(form) = &self.screen else { return };
+        if form.pending.is_some() {
+            return;
+        }
         let result = match screen::missing(form) {
             Some(error) => Err(error),
             None => self.registry.submit(form, &mut self.env.cx("")),
         };
         match result {
-            Ok(status) => {
+            Ok(status) if !form_is_background(&self.screen) => {
                 self.enter(None);
                 self.set_status(status);
             }
-            Err(error) => {
+            result => {
                 if let Screen::Form(form) = &mut self.screen {
-                    form.error = Some(error);
+                    (form.pending, form.error) = (result.as_ref().ok().cloned(), result.err());
                 }
                 self.render();
             }
         }
     }
+
+    /// The form's module may have changed it (an event made its views stale): draw it
+    /// again, or back to root search with the status of a form it ended.
+    pub(super) fn refresh_form(&mut self) {
+        let Screen::Form(form) = &mut self.screen else { return };
+        match self.registry.refresh_form(form, &mut self.env.cx("")) {
+            Some(status) => {
+                self.enter(None);
+                self.set_status(status);
+            }
+            None => self.render(),
+        }
+    }
+
+    /// The screen is about to change: a form on it hears that it left.
+    pub(super) fn leave_form(&mut self) {
+        if let Screen::Form(form) = &self.screen {
+            self.registry.form_closed(form, &mut self.env.cx(""));
+        }
+    }
+}
+
+fn form_is_background(screen: &Screen) -> bool {
+    matches!(screen, Screen::Form(form) if form.background)
 }

@@ -101,7 +101,7 @@ fn the_views_open_chat_row_is_the_message_modules_item() {
     // Empty field: Open Chat first, so the hotkey then ↵ opens the chat window (flick-ed63).
     test_cx("  ", |cx| k.refresh(&mut view, cx));
     assert_eq!(ids(&view), ["message:chat:open"]);
-    assert_eq!((view.items[0].title.as_str(), view.items[0].verb), ("Open Chat", "Open"));
+    assert_eq!((view.items[0].title.as_str(), &*view.items[0].verb), ("Open Chat", "Open"));
     assert_eq!((view.footer.as_str(), view.text.as_str()), ("KOTA: unknown  ·  ↵ opens chat", ""));
     // A question: Ask first, Open Chat still there.
     test_cx(" what's on? ", |cx| k.refresh(&mut view, cx));

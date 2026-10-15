@@ -272,7 +272,7 @@ fn quiet(m: &Message) -> bool {
 }
 
 fn icon(m: &Message) -> Icon {
-    Icon::Symbol(if m.pending { "hourglass" } else { "bubble.left" })
+    Icon::symbol(if m.pending { "hourglass" } else { "bubble.left" })
 }
 
 fn recent_view(name: &str) -> ListView {
@@ -347,7 +347,7 @@ impl Module for Inbox {
             subtitle,
             accessory: "Command".into(),
             keywords: vec!["messages".into(), "inbox".into(), "replies".into()],
-            ..Item::new(ItemId::new("message", LIST), self.settings.name.clone(), "Open", Icon::Symbol("bubble.left.and.bubble.right"))
+            ..Item::new(ItemId::new("message", LIST), self.settings.name.clone(), "Open", Icon::symbol("bubble.left.and.bubble.right"))
         }]
     }
 
@@ -406,11 +406,11 @@ impl Module for Inbox {
         let Some(m) = (id.key() != LIST).then(|| cx.store.message(id.key())).flatten() else {
             return vec![];
         };
-        let mut actions = vec![Action::new("show", "Show in Panel", Icon::Symbol("macwindow"))];
+        let mut actions = vec![Action::new("show", "Show in Panel", Icon::symbol("macwindow"))];
         if m.url.is_some() {
-            actions.push(Action::new("open", "Open Link", Icon::Symbol("link")));
+            actions.push(Action::new("open", "Open Link", Icon::symbol("link")));
         }
-        actions.push(Action::new("copy", "Copy Message", Icon::Symbol("doc.on.doc")));
+        actions.push(Action::new("copy", "Copy Message", Icon::symbol("doc.on.doc")));
         actions
     }
 

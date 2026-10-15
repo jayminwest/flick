@@ -307,7 +307,7 @@ impl Module for Keys {
             subtitle: self.summary(),
             accessory: "Keys".into(),
             keywords: vec!["hyper chord trigger hotkey".into()],
-            ..Item::new(id, "Key Triggers", "Show Status", Icon::Symbol("keyboard"))
+            ..Item::new(id, "Key Triggers", "Show Status", Icon::symbol("keyboard"))
         }]
     }
 
