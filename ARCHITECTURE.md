@@ -682,7 +682,9 @@ flags changed). Only the `keys` module uses it (`src/modules/keys/wire.rs`).
 - `tile_hidden` (owner `tile`, migration 1, `src/modules/tile/store.rs`, flick-d330): one row
   per window `tile` parked, by `id` (the `CGWindowID`, valid across a Flick restart), with
   `pid`, `bundle_id` and its frame before parking (`x`, `y`, `w`, `h`). Written before the
-  window is parked; deleted once it is put back or gone. Quit (menu, `quit`, SIGTERM; an
+  window is parked; deleted once it is put back or gone from the window server (a window
+  winman's snapshot misses for a while keeps its row and goes back to its frame when it
+  returns). Quit (menu, `quit`, SIGTERM; an
   `app::on_terminate` hook on its own connection) and the module's `Drop` put back every row's
   window that winman knows and wait at most 2 s for the apps; on a timeout every row stays. At
   `Started` rows whose window the window server no longer has are deleted; the rest are put
