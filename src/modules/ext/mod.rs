@@ -62,7 +62,7 @@ struct Hooks {
     card: fn(&Do) -> Result<(), String>,
     /// The launcher is on the screen.
     visible: fn() -> bool,
-    /// Run module `.0`'s hotkey `.1` on a later main-queue turn, like a press of it.
+    /// Show module `.0`'s hotkey `.1` view on a later main-queue turn; one that shows stays.
     open: fn(&str, &str),
 }
 
@@ -100,7 +100,7 @@ pub struct Ext {
 
 impl Ext {
     /// `socket` is the control socket path the extensions get as `FLICK_SOCKET`; `open`
-    /// runs a module's hotkey later (`ext open`).
+    /// shows a module's hotkey view later and leaves one that already shows (`ext open`).
     pub fn new(socket: fn() -> PathBuf, open: fn(&str, &str)) -> Ext {
         let job = Job { run: transport::call, socket, post: wire::post, flick: wire::flick, raw: transport::raw };
         let (log, notify, toast, visible, card) = (wire::log, wire::notify, wire::toast, wire::visible, wire::card);

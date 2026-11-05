@@ -19,6 +19,7 @@ use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
 use screen::{Back, ListNav, Screen};
+pub use toggle::show_later;
 use toggle::toggle_view;
 
 const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
@@ -106,8 +107,8 @@ pub fn init(config: Config, store: Store) -> String {
 }
 
 /// Module `module`'s hotkey `key`, on the main queue's next turn: for a status item's `Open`
-/// row, because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43), and
-/// for a verb (`ext open`), which runs with the state borrowed.
+/// row, because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43). A verb
+/// (`ext open`) uses the show-only `show_later`.
 pub fn hotkey_later(module: &str, key: &str) {
     let (module, key) = (module.to_owned(), key.to_owned());
     events::on_main(move || hotkey(&module, &key));

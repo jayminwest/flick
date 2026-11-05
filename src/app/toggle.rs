@@ -1,6 +1,7 @@
 //! Hotkey views: a press shows a view or hides the launcher, and a held hotkey
 //! (`ListView::cycle`, e.g. ⌘Tab) steps through its view until its modifiers come up.
 //! Holding its key steps again at the system key repeat rate, back while ⇧ is down.
+//! `show_later` is the show-only path (`ext open`): it never hides and never cycles.
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -9,7 +10,7 @@ use super::Screen;
 use super::{State, with_state};
 use crate::control;
 use crate::core::{Cycle, Event, ListView};
-use crate::platform::{hotkeys, keytap, timer};
+use crate::platform::{events, hotkeys, keytap, timer};
 use crate::ui;
 
 /// ⌘, ⌥ and ⌃ (`CGEventFlags`). ⇧ only picks the direction, so releasing it does not count.
@@ -28,11 +29,31 @@ thread_local! {
 /// Show `request` (root search for `None`), or hide the launcher if it already shows it. A
 /// cycle request on its own view steps the selection instead of hiding.
 pub fn toggle_view(request: Option<ListView>) {
+    open_view(request, true);
+}
+
+/// Module `module`'s hotkey `key`, on the main queue's next turn (a verb runs with the state
+/// borrowed), but show-only: a view that already shows stays, and a cycle view is shown
+/// without its cycle, as nothing is held.
+pub fn show_later(module: &str, key: &str) {
+    let (module, key) = (module.to_owned(), key.to_owned());
+    events::on_main(move || {
+        let view = with_state(|s| s.registry.hotkey(&module, &key, &mut s.env.cx(""))).flatten();
+        if view.is_some() {
+            open_view(view, false);
+        }
+    });
+}
+
+/// Show `request`; one that already shows hides the launcher if `toggle`, else stays.
+fn open_view(request: Option<ListView>, toggle: bool) {
     let visible = ui::is_visible();
-    let cycle = request.as_ref().and_then(|r| r.cycle);
+    let cycle = request.as_ref().and_then(|r| r.cycle).filter(|_| toggle);
     let showing = visible && with_state(|s| s.screen.shows(request.as_ref())).unwrap_or(false);
     if showing && cycle.is_none() {
-        ui::hide();
+        if toggle {
+            ui::hide();
+        }
         return;
     }
     if !showing {
