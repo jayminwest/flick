@@ -228,7 +228,7 @@ An empty reply, `{}`, is a success with no status.
 | title (item, action, view, form) | 200 chars | cut, ending in `…` |
 | subtitle, status, confirm, error | 500 chars | cut |
 | accessory, keyword, placeholder, label, submit label | 80 chars | cut (a keyword that is too long skips its item) |
-| field value | 4000 chars | cut |
+| field value | 4000 chars | cut; a longer typed value is not submitted, and the form says so |
 | SF Symbol name, icon file path | 100, 1024 chars | the icon is ignored |
 
 Text never holds control characters (see [Errors](#errors)). One in a top-level key refuses the reply; one in an item, action or field skips it.
