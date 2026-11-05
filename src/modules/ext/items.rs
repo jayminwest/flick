@@ -34,12 +34,18 @@ pub fn split(view: &str) -> Option<(&str, &str)> {
     view.split_once('/').filter(|(ext, v)| !ext.is_empty() && !v.is_empty())
 }
 
+/// The search field's placeholder of a view of extension `ext`: the one its answer names,
+/// else `Search <ext>…`.
+fn placeholder(ext: &str, cached: Option<&View>) -> String {
+    let named = cached.and_then(|v| v.placeholder.clone());
+    named.unwrap_or_else(|| format!("Search {ext}…"))
+}
+
 /// The view `name` (`<ext>/<view>`) as it opens: from `cached`, or empty and loading.
 /// Activating its items counts toward their frecency.
 pub fn list(name: &str, ext: &str, cached: Option<&View>) -> ListView {
-    let placeholder = cached.and_then(|v| v.placeholder.clone());
     ListView {
-        placeholder: placeholder.unwrap_or_else(|| format!("Search {ext}…")),
+        placeholder: placeholder(ext, cached),
         empty: if cached.is_some() { "No Results" } else { LOADING }.into(),
         record_use: true,
         ..ListView::new("ext", name)
@@ -49,7 +55,7 @@ pub fn list(name: &str, ext: &str, cached: Option<&View>) -> ListView {
 /// Fill `view` of extension `ext` for `cx.query` from `cached`. A `filter: "flick"` view is
 /// ranked here, by fuzzy score plus frecency; an `"ext"` one shows `found` (the answer to
 /// its query) or else its own items, in the extension's order. The footer is `error` (the
-/// view's last failed call), else the view's title.
+/// view's last failed call), else the view's title; the placeholder follows the answer.
 pub fn fill(
     view: &mut ListView,
     ext: &str,
@@ -60,6 +66,7 @@ pub fn fill(
 ) {
     let title = cached.and_then(|v| v.title.as_deref());
     view.footer = error.or(title).unwrap_or(ext).to_string();
+    view.placeholder = placeholder(ext, cached);
     view.empty = if cached.is_some() || error.is_some() { "No Results" } else { LOADING }.into();
     let Some(cached) = cached else {
         view.items = vec![];
@@ -135,6 +142,16 @@ mod tests {
         assert_eq!((v.footer.as_str(), v.empty.as_str(), v.items.len()), ("notes", LOADING, 0));
         test_cx("", |cx| fill(&mut v, "notes", None, None, Some("notes: boom"), cx));
         assert_eq!((v.footer.as_str(), v.empty.as_str()), ("notes: boom", "No Results"));
+    }
+
+    #[test]
+    fn the_first_answer_sets_the_placeholder_of_a_view_that_opened_loading() {
+        let mut v = list("notes/inbox", "notes", None);
+        test_cx("", |cx| fill(&mut v, "notes", Some(&view(Filter::Flick)), None, None, cx));
+        assert_eq!(v.placeholder, "Find…");
+        let unnamed = View { placeholder: None, ..view(Filter::Flick) };
+        test_cx("", |cx| fill(&mut v, "notes", Some(&unnamed), None, None, cx));
+        assert_eq!(v.placeholder, "Search notes…");
     }
 
     #[test]

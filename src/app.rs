@@ -349,7 +349,11 @@ impl State {
                 root::rank(&mut self.env.ranker, &query, items, direct, &usage, store::now())
             }
             Screen::List(view) => {
+                let shown = view.placeholder.clone();
                 self.registry.refresh(view, &mut self.env.cx(&query));
+                if view.placeholder != shown {
+                    ui::set_placeholder(&view.placeholder);
+                }
                 std::mem::take(&mut view.items)
             }
             Screen::Actions { actions, .. } => {
