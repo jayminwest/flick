@@ -101,6 +101,18 @@ fn a_failed_raw_call_is_the_verb_error() {
 }
 
 #[test]
+fn a_raw_call_waits_past_its_own_budget() {
+    let mut m = module(&format!("{}{}", entry("echo", &["echo"], 2000), entry("slow", &["echo"], 120_000)));
+    let wait = |m: &mut Ext, name| {
+        assert!(run(m, &["call", name, "{}"]).is_ok());
+        later::take_with_wait().map(|(answer, wait)| (answer.recv_timeout(MAX_WAIT).is_ok(), wait))
+    };
+    // The act budget (at least 10 s) plus `MAX_WAIT` for the calls queued before it.
+    assert_eq!(wait(&mut m, "echo"), Some((true, Duration::from_secs(70))));
+    assert_eq!(wait(&mut m, "slow"), Some((true, Duration::from_secs(180))));
+}
+
+#[test]
 fn unknown_verbs_and_the_verb_list() {
     let mut m = module("");
     assert_eq!(run(&mut m, &["nope"]).unwrap_err(), "ext: unknown command \"nope\"");

@@ -9,14 +9,19 @@
 //!   the extension as it is (it must be a JSON object; nothing is added), on its worker, and
 //!   the answer is the extension's stdout, unparsed, once it exits (`core::later`): a reply
 //!   `proto` would refuse still shows. With `--json` a reply that is JSON is sent as JSON.
+//!   The socket waits `later::MAX_WAIT` past the call's own budget, for the calls queued
+//!   before it, so a `timeout_ms` over a minute still answers.
 //!
 //! `ext refresh`, `ext open` and `ext call` are in `NET_DENIED`: a peer must not make this
 //! Mac spawn extension processes, pop the launcher on it, or run an extension with a request
 //! of its choosing.
 
+use std::time::Duration;
+
 use serde_json::Value;
 
 use super::Ext;
+use super::proto::Op;
 use super::worker::{Last, Worker};
 use crate::core::later;
 use crate::core::unknown_verb;
@@ -30,7 +35,8 @@ impl Ext {
         match args {
             [v] if v == "ls" => Ok(self.list(json)),
             [v, name, rest @ ..] if matches!(v.as_str(), "refresh" | "open" | "call") => {
-                self.spec(name).ok_or_else(|| format!("ext: no extension \"{name}\""))?;
+                // A raw call gets the budget of `act` (`transport::raw`).
+                let budget = self.spec(name).ok_or_else(|| format!("ext: no extension \"{name}\""))?.budget(Op::Act);
                 match (v.as_str(), rest) {
                     ("refresh", []) => {
                         self.refetch(name);
@@ -41,7 +47,7 @@ impl Ext {
                         (self.hooks.open)("ext", &view);
                         Ok(format!("Opening {view}"))
                     }
-                    ("call", [text]) => self.raw(name, text),
+                    ("call", [text]) => self.raw(name, text, budget),
                     _ => usage(),
                 }
             }
@@ -51,12 +57,12 @@ impl Ext {
     }
 
     /// Queue raw request `text` on configured extension `name`'s worker; the verb answers
-    /// with its reply.
-    fn raw(&mut self, name: &str, text: &str) -> Result<String, String> {
+    /// with its reply, waited for up to `budget` (the call's own) plus `later::MAX_WAIT`.
+    fn raw(&mut self, name: &str, text: &str, budget: Duration) -> Result<String, String> {
         if !matches!(serde_json::from_str(text), Ok(Value::Object(_))) {
             return Err("ext call: the request must be a JSON object".into());
         }
-        let reply = later::answer_later();
+        let reply = later::answer_within(budget + later::MAX_WAIT);
         self.worker(name)?.raw(text.to_string(), reply);
         Ok(format!("Called {name}"))
     }

@@ -56,11 +56,14 @@ fn run(words: Vec<String>, flags: Flags) -> Reply {
     let (tx, rx) = mpsc::channel();
     events::on_main(move || {
         let result = crate::app::control(&words, flags);
-        let _ = tx.send((result, later::take()));
+        let _ = tx.send((result, later::take_with_wait()));
     });
     rx.recv().map_or_else(
         |_| Reply::Error("the request failed inside Flick".into()),
-        |(result, wait)| Reply::answer(later::settle(result, wait, later::MAX_WAIT), flags.json),
+        |(result, waits)| {
+            let (answer, max) = waits.unzip();
+            Reply::answer(later::settle(result, answer, max.unwrap_or(later::MAX_WAIT)), flags.json)
+        },
     )
 }
 
