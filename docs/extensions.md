@@ -42,7 +42,7 @@ Every request has `"v": 1` and an `op`:
 
 | `op` | Other keys | When | Reply |
 |---|---|---|---|
-| `root` | | the launcher opens on root search, a config reload, `flick ext refresh`, a stale item | [items](#items) |
+| `root` | | the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item | [items](#items) |
 | `open` | `view` | a view opens (hotkey, `push` action, `flick ext open`) | a [view](#views) |
 | `query` | `view`, `query` | a keystroke in a `"filter": "ext"` view | items |
 | `keyword` | `keyword`, `query` | `<keyword> <text>` in root search | items |
@@ -171,6 +171,8 @@ A view is `<name>/<view>`. A hotkey, a `push` action or `flick ext open` opens i
 
 Flick keeps the last good reply for each view. A view shows that reply at once, or `Loading…` the first time, and sends `op: open` again each time it opens.
 
+A view that opens on its own (a hotkey, `flick ext open`) sends only `open` for that view: no extension gets `root` or the `launcher_opened` event, because root search is not on the screen. Escape or ⌫ from such a view to root search shows the root items Flick has; the next time the launcher opens on root search, it sends `root` again.
+
 ### Forms
 
 The reply to `form`:
@@ -251,7 +253,7 @@ Each query starts a new process. An interpreted program (Python, Node, Bun) can 
 | `reloaded` | a config reload. |
 | `wake` | the Mac woke from sleep. |
 | `unlocked` | the screen unlocked. |
-| `launcher_opened` | the launcher opened on root search (not on a hotkey view). |
+| `launcher_opened` | the launcher opened on root search (not on a view opened by a hotkey or `flick ext open`, and not on going back to root search from a view). |
 
 Events are fire-and-forget. Flick ignores the reply, and logs a failed event call. An event waits behind every other call of that extension: it runs only when no other call is queued, and a user's action, search or `ext call` queued while one runs kills it, so they never wait for an event. A killed event runs again from the start once no other call is queued. Events coalesce per kind: while one of a kind waits, another of that kind is dropped.
 

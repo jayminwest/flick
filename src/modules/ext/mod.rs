@@ -7,7 +7,9 @@
 //!
 //! Stale while revalidate: root items and views are served at once from the last answer
 //! (`items`), and asked for again on the worker, root items at `LauncherOpened` and
-//! `Reloaded`, a view each time it opens (`Loading…` until its first answer). A call
+//! `Reloaded`, a view each time it opens (`Loading…` until its first answer). A view opened
+//! by a hotkey or `ext open` asks only for itself: the app sends `LauncherOpened` only when
+//! root search opens, so no `root` call and no `launcher_opened` event (flick-04e6). A call
 //! already queued is not queued again. A failed call is logged, and shown in the footer of
 //! the view it was for when that view is on the screen, else posted as a notification,
 //! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
