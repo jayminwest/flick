@@ -348,10 +348,10 @@ and every hotkey.
   the footer of the view if it still shows, else as a HUD toast (errors always toast). A
   card `script` or `flick` action runs Flick's own CLI on a thread of its own, answered
   into the same inbox. Forms are `background`: `Saving…` until the submit reply. Each
-  worker keeps its last call's op, error and duration behind a lock held only to store or
-  copy it (`ext ls`). `ext call` queues a raw request on the same worker and answers
-  through `core::later` with the unparsed stdout, waited for up to its budget plus
-  `MAX_WAIT`. The wire protocol, for extension
+  worker keeps its last call's op, error, duration and end, and the op and start of the
+  call it runs, behind locks held only to store or copy them (`ext ls`). `ext call` queues
+  a raw request on the same worker and answers through `core::later` with the unparsed
+  stdout, waited for up to its budget plus `MAX_WAIT`. The wire protocol, for extension
   authors, is `docs/extensions.md`.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
