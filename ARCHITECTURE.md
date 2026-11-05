@@ -334,8 +334,9 @@ and every hotkey.
 - A queue per external program (`src/modules/ext/`): each extension gets one worker
   thread, started on its first call, that runs its calls one at a time in queue order
   (spawn, stdin, stdout, exit, all with the call's budget; past it the process group is
-  killed). Answers go into the module's inbox and each posts `ModuleChanged`; the main
-  thread only queues and drains. A reload drops the workers of changed extensions (the
+  killed); a query waiting out its 60 ms debounce lets the calls queued after it go first.
+  Answers go into the module's inbox and each posts `ModuleChanged`; the main thread only
+  queues and drains. A reload drops the workers of changed extensions (the
   queue's sender), and each thread ends after its current call. Actions are optimistic:
   `after` (hide, stay, root) applies at once, the reply's status or error arrives later in
   the footer of the view if it still shows, else as a HUD toast (errors always toast). A
