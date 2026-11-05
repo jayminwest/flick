@@ -6,7 +6,7 @@ use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
 pub use crate::platform::panel::{
     VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, scroll_text,
-    set_opacity, set_query, show, snapshot,
+    set_opacity, set_placeholder, set_query, show, snapshot,
 };
 
 pub fn init() {

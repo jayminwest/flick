@@ -156,11 +156,12 @@ timeout_ms = 2000                       # the default
 hotkeys = { inbox = "cmd+ctrl+alt+shift+KeyE" }   # <view> = "<hotkey>": opens the view
 keywords = ["n"]                        # "n <text>" in root search asks the extension
 subscribe = ["wake"]                    # events it gets, as op: event
+root = true                             # false: no root items, never sent op: root
 ```
 
 Each call runs the program once, without a shell. Flick writes one JSON request to its stdin and reads one JSON reply from its stdout; the program exits 0. Calls to one extension run one at a time on its own thread, never on the launcher's, so a slow extension does not slow the launcher. A call that takes longer than `timeout_ms` is stopped: Flick kills the program and everything it started. Actions and form submits get at least 10 s. A failed call shows `<name>: <why>` (for a failed exit, the last line of stderr) in a notification, a toast or a footer, and goes to the log.
 
-Root search shows the extension's root items with the other modules' items, ranked by the same fuzzy match and usage. Its views open by hotkey, from an item or with `flick ext open <name> <view>`. `flick ext ls` shows how each extension's last call went. [Extensions](extensions.md) has the protocol (requests, replies, actions, forms, limits, errors), the `ext` verbs, an example extension and a manual checklist.
+Root search shows the extension's root items with the other modules' items, ranked by the same fuzzy match and usage. Its views open by hotkey, from an item or with `flick ext open <name> <view>`. `flick ext ls` shows the call each extension runs and how its last call went. [Extensions](extensions.md) has the protocol (requests, replies, actions, forms, limits, errors), the `ext` verbs, an example extension and a manual checklist.
 
 ## Launcher keys
 

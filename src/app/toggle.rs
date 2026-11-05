@@ -1,6 +1,7 @@
 //! Hotkey views: a press shows a view or hides the launcher, and a held hotkey
 //! (`ListView::cycle`, e.g. ⌘Tab) steps through its view until its modifiers come up.
 //! Holding its key steps again at the system key repeat rate, back while ⇧ is down.
+//! `show_later` is the show-only path (`ext open`): it never hides and never cycles.
 
 use std::cell::Cell;
 use std::time::Instant;
@@ -9,7 +10,7 @@ use super::Screen;
 use super::{State, with_state};
 use crate::control;
 use crate::core::{Cycle, Event, ListView};
-use crate::platform::{hotkeys, keytap, timer};
+use crate::platform::{events, hotkeys, keytap, timer};
 use crate::ui;
 
 /// ⌘, ⌥ and ⌃ (`CGEventFlags`). ⇧ only picks the direction, so releasing it does not count.
@@ -25,14 +26,54 @@ thread_local! {
     static PRESSED: Cell<Option<(Instant, Instant)>> = const { Cell::new(None) };
 }
 
-/// Show `request` (root search for `None`), or hide the launcher if it already shows it. A
-/// cycle request on its own view steps the selection instead of hiding.
-pub fn toggle_view(request: Option<ListView>) {
+/// The launcher hotkey: show root search, or hide it if it's showing.
+pub fn toggle() {
+    open_view(None, true);
+}
+
+/// Module `module`'s hotkey `key`; a view it returns toggles like the launcher hotkey: shows
+/// it, or hides the launcher if it already shows it. A cycle view on its own view steps the
+/// selection instead of hiding.
+pub fn hotkey(module: &str, key: &str) {
+    if let Some(view) = module_view(module, key) {
+        open_view(Some(view), true);
+    }
+}
+
+/// `hotkey` on the main queue's next turn: for a status item's `Open` row, because `AppKit` is
+/// mid-event and may already hold the state (mulch mx-fcbc43). A verb (`ext open`) uses the
+/// show-only `show_later`.
+pub fn hotkey_later(module: &str, key: &str) {
+    let (module, key) = (module.to_owned(), key.to_owned());
+    events::on_main(move || hotkey(&module, &key));
+}
+
+/// Module `module`'s hotkey `key`, on the main queue's next turn (a verb runs with the state
+/// borrowed), but show-only: a view that already shows stays, and a cycle view is shown
+/// without its cycle, as nothing is held.
+pub fn show_later(module: &str, key: &str) {
+    let (module, key) = (module.to_owned(), key.to_owned());
+    events::on_main(move || {
+        if let Some(view) = module_view(&module, &key) {
+            open_view(Some(view), false);
+        }
+    });
+}
+
+/// The view module `module`'s hotkey `key` asks for, if any.
+fn module_view(module: &str, key: &str) -> Option<ListView> {
+    with_state(|s| s.registry.hotkey(module, key, &mut s.env.cx(""))).flatten()
+}
+
+/// Show `request`; one that already shows hides the launcher if `toggle`, else stays.
+fn open_view(request: Option<ListView>, toggle: bool) {
     let visible = ui::is_visible();
-    let cycle = request.as_ref().and_then(|r| r.cycle);
+    let cycle = request.as_ref().and_then(|r| r.cycle).filter(|_| toggle);
     let showing = visible && with_state(|s| s.screen.shows(request.as_ref())).unwrap_or(false);
     if showing && cycle.is_none() {
-        ui::hide();
+        if toggle {
+            ui::hide();
+        }
         return;
     }
     if !showing {

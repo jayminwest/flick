@@ -5,7 +5,7 @@
 use super::proto::item::ExtItem;
 use super::proto::{Filter, View};
 use crate::core::store;
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Tab, frecency};
+use crate::core::{Cx, Icon, Item, ItemId, ListView, Tab, Usage, frecency};
 
 /// The icon of an item that names none.
 pub const ICON: &str = "puzzlepiece.extension";
@@ -34,22 +34,37 @@ pub fn split(view: &str) -> Option<(&str, &str)> {
     view.split_once('/').filter(|(ext, v)| !ext.is_empty() && !v.is_empty())
 }
 
+/// The search field's placeholder of a view of extension `ext`: the one its answer names,
+/// else `Search <ext>…`.
+fn placeholder(ext: &str, cached: Option<&View>) -> String {
+    let named = cached.and_then(|v| v.placeholder.clone());
+    named.unwrap_or_else(|| format!("Search {ext}…"))
+}
+
 /// The view `name` (`<ext>/<view>`) as it opens: from `cached`, or empty and loading.
 /// Activating its items counts toward their frecency.
 pub fn list(name: &str, ext: &str, cached: Option<&View>) -> ListView {
-    let placeholder = cached.and_then(|v| v.placeholder.clone());
     ListView {
-        placeholder: placeholder.unwrap_or_else(|| format!("Search {ext}…")),
+        placeholder: placeholder(ext, cached),
         empty: if cached.is_some() { "No Results" } else { LOADING }.into(),
         record_use: true,
         ..ListView::new("ext", name)
     }
 }
 
+/// `items` of a list the extension ordered (keyword rows, a `filter: "ext"` view): the used
+/// ones first, by frecency; the rest, and ties, keep the extension's order.
+pub fn by_use(items: Vec<Item>, usage: &Usage, now: i64) -> Vec<Item> {
+    let mut scored: Vec<(f64, Item)> = items.into_iter().map(|i| (frecency(usage, i.id.as_str(), now), i)).collect();
+    scored.sort_by(|(a, _), (b, _)| b.total_cmp(a));
+    scored.into_iter().map(|(_, i)| i).collect()
+}
+
 /// Fill `view` of extension `ext` for `cx.query` from `cached`. A `filter: "flick"` view is
 /// ranked here, by fuzzy score plus frecency; an `"ext"` one shows `found` (the answer to
-/// its query) or else its own items, in the extension's order. The footer is `error` (the
-/// view's last failed call), else the view's title.
+/// its query) or else its own items, in the extension's order with the used ones first
+/// (`by_use`). The footer is `error` (the view's last failed call), else the view's title
+/// and, when its items have a Tab action, `⇥ <action>`; the placeholder follows the answer.
 pub fn fill(
     view: &mut ListView,
     ext: &str,
@@ -60,21 +75,34 @@ pub fn fill(
 ) {
     let title = cached.and_then(|v| v.title.as_deref());
     view.footer = error.or(title).unwrap_or(ext).to_string();
+    view.placeholder = placeholder(ext, cached);
     view.empty = if cached.is_some() || error.is_some() { "No Results" } else { LOADING }.into();
     let Some(cached) = cached else {
         view.items = vec![];
         return;
     };
     let list = if cached.filter == Filter::Ext { found.unwrap_or(&cached.items) } else { &cached.items };
+    if let (None, Some(hint)) = (error, tab_hint(list)) {
+        view.footer = format!("{}  ·  {hint}", view.footer);
+    }
     let items: Vec<Item> = list.iter().map(|e| item(ext, e)).collect();
+    let (usage, now) = (cx.store.usage(), store::now());
     view.items = match cached.filter {
-        Filter::Flick => {
-            let (usage, now) = (cx.store.usage(), store::now());
-            cx.ranker.rank(cx.query, items, |i| frecency(&usage, i.id.as_str(), now))
-        }
+        Filter::Flick => cx.ranker.rank(cx.query, items, |i| frecency(&usage, i.id.as_str(), now)),
         // The extension filtered them (`op: query`).
-        Filter::Ext => items,
+        Filter::Ext => by_use(items, &usage, now),
     };
+}
+
+/// What Tab does on `items`: `⇥ <title>` of the action their `tab` names when they agree,
+/// `⇥ Action` when they differ; None when no item has one.
+fn tab_hint(items: &[ExtItem]) -> Option<String> {
+    let mut titles = items.iter().filter_map(|e| {
+        let key = e.tab.as_ref()?;
+        e.actions.iter().find(|a| &a.key == key).map(|a| a.title.as_str())
+    });
+    let first = titles.next()?;
+    Some(format!("⇥ {}", if titles.all(|t| t == first) { first } else { "Action" }))
 }
 
 #[cfg(test)]
@@ -115,6 +143,24 @@ mod tests {
     }
 
     #[test]
+    fn the_footer_names_what_tab_does_unless_an_error_shows() {
+        let json = r#"{"items": [{"key": "a", "title": "A", "tab": "copy",
+            "actions": [{"key": "open", "title": "Open"}, {"key": "copy", "title": "Copy"}]},
+            {"key": "b", "title": "B"}, {"key": "c", "title": "C", "tab": "copy",
+            "actions": [{"key": "copy", "title": "Copy"}]}]}"#;
+        let notes = View { items: items(json), ..view(Filter::Flick) };
+        let mut v = list("notes/inbox", "notes", None);
+        test_cx("", |cx| fill(&mut v, "notes", Some(&notes), None, None, cx));
+        assert_eq!(v.footer, "Notes  ·  ⇥ Copy");
+        test_cx("", |cx| fill(&mut v, "notes", Some(&notes), None, Some("notes: boom"), cx));
+        assert_eq!(v.footer, "notes: boom");
+        let mut mixed = items(json);
+        mixed[2].actions[0].title = "Paste".into();
+        assert_eq!(tab_hint(&mixed).as_deref(), Some("⇥ Action"));
+        assert_eq!(tab_hint(&mixed[1..2]), None);
+    }
+
+    #[test]
     fn view_names_split_at_the_first_slash() {
         assert_eq!(split("notes/inbox"), Some(("notes", "inbox")));
         assert_eq!(split("notes/a/b"), Some(("notes", "a/b")));
@@ -135,6 +181,27 @@ mod tests {
         assert_eq!((v.footer.as_str(), v.empty.as_str(), v.items.len()), ("notes", LOADING, 0));
         test_cx("", |cx| fill(&mut v, "notes", None, None, Some("notes: boom"), cx));
         assert_eq!((v.footer.as_str(), v.empty.as_str()), ("notes: boom", "No Results"));
+    }
+
+    #[test]
+    fn the_first_answer_sets_the_placeholder_of_a_view_that_opened_loading() {
+        let mut v = list("notes/inbox", "notes", None);
+        test_cx("", |cx| fill(&mut v, "notes", Some(&view(Filter::Flick)), None, None, cx));
+        assert_eq!(v.placeholder, "Find…");
+        let unnamed = View { placeholder: None, ..view(Filter::Flick) };
+        test_cx("", |cx| fill(&mut v, "notes", Some(&unnamed), None, None, cx));
+        assert_eq!(v.placeholder, "Search notes…");
+    }
+
+    #[test]
+    fn by_use_puts_the_most_used_first_and_keeps_the_order_of_the_rest() {
+        let json = r#"{"items": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"},
+            {"key": "c", "title": "C"}, {"key": "d", "title": "D"}]}"#;
+        let list: Vec<Item> = items(json).iter().map(|e| item("notes", e)).collect();
+        let usage: Usage = [("ext:notes/c".to_string(), (1, 0)), ("ext:notes/d".to_string(), (5, 0))].into();
+        let got = by_use(list, &usage, 0);
+        let got: Vec<&str> = got.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(got, ["D", "C", "A", "B"]);
     }
 
     #[test]

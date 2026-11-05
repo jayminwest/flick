@@ -6,11 +6,15 @@
 //! `ModuleChanged { module: "ext" }` drains it.
 //!
 //! Stale while revalidate: root items and views are served at once from the last answer
-//! (`items`), and asked for again on the worker, root items at `LauncherOpened` and
-//! `Reloaded`, a view each time it opens (`Loading…` until its first answer). A call
-//! already queued is not queued again. A failed call is logged, and shown in the footer of
-//! the view it was for when that view is on the screen, else posted as a notification,
-//! `<name>: <why>`; parse warnings are logged, at most `WARNINGS_LOGGED` per reply.
+//! (`items`), and asked for again on the worker, root items at `Started` (so the first
+//! launcher open shows them), `LauncherOpened` and `Reloaded`, a view each time it opens (`Loading…` until its first answer). A view opened
+//! by a hotkey or `ext open` asks only for itself: the app sends `LauncherOpened` only when
+//! root search opens, so no `root` call and no `launcher_opened` event (flick-04e6). A call
+//! already queued is not queued again. `root` is never sent to an extension with
+//! `root = false`, so one without root items is not spawned on each launcher open. A failed
+//! call is logged, and shown in the footer of the view it was for when that view is on the
+//! screen, else posted as a notification, `<name>: <why>`; parse warnings are logged, at
+//! most `WARNINGS_LOGGED` per reply.
 //! Actions (`act`) and forms (`forms`) build on these answers; `query` searches through the
 //! extension (`filter: "ext"` views, keywords). `cli` holds the verbs.
 //!
@@ -62,7 +66,7 @@ struct Hooks {
     card: fn(&Do) -> Result<(), String>,
     /// The launcher is on the screen.
     visible: fn() -> bool,
-    /// Run module `.0`'s hotkey `.1` on a later main-queue turn, like a press of it.
+    /// Show module `.0`'s hotkey `.1` view on a later main-queue turn; one that shows stays.
     open: fn(&str, &str),
 }
 
@@ -100,7 +104,7 @@ pub struct Ext {
 
 impl Ext {
     /// `socket` is the control socket path the extensions get as `FLICK_SOCKET`; `open`
-    /// runs a module's hotkey later (`ext open`).
+    /// shows a module's hotkey view later and leaves one that already shows (`ext open`).
     pub fn new(socket: fn() -> PathBuf, open: fn(&str, &str)) -> Ext {
         let job = Job { run: transport::call, socket, post: wire::post, flick: wire::flick, raw: transport::raw };
         let (log, notify, toast, visible, card) = (wire::log, wire::notify, wire::toast, wire::visible, wire::card);
@@ -131,8 +135,12 @@ impl Ext {
         self.specs.iter().find(|s| s.name == name)
     }
 
-    /// `call`, unless the same call is queued already on a live worker.
+    /// `call`, unless the same call is queued already on a live worker, or it is `root` for
+    /// an extension with `root = false`.
     fn fetch(&mut self, name: &str, request: Request) {
+        if request == Request::Root && self.spec(name).is_some_and(|s| !s.root) {
+            return;
+        }
         let live = self.workers.iter().any(|w| w.spec().name == name && w.alive());
         if !live {
             // Nothing queued will be answered.
@@ -273,12 +281,12 @@ impl Module for Ext {
     }
 
     /// Workers of extensions that changed or went away stop after their current call; the
-    /// cache of those that went away is dropped.
+    /// cache of those that went away is dropped, and the root items of `root = false` ones.
     fn configure(&mut self, table: &Section) -> Result<(), String> {
         let specs = settings::read(table.get()?, dirs::home_dir().as_deref())?;
         self.workers.retain(|w| specs.contains(w.spec()));
         let kept = |name: &str| specs.iter().any(|s| s.name == name);
-        self.root.retain(|name, _| kept(name));
+        self.root.retain(|name, _| specs.iter().any(|s| s.name == *name && s.root));
         let view_kept = |view: &String| items::split(view).is_some_and(|(name, _)| kept(name));
         self.views.retain(|view, _| view_kept(view));
         self.error.take_if(|(view, _)| !view_kept(view));
@@ -375,7 +383,10 @@ impl Module for Ext {
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
         let stale = match event {
             Event::ModuleChanged { module: "ext" } => self.drain(),
-            Event::LauncherOpened | Event::Reloaded => {
+            Event::Started | Event::LauncherOpened | Event::Reloaded => {
+                if event == Event::LauncherOpened {
+                    self.launcher_opened();
+                }
                 let names: Vec<String> = self.specs.iter().map(|s| s.name.clone()).collect();
                 for name in names {
                     self.fetch(&name, Request::Root);

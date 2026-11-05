@@ -14,6 +14,7 @@ timeout_ms = 2000                      # the default
 hotkeys = { greetings = "cmd+ctrl+alt+shift+KeyG" }   # <view> = "<hotkey>"
 keywords = ["hi"]                      # "hi <text>" in root search sends op: keyword
 subscribe = ["wake"]                   # events it gets, as op: event
+root = true                            # false: no root items, never sent op: root
 ```
 
 | Key | Rule |
@@ -24,6 +25,7 @@ subscribe = ["wake"]                   # events it gets, as op: event
 | `hotkeys` | Global hotkeys that open the extension's views, `<view> = "<hotkey>"`. A view name is 1-64 of `A-Z a-z 0-9 . _ -`. A blank hotkey is left out. |
 | `keywords` | Words that send `<keyword> <text>` in root search to the extension (`op: keyword`). At most 16, each one word of 1-80 chars, unique among all extensions. |
 | `subscribe` | Events the extension gets (`op: event`): `started`, `reloaded`, `wake`, `unlocked`, `launcher_opened`. |
+| `root` | Default `true`. `false`: the extension has no root items. Flick never sends it `root`, so opening the launcher does not run it; its views, keywords and events still do. |
 
 A bad entry fails the config load with `[ext] extensions: "<name>": <why>`. A reload stops the worker of an extension whose entry changed or went away, after the call that runs.
 
@@ -32,7 +34,7 @@ A bad entry fails the config load with `[ext] extensions: "<name>": <why>`. A re
 - **One process per call.** Flick runs `argv` in a new process group. It writes the request, one JSON object and a newline, to stdin and closes stdin. The program must write one JSON object to stdout and exit 0. Whitespace around the object is allowed; a second object is not.
 - **Environment.** The program gets Flick's environment, plus `FLICK_EXT` (its `name`), `FLICK_SOCKET` (this Flick's control socket) and `FLICK_VERSION` (Flick's version). `FLICK_HOST` is removed, so a `flick ...` command that the program runs talks to this Mac's Flick. A Flick started by launchd or from the app has a short `PATH`: use full paths for tools outside `/usr/bin` and `/bin`.
 - **Working directory.** The program starts in Flick's working directory. For `Flick.app` that is `/`. Use absolute paths for files.
-- **One at a time.** Each extension has its own worker thread. Its calls run one at a time, in the order Flick queued them. The launcher never waits for a program: it shows what it has and updates when the reply comes.
+- **One at a time.** Each extension has its own worker thread. Its calls run one at a time, in the order Flick queued them, except that a query waiting out its 60 ms lets the calls queued after it run first. The launcher never waits for a program: it shows what it has and updates when the reply comes.
 - **Timeout.** A call that runs longer than its time is stopped: Flick kills the process group, so the program and the processes it started stop. The time is `timeout_ms`, and at least 10 s for `act`, `submit` and `flick ext call`.
 - **Stdin and stdout.** Flick writes stdin on a separate thread, so a program that does not read stdin still works. Flick reads at most 1 MiB of stdout and keeps the last 4 KiB of stderr.
 
@@ -42,7 +44,7 @@ Every request has `"v": 1` and an `op`:
 
 | `op` | Other keys | When | Reply |
 |---|---|---|---|
-| `root` | | the launcher opens on root search, a config reload, `flick ext refresh`, a stale item | [items](#items) |
+| `root` | | Flick starts, the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item; never with `root = false` | [items](#items) |
 | `open` | `view` | a view opens (hotkey, `push` action, `flick ext open`) | a [view](#views) |
 | `query` | `view`, `query` | a keystroke in a `"filter": "ext"` view | items |
 | `keyword` | `keyword`, `query` | `<keyword> <text>` in root search | items |
@@ -101,7 +103,7 @@ A reply to `root`, `query` and `keyword` is `{"items": [ … ]}`. A view has `it
 | `actions` | See [Actions](#actions). Without `actions`, the item gets one action: `{"key": "open", "title": "Open"}` (`do: ext`, `after: hide`). A list with no valid action skips the item. |
 | `tab` | The key of the action that Tab runs. A key that names no action is ignored. |
 
-Enter runs the first action, ⌘K lists all of them, and Tab runs the one `tab` names. The row shows the first action's title as its verb.
+Enter runs the first action, ⌘K lists all of them, and Tab runs the one `tab` names. The row shows the first action's title as its verb. A view's footer names Tab after its title, `⇥ <action title>`, or `⇥ Action` when its items' Tab actions have different titles.
 
 An item's id is `ext:<name>/<key>`. Flick counts its use for ranking by that id, so keep a key stable while the item is the same thing.
 
@@ -171,6 +173,8 @@ A view is `<name>/<view>`. A hotkey, a `push` action or `flick ext open` opens i
 
 Flick keeps the last good reply for each view. A view shows that reply at once, or `Loading…` the first time, and sends `op: open` again each time it opens.
 
+A view that opens on its own (a hotkey, `flick ext open`) sends only `open` for that view: no extension gets `root` or the `launcher_opened` event, because root search is not on the screen. Escape or ⌫ from such a view to root search shows the root items Flick has; the next time the launcher opens on root search, it sends `root` again.
+
 ### Forms
 
 The reply to `form`:
@@ -226,16 +230,16 @@ An empty reply, `{}`, is a success with no status.
 | title (item, action, view, form) | 200 chars | cut, ending in `…` |
 | subtitle, status, confirm, error | 500 chars | cut |
 | accessory, keyword, placeholder, label, submit label | 80 chars | cut (a keyword that is too long skips its item) |
-| field value | 4000 chars | cut |
+| field value | 4000 chars | cut; a longer typed value is not submitted, and the form says so |
 | SF Symbol name, icon file path | 100, 1024 chars | the icon is ignored |
 
 Text never holds control characters (see [Errors](#errors)). One in a top-level key refuses the reply; one in an item, action or field skips it.
 
 ## Search
 
-**`"filter": "ext"` views.** Each keystroke sends `op: query` with the search text. The view shows the items of the reply in the extension's order; Flick does not rank them. Until the reply comes, the view keeps the last answer to a query of that view, else the `open` items. An empty search text sends no query and shows the `open` items.
+**`"filter": "ext"` views.** Each keystroke sends `op: query` with the search text. The view shows the items of the reply in the extension's order, except that items you used before come first, most used and most recent first; Flick does not filter them. Until the reply comes, the view keeps the last answer to a query of that view, else the `open` items. An empty search text sends no query and shows the `open` items.
 
-**Keywords.** `<keyword> <text>` in root search, with a word from the extension's `keywords` and text that is not blank, sends `op: keyword` with the text trimmed. The reply's items show above the ranked results.
+**Keywords.** `<keyword> <text>` in root search, with a word from the extension's `keywords` and text that is not blank, sends `op: keyword` with the text trimmed. The reply's items show above the ranked results, in the same order as in an `ext` view. Until the reply comes, the last answer for that keyword shows, but never one from before the launcher opened.
 
 **Newest wins.** A query waits 60 ms on the worker before it runs, and runs only if no newer query came. A newer query kills the process that answers an older one. An empty search text, another screen or a config reload stops the query that runs. Only the reply to the newest query shows.
 
@@ -251,9 +255,9 @@ Each query starts a new process. An interpreted program (Python, Node, Bun) can 
 | `reloaded` | a config reload. |
 | `wake` | the Mac woke from sleep. |
 | `unlocked` | the screen unlocked. |
-| `launcher_opened` | the launcher opened on root search (not on a hotkey view). |
+| `launcher_opened` | the launcher opened on root search (not on a view opened by a hotkey or `flick ext open`, and not on going back to root search from a view). |
 
-Events are fire-and-forget. Flick ignores the reply, and logs a failed event call. An event waits behind every other call of that extension: it runs only when no other call is queued, so a user's action or search waits at most for the event that runs already. Events coalesce per kind: while one of a kind waits, another of that kind is dropped.
+Events are fire-and-forget. Flick ignores the reply, and logs a failed event call. An event waits behind every other call of that extension: it runs only when no other call is queued, and a user's action, search or `ext call` queued while one runs kills it, so they never wait for an event. A killed event runs again from the start once no other call is queued. Events coalesce per kind: while one of a kind waits, another of that kind is dropped.
 
 ## Errors
 
@@ -292,18 +296,18 @@ Notifications need permission: macOS asks the first time Flick posts one.
 ## Command line
 
 ```bash
-flick ext ls                     # <name>\t<op>\tok|error\t<ms> ms[\t<error>]; <name>\t- before the first call
-flick --json ext ls              # [{"name":"hello","last":{"op":"root","ok":true,"error":null,"ms":41}}]
+flick ext ls                     # <name>\t<op>\tok|error\t<ms> ms\t<s> s ago[\t<error>]; <name>\t- before the first call
+flick --json ext ls              # [{"name":"hello","running":null,"last":{"op":"root","ok":true,"error":null,"ms":41,"ago_ms":3200}}]
 flick ext refresh hello          # send root again, and open for its view on the screen
-flick ext open hello greetings   # open view hello/greetings, as its hotkey does
+flick ext open hello greetings   # show view hello/greetings, as its hotkey does
 flick ext call hello '{"v":1,"op":"root"}'
 printf %s "$json" | flick ext call hello --stdin
 ```
 
-- `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, and the time from the spawn to the reply. It does not wait for a call that runs. A query that a newer one replaced does not count.
-- `ext open` works like a press of a hotkey bound to the view: if the launcher shows that view already, it hides.
-- `ext call` is for debugging. It sends the text as it is (it must be a JSON object; Flick adds nothing) on the extension's worker, behind its other calls. It prints the program's stdout without checking it, so it shows a reply that Flick would refuse. A failed exit or a timeout is an error. The verb waits at most 60 s.
-- Over the network, a peer may send `ext ls` and `ext refresh`, but not `ext open` or `ext call`: a peer must not open the launcher on this Mac or run an extension with a request of its choosing.
+- `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, the time from the spawn to the reply, and how long ago it ended. While a call runs, the line shows that one instead: `<name>\t<op>\trunning\t<ms> ms`, the time since its spawn (with `--json`, `running` is `{"op":…,"ms":…}` next to `last`). It does not wait for a call that runs. A query that a newer one replaced does not count.
+- `ext open` works like a press of a hotkey bound to the view, except that it only shows: if the launcher shows that view already, it stays (a second hotkey press hides it).
+- `ext call` is for debugging. It sends the text as it is (it must be a JSON object; Flick adds nothing) on the extension's worker, behind its other calls. It prints the program's stdout without checking it, so it shows a reply that Flick would refuse. A failed exit or a timeout is an error. The verb waits for the call's time (`timeout_ms`, at least 10 s) plus 60 s for the calls queued before it.
+- Over the network, a peer may send `ext ls`, but not `ext refresh`, `ext open` or `ext call`: a peer must not make this Mac spawn extensions, open the launcher on it, or run an extension with a request of its choosing.
 
 ## Example extension
 
@@ -383,15 +387,15 @@ Any language works the same way: read stdin to its end, parse one JSON object, p
 
 Unit tests cover the parser, the transport with a shell fixture (`tests/fixtures/ext-echo.sh`), the worker queue, the caches, actions, forms, queries and events with fake hooks. This checklist covers the real launcher, the HUD and notifications. Use the example above, on the installed Flick.app.
 
-- [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms`.
-- [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
-- [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time hides the launcher.
+- [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms	<s> s ago`.
+- [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings  ·  ⇥ Copy`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
+- [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time leaves it on the screen.
 - [ ] **Actions.** In the view, ↵ on **Hello, World** runs **Greet**: the launcher stays, the footer shows `Greet…` and then `Hello from world`. Tab copies `Hello, World` and hides the launcher. ⌘K lists Greet, Copy and New Greeting….
 - [ ] **Toast.** Type `hi Ada` in root search: **Hello, Ada** shows above the ranked results. ↵ runs **Greet**: a `hello` card in the top right says `Hello from typed` and goes away after about 6 s.
 - [ ] **Form.** ⌘K → **New Greeting…** opens the form (`Loading…` the first time). Type `Ada` and press ↵: `Saving…`, then root search with `Hello, Ada` in the footer.
 - [ ] **Form error.** Submit the name `error`: the form stays, `hello: that name is taken` shows under the field, and a toast shows the same. Change the name and submit again: it saves.
 - [ ] **Slow extension.** Set `argv = ["~/bin/hello-ext", "--slow"]` and reload. Open the launcher at once: it opens without delay and shows the cached items, and typing, ↑ ↓ and other modules work while the extension sleeps. Open **Greetings**: it shows its cached rows at once (or `Loading…` after a restart), and the new reply comes about 2 s later. Submit the form: `Saving…` shows for about 2 s, and the launcher keeps working.
-- [ ] **Timeout.** With `--slow`, set `timeout_ms = 500` and reload. Open the launcher: a notification says `hello: no reply in 500 ms; stopped`, and `flick ext ls` shows `hello	root	error	… ms	hello: no reply in 500 ms; stopped`. `pgrep -f hello-ext` finds no process left.
+- [ ] **Timeout.** With `--slow`, set `timeout_ms = 500` and reload. Open the launcher: a notification says `hello: no reply in 500 ms; stopped`, and `flick ext ls` shows `hello	root	error	… ms	… s ago	hello: no reply in 500 ms; stopped`. `pgrep -f hello-ext` finds no process left.
 - [ ] **Failed exit.** Set `argv = ["~/bin/hello-ext", "--crash"]` and reload. Open the launcher: a notification says `hello: crashed on purpose`. Open **Greetings** with its hotkey: the footer says the same, and no second notification shows.
 - [ ] **Form left while saving.** With `--slow`, submit the form and press Esc at once: about 2 s later a toast says `Hello, <name>`.
 - [ ] **Network.** From a peer: `flick --host my-macbook-pro ext ls` answers. `... ext open hello greetings` and `... ext call hello '{"v":1,"op":"root"}'` print `not allowed over the network` and exit 1.

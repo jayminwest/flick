@@ -48,7 +48,7 @@ the main thread.
 | `direct(&mut Cx) -> Vec<Item>` | each root refresh | Items placed above the ranked results, unranked (quicklink, script and ext `<keyword> <text>`). |
 | `open(view, &mut Cx) -> Option<ListView>` | `Outcome::Push`, hotkey view | Enter a named view this module owns. `None`: no such view; the screen does not change. |
 | `closed(view, &mut Cx)` | the screen stops holding the module's view `view` | The view left the launcher: another view, root search or a form replaced it (an action menu or a confirmation over it still holds it). It comes after the next view's `open`, so a module moving between its own views hears `open` of the new one, then `closed` of the old: compare the name. Hiding the launcher does not close a view (ask the panel's visibility); the next screen change does. After a reload it may name a view the instance never opened. Use it to stop work that runs only while a view shows (`sys`'s fleet cadence), instead of inferring it from `items` or `LauncherOpened` (flick-7638). |
-| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font. It scrolls; it starts at its top, or at its end with `view.text_tail` (output that grows: it follows the end while the user is there). A view with `view.title` is read-only, so the vim keys scroll the text (see Screens). |
+| `refresh(&mut ListView, &mut Cx)` | each keystroke in that view, stale events | Fill `view.items` for `cx.query`. The module ranks its own items (`cx.ranker`). It may change `view.placeholder`; the search field shows the new one. It may set `view.text`: read-only text the panel wraps under the rows in a fixed-width font. It scrolls; it starts at its top, or at its end with `view.text_tail` (output that grows: it follows the end while the user is there). A view with `view.title` is read-only, so the vim keys scroll the text (see Screens). |
 | `activate(&ItemId, &mut Cx) -> Outcome` | Enter (Tab when `item.tab` is `Tab::Activate`) | Run an item this module created. |
 | `form(name, &mut Cx) -> Option<Form>` | `Outcome::Form` | Build a named form this module owns. Form names are a namespace apart from view names. `None`: the screen does not change and the footer says the form can't open. |
 | `submit(&Form, &mut Cx) -> Result<String, String>` | Enter or ⌘↵ in a form | Save a form this module built. Required fields are already non-blank. `Ok(status)`: back to root search with `status` in the footer. `Err(text)`: the form stays, `text` under the fields. A `Form::background` form (one that saves off the main thread): `Ok(text)` only started the save; the form stays open with `Form::pending = Some(text)` (e.g. `Saving…`) until `refresh_form` ends it. |
@@ -236,8 +236,9 @@ Sources:
   `on_pick(key)`, and `Open { title, module, key }`, which goes to the one opener the
   controller installs at `app::init` (`status_item::set_opener(app::hotkey_later)`): it defers through
   `events::on_main` to `app::hotkey(module, key)`, so an `Open` row behaves exactly like that
-  module's hotkey press. `app::hotkey_later` is also the `ext` module's opener for
-  `ext open`, a verb that runs with the state borrowed. `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
+  module's hotkey press. The `ext` module's opener for `ext open`, a verb that runs with
+  the state borrowed, is `app::show_later`: deferred the same way, but show-only (a view
+  that already shows stays, and a cycle view shows without its cycle). `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
   called as the owner's menu opens. Pick handlers and menu-open hooks run inside `AppKit`'s
   event handling, so they only set a flag and post an event (the module reads it on
   `ModuleChanged`), never borrow the state (mx-fcbc43). Items do not activate Flick or
@@ -249,7 +250,10 @@ Sources:
   the reload just enabled hears it without either importing the other (`message` re-sends
   `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
   flick-4bb4).
-- `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
+- `app::toggle` (the launcher hotkey; `app/toggle.rs`) dispatches and publishes `LauncherOpened`
+  when root search opens. A module's hotkey view, `ext open` and a status item's `Open` row
+  do not send it, nor does Escape or Backspace from a view back to root search: the view's
+  `open` is its module's cue (`ext` pins this, flick-04e6).
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
   main thread. One handler per process (the first `on_click` wins); `herdr` sets it at
@@ -271,9 +275,10 @@ Sources:
   later through `core::later`), `ext` (its worker threads, one per extension, after
   each call; an `op: event` call, which `Started`, `Reloaded`, `Wake`, `Unlocked` and
   `LauncherOpened` queue for each extension that subscribes, runs only when no other call
-  waits, coalesced per kind, and posts only when it failed or warned), `tile` (winman's
-  `on_change` after each drain, and each `winman::hide` batch once every app applied it;
-  the module then drains winman and reads its whole snapshot).
+  waits, coalesced per kind, is killed and waits again when a user's call is queued, and
+  posts only when it failed or warned), `tile` (winman's `on_change` after each drain, and
+  each `winman::hide` batch once every app applied it; the module then drains winman and
+  reads its whole snapshot).
 - `TaskChanged { task }` is the one link between `task` and `activity`, which never read
   each other's tables. Producer: the `task` module (`src/modules/tasks/`), with
   `events::post` on every start, switch and stop (launcher or CLI), at `Started` when a
@@ -317,8 +322,9 @@ Main-thread rules:
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
 - A verb that only knows its answer after work on a thread calls `core::later::answer_later`
   and hands the `Sender` to that thread. The control layer takes the slot right after the
-  verb returns (`later::take`, on the main thread) and its socket thread waits (at most
-  `later::MAX_WAIT`, 60 s) for the answer instead of the verb's immediate text; an error from
+  verb returns (`later::take_with_wait`, on the main thread) and its socket thread waits (at
+  most `later::MAX_WAIT`, 60 s, or what the verb asked with `later::answer_within`) for the
+  answer instead of the verb's immediate text; an error from
   the verb, or a dropped sender, keeps the immediate answer. The main thread stays free, so
   the thread may itself send requests to this Flick (`kota ask`). `control::local` drops the
   slot: nothing waits there.
@@ -348,16 +354,18 @@ and every hotkey.
 - A queue per external program (`src/modules/ext/`): each extension gets one worker
   thread, started on its first call, that runs its calls one at a time in queue order
   (spawn, stdin, stdout, exit, all with the call's budget; past it the process group is
-  killed). Answers go into the module's inbox and each posts `ModuleChanged`; the main
-  thread only queues and drains. A reload drops the workers of changed extensions (the
+  killed); a query waiting out its 60 ms debounce lets the calls queued after it go first.
+  Answers go into the module's inbox and each posts `ModuleChanged`; the main thread only
+  queues and drains. A reload drops the workers of changed extensions (the
   queue's sender), and each thread ends after its current call. Actions are optimistic:
   `after` (hide, stay, root) applies at once, the reply's status or error arrives later in
   the footer of the view if it still shows, else as a HUD toast (errors always toast). A
   card `script` or `flick` action runs Flick's own CLI on a thread of its own, answered
   into the same inbox. Forms are `background`: `Saving…` until the submit reply. Each
-  worker keeps its last call's op, error and duration behind a lock held only to store or
-  copy it (`ext ls`). `ext call` queues a raw request on the same worker and answers
-  through `core::later` with the unparsed stdout. The wire protocol, for extension
+  worker keeps its last call's op, error, duration and end, and the op and start of the
+  call it runs, behind locks held only to store or copy them (`ext ls`). `ext call` queues
+  a raw request on the same worker and answers through `core::later` with the unparsed
+  stdout, waited for up to its budget plus `MAX_WAIT`. The wire protocol, for extension
   authors, is `docs/extensions.md`.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
@@ -878,7 +886,7 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   `kota status` (cached presence, no I/O) and `kota refresh` (one read-only herdr + curl
   round, at most one per 10 s) are allowed on purpose too.
   **Adding a verb that changes config, runs code, reads the screen or writes files means
-  reviewing `NET_DENIED` in `src/core/control.rs`**; otherwise peers can call it. The
+  reviewing `NET_DENIED` in `src/core/control/policy.rs`**; otherwise peers can call it. The
   refusals are pinned in `src/characterization/control_replies.rs`.
 - Card local actions (`src/modules/message/{dispatch,local}.rs`): a press is checked again
   with `core::card::Do::check` and the origin stored with the card (`messages.remote`), so a

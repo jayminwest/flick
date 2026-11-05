@@ -6,14 +6,16 @@
 //! supersedes the one before it on the worker (debounced there, the older child killed). An
 //! answer counts only while it answers the newest query sent; until it lands the screen keeps
 //! the last answer of the same view or keyword (stale while revalidate). An empty search
-//! text, another screen or a reload stops the query (`Worker::cancel`). A failed query is
-//! logged, and shown in the footer of its view while that is on the screen; it is never
+//! text, another screen or a reload stops the query (`Worker::cancel`); the launcher opening
+//! stops the keyword queries and drops their answers. An answer's items show in the
+//! extension's order, those used before first, by frecency (`items::by_use`). A failed query
+//! is logged, and shown in the footer of its view while that is on the screen; it is never
 //! posted, since it may fail at every keystroke.
 
 use super::proto::item::ExtItem;
 use super::proto::{Reply, Request};
 use super::{Ext, items};
-use crate::core::{Cx, Item};
+use crate::core::{Cx, Item, store};
 
 /// `request` asks view `view` (`op: query`).
 fn of_view(request: &Request, view: &str) -> bool {
@@ -88,24 +90,37 @@ impl Ext {
     }
 
     /// The direct rows for `cx.query`: `<keyword> <text>`, with the keyword of an extension,
-    /// asks it and shows its last answer for that keyword. The other keyword queries stop.
+    /// asks it and shows its last answer for that keyword, the used rows first
+    /// (`items::by_use`). The other keyword queries stop.
     pub(super) fn keyword_rows(&mut self, cx: &Cx) -> Vec<Item> {
         let typed = cx.query.split_once(' ').map(|(k, rest)| (k, rest.trim())).filter(|(_, rest)| !rest.is_empty());
         let owner = typed.and_then(|(k, rest)| {
             let spec = self.specs.iter().find(|s| s.keywords.iter().any(|w| w == k))?;
             Some((spec.name.clone(), k, rest))
         });
-        let other = |(ext, r): &(String, Request)| {
-            matches!(r, Request::Keyword { .. }) && owner.as_ref().is_none_or(|(o, ..)| o != ext)
-        };
+        self.stop_keywords(owner.as_ref().map(|(o, ..)| o.as_str()));
+        let Some((ext, keyword, rest)) = owner else { return vec![] };
+        self.ask(&ext, Request::Keyword { keyword: keyword.to_string(), query: rest.to_string() });
+        let found = self.answer(&ext, &|r| of_keyword(r, keyword)).unwrap_or_default();
+        let rows = found.iter().map(|e| items::item(&ext, e)).collect();
+        items::by_use(rows, &cx.store.usage(), store::now())
+    }
+
+    /// Stop the keyword queries of every extension but `keep`.
+    fn stop_keywords(&mut self, keep: Option<&str>) {
+        let other = |(ext, r): &(String, Request)| matches!(r, Request::Keyword { .. }) && keep != Some(ext.as_str());
         for worker in self.workers.iter().filter(|w| self.sent.iter().any(|s| other(s) && s.0 == w.spec().name)) {
             worker.cancel();
         }
         self.sent.retain(|s| !other(s));
-        let Some((ext, keyword, rest)) = owner else { return vec![] };
-        self.ask(&ext, Request::Keyword { keyword: keyword.to_string(), query: rest.to_string() });
-        let found = self.answer(&ext, &|r| of_keyword(r, keyword)).unwrap_or_default();
-        found.iter().map(|e| items::item(&ext, e)).collect()
+    }
+
+    /// The launcher opened on a blank search: the keyword queries stop and their answers,
+    /// from the last time it showed, are dropped, so a keyword typed again shows only rows
+    /// for the text typed now.
+    pub(super) fn launcher_opened(&mut self) {
+        self.stop_keywords(None);
+        self.found.retain(|(_, request, _)| !matches!(request, Request::Keyword { .. }));
     }
 
     /// Extension `ext`'s answer to query `request`. True when the screen changed: it answers

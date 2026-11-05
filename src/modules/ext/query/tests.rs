@@ -122,3 +122,47 @@ fn leaving_the_view_or_a_reload_stops_the_query() {
     assert!(m.sent.is_empty());
     assert_eq!(seen(), ["log ext: no extension \"gone\""]);
 }
+
+#[test]
+fn the_launcher_opening_drops_the_keyword_answers_of_its_last_showing() {
+    let table = format!("{}keywords = [\"e\"]\n", entry("echo", &["echo"], 2000));
+    let mut m = module(&table);
+    let json = r#"{"items": [{"key": "k", "title": "Old"}]}"#;
+    let Reply::Items(items) = proto::parse(Op::Keyword, json.as_bytes()).unwrap().reply else { panic!() };
+    m.sent = vec![("echo".into(), keyword("foo"))];
+    m.found = vec![("echo".into(), keyword("foo"), items.clone())];
+    assert_eq!(direct(&mut m, "e bar"), ["ext:echo/k"]);
+    test_cx("", |cx| m.on_event(crate::core::Event::LauncherOpened, cx));
+    assert!(m.sent.is_empty() && m.found.is_empty());
+    // The keyword typed again shows no rows of the last showing, only its own answer.
+    assert!(direct(&mut m, "e bar").is_empty());
+    // A view's query answer stays.
+    m.found = vec![("echo".into(), query("x"), items)];
+    m.launcher_opened();
+    assert_eq!(m.found.len(), 1);
+}
+
+#[test]
+fn keyword_rows_and_query_answers_put_the_used_items_first() {
+    let table = format!("{}keywords = [\"e\"]\n", entry("echo", &["echo"], 2000));
+    let mut m = module(&table);
+    let json = r#"{"items": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}, {"key": "c", "title": "C"}]}"#;
+    let Reply::Items(items) = proto::parse(Op::Keyword, json.as_bytes()).unwrap().reply else { panic!() };
+    let ids = |items: &[Item]| items.iter().map(|i| i.id.to_string()).collect::<Vec<_>>();
+    m.sent = vec![("echo".into(), keyword("foo"))];
+    m.found = vec![("echo".into(), keyword("foo"), items.clone())];
+    let rows = test_cx("e foo", |cx| {
+        cx.store.record_use("ext:echo/c");
+        m.direct(cx)
+    });
+    assert_eq!(ids(&rows), ["ext:echo/c", "ext:echo/a", "ext:echo/b"]);
+    showing(&mut m);
+    m.sent = vec![("echo".into(), query("x"))];
+    m.found = vec![("echo".into(), query("x"), items)];
+    let mut view = ListView::new("ext", "echo/v");
+    test_cx("x", |cx| {
+        cx.store.record_use("ext:echo/b");
+        m.refresh(&mut view, cx);
+    });
+    assert_eq!(ids(&view.items), ["ext:echo/b", "ext:echo/a", "ext:echo/c"]);
+}

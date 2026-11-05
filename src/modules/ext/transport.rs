@@ -1,7 +1,7 @@
 //! One call to an extension: spawn its argv (no shell) in its own process group, write the
 //! request to stdin, read one reply from stdout, wait for exit 0. Past the call's budget the
-//! group is killed, and so it is when `stop` says a newer query came (newest wins). Only
-//! the extension's worker thread calls this.
+//! group is killed, and so it is when `stop` says a newer query came (newest wins) or, for
+//! an event, a user's call. Only the extension's worker thread calls this.
 //!
 //! The child gets `FLICK_EXT` (its name), `FLICK_SOCKET` (this Flick's control socket, for
 //! `flick ...` calls back) and `FLICK_VERSION`, and `FLICK_HOST` removed so the CLI talks to
@@ -30,7 +30,7 @@ pub const FLICK_BUDGET: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(10);
 /// Bytes of stderr kept, from the end: enough for the last line.
 const TAIL: usize = 4096;
-/// The error of a call killed because a newer query came; never shown.
+/// The error of a call killed by `stop` (a newer query came); never shown.
 pub const STOPPED: &str = "a newer query came; stopped";
 /// How long to wait for the pipes after exit; a grandchild may hold them open.
 const DRAIN: Duration = Duration::from_secs(1);
@@ -179,7 +179,7 @@ mod tests {
 
     fn spec(mode: &[&str], timeout: Duration) -> Spec {
         let argv = std::iter::once(FIXTURE).chain(mode.iter().copied()).map(String::from);
-        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![], keywords: vec![], subscribe: vec![] }
+        Spec { name: "echo".into(), argv: argv.collect(), timeout, hotkeys: vec![], keywords: vec![], subscribe: vec![], root: true }
     }
 
     fn run(mode: &[&str]) -> Result<Parsed, String> {
@@ -253,6 +253,68 @@ mod tests {
         let e = call(&slow, &query, Path::new("/s"), &|| pids.exists()).unwrap_err();
         assert_eq!(e, format!("echo: {STOPPED}"));
         assert!(started.elapsed() < Duration::from_secs(15), "{:?}", started.elapsed());
+    }
+
+    /// The script under "## Example extension" in docs/extensions.md, as `hello-ext` in `dir`.
+    fn docs_example(dir: &Path) -> String {
+        let doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/extensions.md"));
+        let (_, rest) = doc.split_once("## Example extension").expect("no example section");
+        let (_, rest) = rest.split_once("```python\n").expect("no python block");
+        let (script, _) = rest.split_once("\n```").expect("python block not closed");
+        let path = dir.join("hello-ext");
+        std::fs::write(&path, format!("{script}\n")).unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    /// A reply in one line: keys and titles, and how many actions each item has.
+    fn summary(reply: &Reply) -> String {
+        let items = |items: &[proto::item::ExtItem]| {
+            let each = items.iter().map(|i| format!("{}={} ({})", i.key, i.title, i.actions.len()));
+            each.collect::<Vec<_>>().join(", ")
+        };
+        match reply {
+            Reply::Items(i) => items(i),
+            Reply::View(v) => format!("{:?} {:?}: {}", v.title, v.placeholder, items(&v.items)),
+            Reply::Form(f) => {
+                let fields = f.fields.iter().map(|f| format!("{}={} {}", f.key, f.label, f.required));
+                format!("{} [{}]: {}", f.title, f.submit, fields.collect::<Vec<_>>().join(", "))
+            }
+            Reply::Done(d) => format!("{:?} {}", d.status, d.refresh),
+            Reply::Ack => "ack".into(),
+        }
+    }
+
+    #[test]
+    fn the_docs_example_answers_every_op_without_a_warning() {
+        let dir = crate::core::scratch::Scratch::new("ext-docs");
+        let script = docs_example(&dir);
+        let hello = |flags: &[&str]| {
+            let argv = std::iter::once(script.as_str()).chain(flags.iter().copied()).map(String::from);
+            Spec { name: "hello".into(), argv: argv.collect(), ..spec(&[], LONG) }
+        };
+        let s = |t: &str| t.to_string();
+        let view = r#"Some("Greetings") Some("Search greetings…"): world=Hello, World (3), flick=Hello, Flick (3)"#;
+        let cases = [
+            (Request::Root, s("hello=Greetings (1)")),
+            (Request::Open { view: s("greetings") }, s(view)),
+            (Request::Query { view: s("greetings"), query: s("wor") }, s("")),
+            (Request::Keyword { keyword: s("hi"), query: s("Ada") }, s("typed=Hello, Ada (3)")),
+            (Request::Act { view: Some(s("greetings")), item: s("world"), action: s("greet") }, s(r#"Some("Hello from world") false"#)),
+            (Request::Act { view: None, item: s("hello"), action: s("open") }, s(r#"Some("Hello from hello") false"#)),
+            (Request::Form { form: s("new") }, s("New Greeting [Greet]: name=Name true")),
+            (Request::Submit { form: s("new"), values: vec![(s("name"), s(" Ada "))] }, s(r#"Some("Hello, Ada") false"#)),
+            (Request::Event(proto::EventKind::Wake), s("ack")),
+        ];
+        for (req, want) in cases {
+            let p = call(&hello(&[]), &req, Path::new("/s"), &|| false).unwrap_or_else(|e| panic!("{req:?}: {e}"));
+            assert_eq!(summary(&p.reply), want, "{req:?}");
+            assert!(p.warnings.is_empty(), "{req:?}: {:?}", p.warnings);
+        }
+        let taken = Request::Submit { form: s("new"), values: vec![(s("name"), s("error"))] };
+        assert_eq!(call(&hello(&[]), &taken, Path::new("/s"), &|| false).unwrap_err(), "hello: that name is taken");
+        let crash = call(&hello(&["--crash"]), &Request::Root, Path::new("/s"), &|| false);
+        assert_eq!(crash.unwrap_err(), "hello: crashed on purpose");
     }
 
     #[test]

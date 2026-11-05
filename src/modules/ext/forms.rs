@@ -5,11 +5,12 @@
 //! and the form stays open, `Saving…`, until the reply. A reply's `status` closes it to root
 //! search with that status in the footer, or toasts when the launcher is hidden; an error is
 //! logged, always toasted, and shown in the form while it is still on the screen. A form the
-//! user left (Escape) is never opened again: its reply only toasts.
+//! user left (Escape) is never opened again: its reply only toasts. A typed value longer
+//! than `VALUE_MAX` refuses the submit, with the error in the form; it is never cut.
 
 use super::items::{self, LOADING};
 use super::proto::form::ExtForm;
-use super::proto::{Done, Reply, Request};
+use super::proto::{Done, Reply, Request, VALUE_MAX};
 use super::Ext;
 use crate::core::{Field, Form};
 
@@ -97,6 +98,9 @@ impl Ext {
         let (ext, inner) = items::split(&form.name).ok_or("ext: not an extension form")?;
         if !matches!(&self.form, Some((n, Phase::Open)) if *n == form.name) {
             return Err(format!("{ext}: {inner} is not ready"));
+        }
+        if let Some(f) = form.fields.iter().find(|f| f.value.chars().count() > VALUE_MAX) {
+            return Err(format!("{} is longer than {VALUE_MAX} chars", f.label));
         }
         let values = form.fields.iter().map(|f| (f.key.to_string(), f.value.clone())).collect();
         let ext = ext.to_string();

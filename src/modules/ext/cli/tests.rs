@@ -1,7 +1,10 @@
+use std::time::{Duration, Instant};
+
 use crate::modules::ext::tests::{entry, module, seen, settle};
 use super::*;
 use crate::core::Module;
 use crate::core::later::MAX_WAIT;
+use crate::core::scratch::Scratch;
 use crate::modules::ext::proto::Request;
 
 const USAGE: &str = "usage: flick ext ls | ext refresh <name> | ext open <name> <view> | ext call <name> <json>|--stdin";
@@ -30,15 +33,38 @@ fn ls_shows_each_extension_and_how_its_last_call_went() {
     let text = run(&mut m, &["ls"]).unwrap();
     let lines: Vec<Vec<&str>> = text.lines().map(|l| l.split('\t').collect()).collect();
     assert_eq!(lines[0][..3], ["echo", "root", "ok"]);
-    assert!(lines[0][3].ends_with(" ms") && lines[0].len() == 4, "{text}");
-    assert_eq!((lines[1][..3].to_vec(), lines[1][4]), (vec!["broken", "root", "error"], "broken: bad token"));
+    assert!(lines[0][3].ends_with(" ms") && lines[0][4].ends_with(" s ago") && lines[0].len() == 5, "{text}");
+    assert_eq!((lines[1][..3].to_vec(), lines[1][5]), (vec!["broken", "root", "error"], "broken: bad token"));
     let json: Value = serde_json::from_str(&m.run_verb(&["ls".into()], true).unwrap()).unwrap();
-    assert_eq!(json[0]["name"], "echo");
+    assert_eq!((&json[0]["name"], &json[0]["running"]), (&Value::from("echo"), &Value::Null));
     assert_eq!((json[0]["last"]["op"].as_str(), json[0]["last"]["ok"].as_bool()), (Some("root"), Some(true)));
-    assert!(json[0]["last"]["ms"].is_u64() && json[0]["last"]["error"].is_null());
+    assert!(json[0]["last"]["ms"].is_u64() && json[0]["last"]["ago_ms"].is_u64() && json[0]["last"]["error"].is_null());
     assert_eq!(json[1]["last"]["error"], "broken: bad token");
     let fresh = module(&entry("idle", &["echo"], 2000)).run_verb(&["ls".into()], true);
-    assert_eq!(fresh.unwrap(), r#"[{"name":"idle","last":null}]"#);
+    assert_eq!(fresh.unwrap(), r#"[{"name":"idle","running":null,"last":null}]"#);
+}
+
+#[test]
+fn ls_shows_the_call_that_runs_in_place_of_the_last() {
+    let dir = Scratch::new("ext-ls-running");
+    let pids = dir.join("pids");
+    let mut m = module(&entry("slow", &["sleep", "5", pids.to_str().unwrap()], 500));
+    m.fetch("slow", Request::Root);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while m.workers[0].running().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let text = run(&mut m, &["ls"]).unwrap();
+    let line: Vec<&str> = text.split('\t').collect();
+    assert_eq!((&line[..3], line.len()), (&["slow", "root", "running"][..], 4), "{text}");
+    assert!(line[3].ends_with(" ms"), "{text}");
+    let json: Value = serde_json::from_str(&m.run_verb(&["ls".into()], true).unwrap()).unwrap();
+    assert_eq!((json[0]["running"]["op"].as_str(), &json[0]["last"]), (Some("root"), &Value::Null));
+    assert!(json[0]["running"]["ms"].is_u64());
+    settle(&mut m);
+    seen();
+    let text = run(&mut m, &["ls"]).unwrap();
+    assert!(text.ends_with("s ago\tslow: no reply in 500 ms; stopped"), "{text}");
 }
 
 #[test]
@@ -98,6 +124,18 @@ fn a_failed_raw_call_is_the_verb_error() {
     let last = m.workers[0].last().unwrap();
     assert_eq!((last.op, last.error.as_deref()), ("call", Some("broken: bad token")));
     assert!(last.took < MAX_WAIT);
+}
+
+#[test]
+fn a_raw_call_waits_past_its_own_budget() {
+    let mut m = module(&format!("{}{}", entry("echo", &["echo"], 2000), entry("slow", &["echo"], 120_000)));
+    let wait = |m: &mut Ext, name| {
+        assert!(run(m, &["call", name, "{}"]).is_ok());
+        later::take_with_wait().map(|(answer, wait)| (answer.recv_timeout(MAX_WAIT).is_ok(), wait))
+    };
+    // The act budget (at least 10 s) plus `MAX_WAIT` for the calls queued before it.
+    assert_eq!(wait(&mut m, "echo"), Some((true, Duration::from_secs(70))));
+    assert_eq!(wait(&mut m, "slow"), Some((true, Duration::from_secs(180))));
 }
 
 #[test]

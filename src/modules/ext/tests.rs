@@ -147,6 +147,15 @@ fn root_items_are_cached_and_asked_again_when_the_launcher_opens() {
 }
 
 #[test]
+fn root_items_are_asked_for_at_started_so_the_first_open_shows_them() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    assert!(!event(&mut m, Event::Started));
+    assert_eq!(m.pending, [("echo".to_string(), Request::Root)]);
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
+}
+
+#[test]
 fn only_an_answer_is_stale_data_and_reload_asks_again() {
     let mut m = module(&entry("echo", &["echo"], 2000));
     // Another module's change, an empty inbox or another event is not stale data for ext.
@@ -236,6 +245,46 @@ fn hotkeys_open_views() {
 }
 
 #[test]
+fn a_hotkey_view_asks_only_for_itself_and_sends_no_launcher_opened() {
+    // `a` has the hotkey view; `b` has no view and subscribes to launcher_opened.
+    let a = format!("{}hotkeys = {{ inbox = \"cmd+KeyI\" }}\n", entry("a", &["echo"], 2000));
+    let b = format!("{}subscribe = [\"launcher_opened\"]\n", entry("b", &["echo"], 2000));
+    let mut m = module(&format!("{a}{b}"));
+    // The app opens a hotkey view without `LauncherOpened`: no `root`, and `b` never starts.
+    let view = test_cx("", |cx| m.hotkey("a/inbox", cx)).unwrap();
+    test_cx("", |cx| m.open(&view.name, cx)).unwrap();
+    assert_eq!(m.pending, [("a".to_string(), open_view("inbox"))]);
+    let names = |m: &Ext| m.workers.iter().map(|w| w.spec().name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&m), ["a"]);
+    assert!(settle(&mut m));
+    // Root search opening asks every extension for `root` and announces it to `b`.
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert_eq!(m.pending, [("a".to_string(), Request::Root), ("b".to_string(), Request::Root)]);
+    assert_eq!(names(&m), ["a", "b"]);
+    assert!(settle(&mut m));
+}
+
+#[test]
+fn root_false_is_never_asked_for_root_items_nor_spawned_for_them() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
+    // Turning `root` off drops the cached items and the worker of the old entry.
+    configure(&mut m, &format!("{}root = false\n", entry("echo", &["echo"], 2000))).unwrap();
+    assert!(test_cx("", |cx| m.items(cx)).is_empty());
+    for e in [Event::Started, Event::LauncherOpened, Event::Reloaded] {
+        assert!(!event(&mut m, e));
+    }
+    m.refetch("echo");
+    assert!(m.pending.is_empty() && m.workers.is_empty());
+    // Its views still open.
+    test_cx("", |cx| m.open("echo/v", cx)).unwrap();
+    assert_eq!(m.pending, [("echo".to_string(), open_view("v"))]);
+    assert!(settle(&mut m));
+}
+
+#[test]
 fn unknown_extensions_are_refused() {
     let mut m = module("");
     assert_eq!(m.call("nope", Request::Root).unwrap_err(), "ext: no extension \"nope\"");
@@ -272,8 +321,8 @@ fn failures_are_logged_and_notified_with_the_name() {
 fn subscribed_events_are_sent_and_a_failed_one_is_only_logged() {
     let table = format!("{}subscribe = [\"wake\", \"unlocked\"]\n{}", entry("broken", &["fail"], 2000), entry("other", &["echo"], 2000));
     let mut m = module(&table);
-    // Not subscribed to, or not an extension event: no call, no worker.
-    assert!(!event(&mut m, Event::Locked) && !event(&mut m, Event::Started));
+    // Not an extension event: no call, no worker.
+    assert!(!event(&mut m, Event::Locked));
     assert!(m.workers.is_empty());
     assert!(!event(&mut m, Event::Wake) && !event(&mut m, Event::Unlocked));
     assert_eq!(m.workers.len(), 1);

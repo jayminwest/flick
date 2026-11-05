@@ -87,6 +87,18 @@ fn a_submit_stays_pending_until_the_reply_closes_it() {
 }
 
 #[test]
+fn a_typed_value_past_the_cap_refuses_the_submit() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    let mut form = loaded(&mut m);
+    form.set_value(0, "é".repeat(VALUE_MAX + 1));
+    assert_eq!(m.submit_form(&form).unwrap_err(), format!("Title is longer than {VALUE_MAX} chars"));
+    assert_eq!(m.form, Some(("echo/new".into(), Phase::Open)));
+    // The cap counts chars, not bytes.
+    form.set_value(0, "é".repeat(VALUE_MAX));
+    assert_eq!(m.submit_form(&form).as_deref(), Ok(SAVING));
+}
+
+#[test]
 fn a_failed_submit_shows_in_the_form_and_toasts() {
     let mut m = module(&entry("echo", &["echo"], 2000));
     let mut form = loaded(&mut m);
