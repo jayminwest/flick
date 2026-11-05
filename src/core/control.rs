@@ -161,6 +161,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("llm", &[]),
     ("sys", &["restart", "tail", "window"]),
     ("ext", &["open", "call"]),
+    ("tile", &["ws", "restore"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.
