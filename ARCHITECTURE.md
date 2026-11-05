@@ -239,7 +239,9 @@ Sources:
   `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
   flick-4bb4).
 - `app::toggle` (the launcher hotkey; `app/toggle.rs`) dispatches and publishes `LauncherOpened`
-  when root search opens.
+  when root search opens. A module's hotkey view, `ext open` and a status item's `Open` row
+  do not send it, nor does Escape or Backspace from a view back to root search: the view's
+  `open` is its module's cue (`ext` pins this, flick-04e6).
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
   main thread. One handler per process (the first `on_click` wins); `herdr` sets it at

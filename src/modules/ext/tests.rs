@@ -236,6 +236,26 @@ fn hotkeys_open_views() {
 }
 
 #[test]
+fn a_hotkey_view_asks_only_for_itself_and_sends_no_launcher_opened() {
+    // `a` has the hotkey view; `b` has no view and subscribes to launcher_opened.
+    let a = format!("{}hotkeys = {{ inbox = \"cmd+KeyI\" }}\n", entry("a", &["echo"], 2000));
+    let b = format!("{}subscribe = [\"launcher_opened\"]\n", entry("b", &["echo"], 2000));
+    let mut m = module(&format!("{a}{b}"));
+    // The app opens a hotkey view without `LauncherOpened`: no `root`, and `b` never starts.
+    let view = test_cx("", |cx| m.hotkey("a/inbox", cx)).unwrap();
+    test_cx("", |cx| m.open(&view.name, cx)).unwrap();
+    assert_eq!(m.pending, [("a".to_string(), open_view("inbox"))]);
+    let names = |m: &Ext| m.workers.iter().map(|w| w.spec().name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&m), ["a"]);
+    assert!(settle(&mut m));
+    // Root search opening asks every extension for `root` and announces it to `b`.
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert_eq!(m.pending, [("a".to_string(), Request::Root), ("b".to_string(), Request::Root)]);
+    assert_eq!(names(&m), ["a", "b"]);
+    assert!(settle(&mut m));
+}
+
+#[test]
 fn unknown_extensions_are_refused() {
     let mut m = module("");
     assert_eq!(m.call("nope", Request::Root).unwrap_err(), "ext: no extension \"nope\"");
