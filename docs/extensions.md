@@ -14,6 +14,7 @@ timeout_ms = 2000                      # the default
 hotkeys = { greetings = "cmd+ctrl+alt+shift+KeyG" }   # <view> = "<hotkey>"
 keywords = ["hi"]                      # "hi <text>" in root search sends op: keyword
 subscribe = ["wake"]                   # events it gets, as op: event
+root = true                            # false: no root items, never sent op: root
 ```
 
 | Key | Rule |
@@ -24,6 +25,7 @@ subscribe = ["wake"]                   # events it gets, as op: event
 | `hotkeys` | Global hotkeys that open the extension's views, `<view> = "<hotkey>"`. A view name is 1-64 of `A-Z a-z 0-9 . _ -`. A blank hotkey is left out. |
 | `keywords` | Words that send `<keyword> <text>` in root search to the extension (`op: keyword`). At most 16, each one word of 1-80 chars, unique among all extensions. |
 | `subscribe` | Events the extension gets (`op: event`): `started`, `reloaded`, `wake`, `unlocked`, `launcher_opened`. |
+| `root` | Default `true`. `false`: the extension has no root items. Flick never sends it `root`, so opening the launcher does not run it; its views, keywords and events still do. |
 
 A bad entry fails the config load with `[ext] extensions: "<name>": <why>`. A reload stops the worker of an extension whose entry changed or went away, after the call that runs.
 
@@ -42,7 +44,7 @@ Every request has `"v": 1` and an `op`:
 
 | `op` | Other keys | When | Reply |
 |---|---|---|---|
-| `root` | | the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item | [items](#items) |
+| `root` | | the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item; never with `root = false` | [items](#items) |
 | `open` | `view` | a view opens (hotkey, `push` action, `flick ext open`) | a [view](#views) |
 | `query` | `view`, `query` | a keystroke in a `"filter": "ext"` view | items |
 | `keyword` | `keyword`, `query` | `<keyword> <text>` in root search | items |

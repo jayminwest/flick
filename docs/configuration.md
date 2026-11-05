@@ -156,6 +156,7 @@ timeout_ms = 2000                       # the default
 hotkeys = { inbox = "cmd+ctrl+alt+shift+KeyE" }   # <view> = "<hotkey>": opens the view
 keywords = ["n"]                        # "n <text>" in root search asks the extension
 subscribe = ["wake"]                    # events it gets, as op: event
+root = true                             # false: no root items, never sent op: root
 ```
 
 Each call runs the program once, without a shell. Flick writes one JSON request to its stdin and reads one JSON reply from its stdout; the program exits 0. Calls to one extension run one at a time on its own thread, never on the launcher's, so a slow extension does not slow the launcher. A call that takes longer than `timeout_ms` is stopped: Flick kills the program and everything it started. Actions and form submits get at least 10 s. A failed call shows `<name>: <why>` (for a failed exit, the last line of stderr) in a notification, a toast or a footer, and goes to the log.

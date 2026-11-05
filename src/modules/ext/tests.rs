@@ -256,6 +256,26 @@ fn a_hotkey_view_asks_only_for_itself_and_sends_no_launcher_opened() {
 }
 
 #[test]
+fn root_false_is_never_asked_for_root_items_nor_spawned_for_them() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    assert!(!event(&mut m, Event::LauncherOpened));
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
+    // Turning `root` off drops the cached items and the worker of the old entry.
+    configure(&mut m, &format!("{}root = false\n", entry("echo", &["echo"], 2000))).unwrap();
+    assert!(test_cx("", |cx| m.items(cx)).is_empty());
+    for e in [Event::LauncherOpened, Event::Reloaded] {
+        assert!(!event(&mut m, e));
+    }
+    m.refetch("echo");
+    assert!(m.pending.is_empty() && m.workers.is_empty());
+    // Its views still open.
+    test_cx("", |cx| m.open("echo/v", cx)).unwrap();
+    assert_eq!(m.pending, [("echo".to_string(), open_view("v"))]);
+    assert!(settle(&mut m));
+}
+
+#[test]
 fn unknown_extensions_are_refused() {
     let mut m = module("");
     assert_eq!(m.call("nope", Request::Root).unwrap_err(), "ext: no extension \"nope\"");

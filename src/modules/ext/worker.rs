@@ -224,7 +224,7 @@ mod tests {
     use crate::modules::ext::proto::Reply;
 
     fn spec() -> Spec {
-        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1), hotkeys: vec![], keywords: vec![], subscribe: vec![] }
+        Spec { name: "w".into(), argv: vec![], timeout: Duration::from_secs(1), hotkeys: vec![], keywords: vec![], subscribe: vec![], root: true }
     }
 
     /// Runs of the "started" event so far.
