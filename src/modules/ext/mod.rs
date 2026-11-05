@@ -376,6 +376,9 @@ impl Module for Ext {
         let stale = match event {
             Event::ModuleChanged { module: "ext" } => self.drain(),
             Event::LauncherOpened | Event::Reloaded => {
+                if event == Event::LauncherOpened {
+                    self.launcher_opened();
+                }
                 let names: Vec<String> = self.specs.iter().map(|s| s.name.clone()).collect();
                 for name in names {
                     self.fetch(&name, Request::Root);
