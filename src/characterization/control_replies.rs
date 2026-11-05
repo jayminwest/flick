@@ -229,6 +229,9 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["ext", "open", "todo", "inbox"], "ext open"),
         (&["ext", "call", "todo", "{\"op\":\"root\"}"], "ext call"),
         (&["ext", "call"], "ext call"),
+        // tile (flick-d330): a peer must not hide or move this Mac's windows.
+        (&["tile", "ws", "2"], "tile ws"),
+        (&["tile", "restore"], "tile restore"),
     ];
     for (words, what) in refused {
         let want = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);

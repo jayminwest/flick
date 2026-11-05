@@ -11,9 +11,9 @@
 //! `start`, `stop`, `drain`, `snapshot`, `refresh`, `set_frames`, `focus` and `close` run on
 //! the main thread and never wait on another app.
 
-#![expect(dead_code, reason = "the tile module (flick-d330) is the first caller")]
-
+mod corner;
 mod frame;
+pub mod hide;
 mod ids;
 mod observe;
 mod thread;
@@ -23,11 +23,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+pub use frame::set_frames;
 #[cfg_attr(
     not(test),
-    expect(unused_imports, reason = "the tile module (flick-d330) calls them")
+    expect(unused_imports, reason = "tile's window commands (flick-c2ea) call them")
 )]
-pub use frame::{close, focus, set_frames};
+pub use frame::{close, focus};
 
 use super::{Rect, ax, workspace};
 

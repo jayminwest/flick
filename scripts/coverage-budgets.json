@@ -130,8 +130,11 @@
     "src/modules/tasks/store.rs": 99.5,
     "src/modules/tasks/view.rs": 100.0,
     "src/modules/tile/layout.rs": 100.0,
+    "src/modules/tile/mod.rs": 100.0,
     "src/modules/tile/nav.rs": 100.0,
     "src/modules/tile/rules.rs": 100.0,
+    "src/modules/tile/spike.rs": 100.0,
+    "src/modules/tile/store.rs": 100.0,
     "src/modules/tile/tree.rs": 100.0,
     "src/modules/tile/tree/ops.rs": 100.0,
     "src/modules/tile/workspace.rs": 100.0,
@@ -150,6 +153,7 @@
     "src/platform/surface/privacy.rs": 100.0,
     "src/platform/surface/rows.rs": 100.0,
     "src/platform/surface/style.rs": 100.0,
+    "src/platform/winman/corner.rs": 100.0,
     "src/root.rs": 100.0
   }
 }

@@ -11,7 +11,6 @@ unsafe extern "C" {
 }
 
 /// One display.
-#[expect(dead_code, reason = "the tile module (flick-d330) is the first caller")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Screen {
     /// The `CGDirectDisplayID`; stable while the display stays connected.
@@ -35,7 +34,6 @@ pub fn visible_areas() -> Vec<Rect> {
 }
 
 /// Every screen, the primary first.
-#[expect(dead_code, reason = "the tile module (flick-d330) is the first caller")]
 pub fn all() -> Vec<Screen> {
     let screens = NSScreen::screens(super::mtm());
     let Some(flip) = flipper(&screens) else { return vec![] };

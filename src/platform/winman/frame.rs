@@ -87,6 +87,7 @@ fn apply(w: &Watched, inbox: &Inbox) {
 
 /// Make window `id` its app's main window, raise it, then activate the app (raise first, or
 /// the app brings its own front window: `AeroSpace` `MacApp.swift:155-160`).
+#[cfg_attr(not(test), expect(dead_code, reason = "tile's focus commands (flick-ac1d) call it"))]
 pub fn focus(id: WinId) {
     with_session(|s| {
         let Some(app) = s.app_of(id) else { return };
@@ -101,6 +102,7 @@ pub fn focus(id: WinId) {
 }
 
 /// Press window `id`'s close button. The app may still ask to save first.
+#[cfg_attr(not(test), expect(dead_code, reason = "tile's close command (flick-c2ea) calls it"))]
 pub fn close(id: WinId) {
     with_session(|s| {
         let Some(app) = s.app_of(id) else { return };
