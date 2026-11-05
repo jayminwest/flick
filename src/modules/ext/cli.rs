@@ -1,7 +1,8 @@
 //! The `ext` verbs.
 //!
-//! - `ext ls [--json]`: each configured extension and how its last call went (op, ok or the
-//!   error, and how long it took), copied from its worker without waiting on a call.
+//! - `ext ls [--json]`: each configured extension, the call it runs now (op, for how long)
+//!   and how its last call went (op, ok or the error, how long it took and how long ago it
+//!   ended), copied from its worker without waiting on a call.
 //! - `ext refresh <name>`: ask for its root items again, and for its view on the screen.
 //! - `ext open <name> <view>`: show view `<name>/<view>`, like a press of a hotkey bound to
 //!   it, except that a view already on the screen stays (a hotkey would hide it).
@@ -22,7 +23,7 @@ use serde_json::Value;
 
 use super::Ext;
 use super::proto::Op;
-use super::worker::{Last, Worker};
+use super::worker::{Last, Running, Worker};
 use crate::core::later;
 use crate::core::unknown_verb;
 
@@ -67,43 +68,49 @@ impl Ext {
         Ok(format!("Called {name}"))
     }
 
-    /// One line per extension, `<name>\t<op>\tok|error\t<ms> ms[\t<error>]` (`<name>\t-` before
-    /// its first call), or with `json` an array of `{name, last}`.
+    /// One line per extension (see `line`), or with `json` an array of `{name, running, last}`.
     fn list(&self, json: bool) -> String {
         let rows = self.specs.iter().map(|s| {
-            let last = self.workers.iter().find(|w| w.spec().name == s.name).and_then(Worker::last);
-            (s.name.as_str(), last)
+            let worker = self.workers.iter().find(|w| w.spec().name == s.name);
+            (s.name.as_str(), worker.and_then(Worker::running), worker.and_then(Worker::last))
         });
         if json {
-            let rows: Vec<String> = rows.map(|(name, last)| row_json(name, last.as_ref())).collect();
+            let rows: Vec<String> = rows.map(|(name, now, last)| row_json(name, now, last.as_ref())).collect();
             return format!("[{}]", rows.join(","));
         }
-        let lines: Vec<String> = rows.map(|(name, last)| line(name, last.as_ref())).collect();
+        let lines: Vec<String> = rows.map(|(name, now, last)| line(name, now, last.as_ref())).collect();
         if lines.is_empty() { "ext: no extensions (add [[ext.extensions]] to config.toml)".into() } else { lines.join("\n") }
     }
 }
 
-fn line(name: &str, last: Option<&Last>) -> String {
+/// `<name>\t<op>\trunning\t<ms> ms` while a call runs (`<ms>` so far), else
+/// `<name>\t<op>\tok|error\t<ms> ms\t<s> s ago[\t<error>]` for the last call, `<name>\t-`
+/// before the first.
+fn line(name: &str, now: Option<Running>, last: Option<&Last>) -> String {
+    if let Some(now) = now {
+        return format!("{name}\t{}\trunning\t{} ms", now.op, now.started.elapsed().as_millis());
+    }
     let Some(last) = last else { return format!("{name}\t-") };
-    let ms = last.took.as_millis();
+    let (ms, ago) = (last.took.as_millis(), last.ended.elapsed().as_secs());
     match &last.error {
-        None => format!("{name}\t{}\tok\t{ms} ms", last.op),
-        Some(e) => format!("{name}\t{}\terror\t{ms} ms\t{e}", last.op),
+        None => format!("{name}\t{}\tok\t{ms} ms\t{ago} s ago", last.op),
+        Some(e) => format!("{name}\t{}\terror\t{ms} ms\t{ago} s ago\t{e}", last.op),
     }
 }
 
-/// `{"name":…,"last":null|{"op":…,"ok":…,"error":…,"ms":…}}`.
-fn row_json(name: &str, last: Option<&Last>) -> String {
+/// `{"name":…,"running":null|{"op":…,"ms":…},"last":null|{"op":…,"ok":…,"error":…,"ms":…,"ago_ms":…}}`.
+fn row_json(name: &str, now: Option<Running>, last: Option<&Last>) -> String {
     let text = |s: &str| Value::from(s).to_string();
+    let now = now.map_or_else(|| "null".into(), |r| format!(r#"{{"op":"{}","ms":{}}}"#, r.op, r.started.elapsed().as_millis()));
     let last = last.map_or_else(
         || "null".into(),
         |l| {
             let error = l.error.as_deref().map_or_else(|| "null".into(), text);
-            let ok = l.error.is_none();
-            format!(r#"{{"op":"{}","ok":{ok},"error":{error},"ms":{}}}"#, l.op, l.took.as_millis())
+            let (ok, ago) = (l.error.is_none(), l.ended.elapsed().as_millis());
+            format!(r#"{{"op":"{}","ok":{ok},"error":{error},"ms":{},"ago_ms":{ago}}}"#, l.op, l.took.as_millis())
         },
     );
-    format!(r#"{{"name":{},"last":{last}}}"#, text(name))
+    format!(r#"{{"name":{},"running":{now},"last":{last}}}"#, text(name))
 }
 
 #[cfg(test)]

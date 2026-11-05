@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-use super::{Answer, Call, DEBOUNCE, EventKind, Inbox, Job, Last, Request, Shared, Spec, bit};
+use super::{Answer, Call, DEBOUNCE, EventKind, Inbox, Job, Last, Request, Running, Shared, Spec, bit};
 
 /// Take the first waiting event out of `waiting`.
 fn next_event(waiting: &AtomicU8) -> Option<EventKind> {
@@ -19,8 +19,17 @@ fn next_event(waiting: &AtomicU8) -> Option<EventKind> {
 
 /// Keep how call `op`, started at `started`, went.
 fn keep(shared: &Shared, op: &'static str, error: Option<&String>, started: Instant) {
-    let last = Last { op, error: error.cloned(), took: started.elapsed() };
+    let last = Last { op, error: error.cloned(), took: started.elapsed(), ended: Instant::now() };
     *shared.last.lock().unwrap_or_else(PoisonError::into_inner) = Some(last);
+}
+
+/// Run `call`, op `op` started at `started`, as the one `Worker::running` shows.
+fn running<T>(shared: &Shared, op: &'static str, started: Instant, call: impl FnOnce() -> T) -> T {
+    let set = |r| *shared.running.lock().unwrap_or_else(PoisonError::into_inner) = r;
+    set(Some(Running { op, started }));
+    let out = call();
+    set(None);
+    out
 }
 
 /// Run `ext`'s calls from `calls`, one at a time, until its `Worker` drops.
@@ -43,7 +52,7 @@ pub fn serve(ext: &Spec, job: Job, inbox: &Inbox, shared: &Shared, calls: &Recei
             Some(Call::Ext(request)) => (request, None),
             Some(Call::Raw(text, reply)) => {
                 let started = Instant::now();
-                let result = (job.raw)(ext, &text, &(job.socket)());
+                let result = running(shared, "call", started, || (job.raw)(ext, &text, &(job.socket)()));
                 keep(shared, "call", result.as_ref().err(), started);
                 let _ = reply.send(result);
                 continue;
@@ -79,7 +88,8 @@ pub fn serve(ext: &Spec, job: Job, inbox: &Inbox, shared: &Shared, calls: &Recei
             None => event && shared.sent.load(Ordering::SeqCst) != mark,
         };
         let started = Instant::now();
-        let ran = (!stale()).then(|| (job.run)(ext, &request, &(job.socket)(), &stale));
+        let call = || (job.run)(ext, &request, &(job.socket)(), &stale);
+        let ran = (!stale()).then(|| running(shared, request.op().name(), started, call));
         let Some(result) = ran.filter(|_| !stale()) else {
             // Superseded, or an event a user's call stopped: that event waits again.
             if let Request::Event(kind) = request {

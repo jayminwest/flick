@@ -294,15 +294,15 @@ Notifications need permission: macOS asks the first time Flick posts one.
 ## Command line
 
 ```bash
-flick ext ls                     # <name>\t<op>\tok|error\t<ms> ms[\t<error>]; <name>\t- before the first call
-flick --json ext ls              # [{"name":"hello","last":{"op":"root","ok":true,"error":null,"ms":41}}]
+flick ext ls                     # <name>\t<op>\tok|error\t<ms> ms\t<s> s ago[\t<error>]; <name>\t- before the first call
+flick --json ext ls              # [{"name":"hello","running":null,"last":{"op":"root","ok":true,"error":null,"ms":41,"ago_ms":3200}}]
 flick ext refresh hello          # send root again, and open for its view on the screen
 flick ext open hello greetings   # show view hello/greetings, as its hotkey does
 flick ext call hello '{"v":1,"op":"root"}'
 printf %s "$json" | flick ext call hello --stdin
 ```
 
-- `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, and the time from the spawn to the reply. It does not wait for a call that runs. A query that a newer one replaced does not count.
+- `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, the time from the spawn to the reply, and how long ago it ended. While a call runs, the line shows that one instead: `<name>\t<op>\trunning\t<ms> ms`, the time since its spawn (with `--json`, `running` is `{"op":…,"ms":…}` next to `last`). It does not wait for a call that runs. A query that a newer one replaced does not count.
 - `ext open` works like a press of a hotkey bound to the view, except that it only shows: if the launcher shows that view already, it stays (a second hotkey press hides it).
 - `ext call` is for debugging. It sends the text as it is (it must be a JSON object; Flick adds nothing) on the extension's worker, behind its other calls. It prints the program's stdout without checking it, so it shows a reply that Flick would refuse. A failed exit or a timeout is an error. The verb waits for the call's time (`timeout_ms`, at least 10 s) plus 60 s for the calls queued before it.
 - Over the network, a peer may send `ext ls`, but not `ext refresh`, `ext open` or `ext call`: a peer must not make this Mac spawn extensions, open the launcher on it, or run an extension with a request of its choosing.
@@ -385,7 +385,7 @@ Any language works the same way: read stdin to its end, parse one JSON object, p
 
 Unit tests cover the parser, the transport with a shell fixture (`tests/fixtures/ext-echo.sh`), the worker queue, the caches, actions, forms, queries and events with fake hooks. This checklist covers the real launcher, the HUD and notifications. Use the example above, on the installed Flick.app.
 
-- [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms`.
+- [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms	<s> s ago`.
 - [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
 - [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time leaves it on the screen.
 - [ ] **Actions.** In the view, ↵ on **Hello, World** runs **Greet**: the launcher stays, the footer shows `Greet…` and then `Hello from world`. Tab copies `Hello, World` and hides the launcher. ⌘K lists Greet, Copy and New Greeting….
@@ -393,7 +393,7 @@ Unit tests cover the parser, the transport with a shell fixture (`tests/fixtures
 - [ ] **Form.** ⌘K → **New Greeting…** opens the form (`Loading…` the first time). Type `Ada` and press ↵: `Saving…`, then root search with `Hello, Ada` in the footer.
 - [ ] **Form error.** Submit the name `error`: the form stays, `hello: that name is taken` shows under the field, and a toast shows the same. Change the name and submit again: it saves.
 - [ ] **Slow extension.** Set `argv = ["~/bin/hello-ext", "--slow"]` and reload. Open the launcher at once: it opens without delay and shows the cached items, and typing, ↑ ↓ and other modules work while the extension sleeps. Open **Greetings**: it shows its cached rows at once (or `Loading…` after a restart), and the new reply comes about 2 s later. Submit the form: `Saving…` shows for about 2 s, and the launcher keeps working.
-- [ ] **Timeout.** With `--slow`, set `timeout_ms = 500` and reload. Open the launcher: a notification says `hello: no reply in 500 ms; stopped`, and `flick ext ls` shows `hello	root	error	… ms	hello: no reply in 500 ms; stopped`. `pgrep -f hello-ext` finds no process left.
+- [ ] **Timeout.** With `--slow`, set `timeout_ms = 500` and reload. Open the launcher: a notification says `hello: no reply in 500 ms; stopped`, and `flick ext ls` shows `hello	root	error	… ms	… s ago	hello: no reply in 500 ms; stopped`. `pgrep -f hello-ext` finds no process left.
 - [ ] **Failed exit.** Set `argv = ["~/bin/hello-ext", "--crash"]` and reload. Open the launcher: a notification says `hello: crashed on purpose`. Open **Greetings** with its hotkey: the footer says the same, and no second notification shows.
 - [ ] **Form left while saving.** With `--slow`, submit the form and press Esc at once: about 2 s later a toast says `Hello, <name>`.
 - [ ] **Network.** From a peer: `flick --host my-macbook-pro ext ls` answers. `... ext open hello greetings` and `... ext call hello '{"v":1,"op":"root"}'` print `not allowed over the network` and exit 1.

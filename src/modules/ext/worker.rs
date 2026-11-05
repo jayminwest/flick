@@ -5,8 +5,9 @@
 //! the module went away), after the call it is running. An action's card `script` or
 //! `flick` runs on a thread of its own (`flick`), its answer in the same inbox.
 //!
-//! The worker keeps how its last call went (`Last`, for `ext ls`); the main thread copies
-//! it under a lock that is held only to copy or store it, never across a call. A raw call
+//! The worker keeps how its last call went (`Last`, for `ext ls`) and which call runs
+//! (`Running`); the main thread copies them under locks that are held only to copy or store
+//! them, never across a call. A raw call
 //! (`ext call`) runs in the same queue, its answer sent to the waiting verb, not the inbox.
 //!
 //! Queries (`op: query`, `op: keyword`) are numbered, newest wins: one waits `DEBOUNCE` after
@@ -109,6 +110,16 @@ pub struct Last {
     pub error: Option<String>,
     /// From the spawn to the parsed reply or the error.
     pub took: Duration,
+    /// When it ended.
+    pub ended: Instant,
+}
+
+/// The call a worker runs now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Running {
+    /// Its op, `call` for a raw call.
+    pub op: &'static str,
+    pub started: Instant,
 }
 
 /// How long a query waits after it was queued for a newer one (a keystroke).
@@ -134,6 +145,7 @@ fn bit(kind: EventKind) -> u8 {
 #[derive(Default)]
 struct Shared {
     last: Mutex<Option<Last>>,
+    running: Mutex<Option<Running>>,
     /// The number of the newest query; a query with another number is superseded.
     newest: AtomicU64,
     /// The events waiting to run, bit `i` for `EventKind::ALL[i]`.
@@ -173,6 +185,12 @@ impl Worker {
     /// How its last finished call went; `None` before the first.
     pub fn last(&self) -> Option<Last> {
         self.shared.last.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// The call its thread runs now, if any (none once the thread is gone).
+    pub fn running(&self) -> Option<Running> {
+        let running = *self.shared.running.lock().unwrap_or_else(PoisonError::into_inner);
+        running.filter(|_| self.alive())
     }
 
     pub fn spec(&self) -> &Spec {
@@ -391,15 +409,22 @@ mod tests {
         let inbox = Inbox::default();
         let job = Job { run: fake, socket, post: || {}, flick: no_flick, raw: echo };
         let w = Worker::start(spec(), job, inbox.clone()).unwrap();
+        assert_eq!(w.running(), None);
         assert!(w.query(query("slow")));
-        // Most likely running by now; either way only the newer one answers, and fast.
-        thread::sleep(DEBOUNCE * 3);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while w.running().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(w.running().map(|r| r.op), Some("query"));
+        // Only the newer one answers, and fast; then nothing runs.
         let started = Instant::now();
         assert!(w.query(query("b")));
         let got = wait(&inbox, 1);
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].request, query("b"));
+        assert_eq!(w.running(), None);
+        assert!(w.last().unwrap().ended >= started);
     }
 
     #[test]
@@ -460,7 +485,7 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(!w.send(Request::Root));
-        assert!(!w.alive());
+        assert!(!w.alive() && w.running().is_none());
         assert!(!w.event(EventKind::Wake) && !w.event(EventKind::Wake));
     }
 }
