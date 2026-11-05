@@ -100,6 +100,8 @@ pub enum Change {
     Deminimized(WinId),
     Moved(WinId),
     Resized(WinId),
+    /// A window's title changed (`AXTitleChanged`).
+    Retitled(WinId),
     /// A regular app launched; its windows follow as `Created`.
     Launched(i32),
     /// An app quit; its windows are gone from the cache.

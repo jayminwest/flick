@@ -3,7 +3,8 @@
 //! On each app thread: one `AXObserver` with the app notifications `AXWindowCreated`,
 //! `AXFocusedWindowChanged` and `AXMainWindowChanged`, and per window `AXUIElementDestroyed`,
 //! `AXWindowMiniaturized`, `AXWindowDeminiaturized`, `AXMoved` and `AXResized` (`AeroSpace`
-//! `MacApp.swift:70-72,435-439`). A window's notifications carry its id as their refcon.
+//! `MacApp.swift:70-72,435-439`), and `AXTitleChanged` so a title is fresh without waiting for
+//! another notification. A window's notifications carry its id as their refcon.
 //! The windows that exist when the thread starts come from one enumeration of `AXWindows`.
 //!
 //! On the main thread (`Global`): `NSWorkspace` launch, terminate, hide and unhide, and a
@@ -44,8 +45,10 @@ const MINIATURIZED: &str = "AXWindowMiniaturized";
 const DEMINIATURIZED: &str = "AXWindowDeminiaturized";
 const MOVED: &str = "AXMoved";
 const RESIZED: &str = "AXResized";
+const TITLE_CHANGED: &str = "AXTitleChanged";
 const APP_NOTES: [&str; 3] = [CREATED, FOCUSED, MAIN];
-const WINDOW_NOTES: [&str; 5] = [DESTROYED, MINIATURIZED, DEMINIATURIZED, MOVED, RESIZED];
+const WINDOW_NOTES: [&str; 6] =
+    [DESTROYED, MINIATURIZED, DEMINIATURIZED, MOVED, RESIZED, TITLE_CHANGED];
 
 /// Title-bar buttons of a window, by attribute.
 const FULLSCREEN_BUTTON: &str = "AXFullScreenButton";
@@ -86,6 +89,7 @@ enum Kind {
     Deminimized,
     Moved,
     Resized,
+    Retitled,
 }
 
 fn kind(name: &str) -> Option<Kind> {
@@ -97,6 +101,7 @@ fn kind(name: &str) -> Option<Kind> {
         DEMINIATURIZED => Kind::Deminimized,
         MOVED => Kind::Moved,
         RESIZED => Kind::Resized,
+        TITLE_CHANGED => Kind::Retitled,
         _ => return None,
     })
 }
@@ -250,6 +255,7 @@ impl Watched {
             (Kind::Deminimized, Some(id)) => (id, Change::Deminimized),
             (Kind::Moved, Some(id)) => (id, Change::Moved),
             (Kind::Resized, Some(id)) => (id, Change::Resized),
+            (Kind::Retitled, Some(id)) => (id, Change::Retitled),
             (_, None) => return,
         };
         if self.windows.contains_key(&id) {
@@ -438,7 +444,14 @@ mod tests {
         assert_eq!(kind(DEMINIATURIZED), Some(Kind::Deminimized));
         assert_eq!(kind(MOVED), Some(Kind::Moved));
         assert_eq!(kind(RESIZED), Some(Kind::Resized));
-        assert_eq!(kind("AXTitleChanged"), None);
+        assert_eq!(kind(TITLE_CHANGED), Some(Kind::Retitled));
+        assert_eq!(kind("AXValueChanged"), None);
+    }
+
+    #[test]
+    fn every_window_observes_its_title() {
+        assert!(WINDOW_NOTES.contains(&"AXTitleChanged"));
+        assert!(WINDOW_NOTES.iter().all(|n| kind(n).is_some()));
     }
 
     #[test]
