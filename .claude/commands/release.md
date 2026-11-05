@@ -99,7 +99,7 @@ CI runs this same script. A release must not tag a commit CI will reject.
 
 ## 8. Commit and tag
 
-- `sd sync` and `ml sync`, so the tracker state is committed.
+- `sd sync`, so the tracker state is committed.
 - Commit the version sites, CHANGELOG and docs:
   `git commit -m "chore(release): X.Y.Z"`. Let the pre-commit hook run.
 - Tag the release commit: `git tag -a vX.Y.Z -m "Flick X.Y.Z"`.
