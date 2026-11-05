@@ -43,10 +43,17 @@ pub struct Entry {
     /// Events sent to it (`op: event`), by `EventKind::name`.
     #[serde(default)]
     subscribe: Vec<String>,
+    /// It has root items: false never sends it `op: root` (nor spawns it for one).
+    #[serde(default = "root")]
+    root: bool,
 }
 
 fn timeout_ms() -> u64 {
     TIMEOUT_MS
+}
+
+fn root() -> bool {
+    true
 }
 
 /// A configured extension, ready to spawn.
@@ -61,6 +68,8 @@ pub struct Spec {
     pub keywords: Vec<String>,
     /// The events it gets, each once.
     pub subscribe: Vec<EventKind>,
+    /// It is asked for root items (`op: root`).
+    pub root: bool,
 }
 
 impl Spec {
@@ -119,7 +128,7 @@ pub fn read(settings: Settings, home: Option<&Path>) -> Result<Vec<Spec>, String
         let hotkeys = e.hotkeys.into_iter().filter(|(_, spec)| !spec.trim().is_empty()).collect();
         let argv = e.argv.into_iter().map(|a| expand(a, home)).collect();
         let timeout = Duration::from_millis(e.timeout_ms);
-        specs.push(Spec { name, argv, timeout, hotkeys, keywords: e.keywords, subscribe });
+        specs.push(Spec { name, argv, timeout, hotkeys, keywords: e.keywords, subscribe, root: e.root });
     }
     Ok(specs)
 }
@@ -146,7 +155,7 @@ mod tests {
         let text = "[[ext.extensions]]\nname = \"notes-2\"\nargv = [\"~/bin/notes\", \"--json\", \"~/n\", \"a~/b\"]\n\
                     [[ext.extensions]]\nname = \"gh\"\nargv = [\"/usr/bin/env\", \"gh-ext\"]\ntimeout_ms = 500\n\
                     hotkeys = { prs = \"cmd+KeyP\", issues = \" \" }\nkeywords = [\"pr\", \"is\"]\n\
-                    subscribe = [\"wake\", \"launcher_opened\", \"wake\"]";
+                    subscribe = [\"wake\", \"launcher_opened\", \"wake\"]\nroot = false";
         let got = specs(text).unwrap();
         assert_eq!(got[0].argv, ["/Users/me/bin/notes", "--json", "/Users/me/n", "a~/b"]);
         assert_eq!(got[0].timeout, Duration::from_millis(TIMEOUT_MS));
@@ -154,6 +163,7 @@ mod tests {
         assert!(got[0].hotkeys.is_empty() && got[0].keywords.is_empty());
         assert_eq!(got[1].keywords, ["pr", "is"]);
         assert!(got[0].subscribe.is_empty());
+        assert!(got[0].root && !got[1].root);
         assert_eq!(got[1].subscribe, [EventKind::Wake, EventKind::LauncherOpened]);
         assert_eq!(got[1].hotkeys, [("prs".to_string(), "cmd+KeyP".to_string())]);
         assert!(specs("").unwrap().is_empty());
@@ -164,7 +174,7 @@ mod tests {
 
     #[test]
     fn act_and_submit_get_at_least_ten_seconds() {
-        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![], keywords: vec![], subscribe: vec![] };
+        let spec = |ms| Spec { name: "x".into(), argv: vec![], timeout: Duration::from_millis(ms), hotkeys: vec![], keywords: vec![], subscribe: vec![], root: true };
         assert_eq!(spec(2000).budget(Op::Root), Duration::from_secs(2));
         assert_eq!(spec(2000).budget(Op::Act), LONG);
         assert_eq!(spec(2000).budget(Op::Submit), LONG);
