@@ -187,15 +187,43 @@ fn closed_windows_leave_their_workspace_and_their_row() {
         t.on_event(Event::Started, cx);
         run(t, cx, &["ws", "2"]).unwrap();
         set_windows(vec![win(2, PARK_X)]);
+        GONE.with(|g| g.borrow_mut().insert(1));
         changed(t, cx);
         assert_eq!(stored(cx), [2]);
         assert_eq!(t.spaces.of(1), None);
         // A closed window that comes back with the same id is new: parked, it is rescued.
+        GONE.with(|g| g.borrow_mut().clear());
         set_windows(vec![win(1, PARK_X), win(2, PARK_X)]);
         calls();
         changed(t, cx);
         assert_eq!(calls(), ["drain", "place 1"]);
         assert_eq!(x_of(1), Some(RESCUED.x));
+    });
+}
+
+#[test]
+fn a_parked_window_the_snapshot_loses_keeps_its_row_until_it_is_gone() {
+    with_tile(vec![win(1, 0.0), win(2, 300.0), win(3, 600.0)], |t, cx| {
+        t.on_event(Event::Started, cx);
+        run(t, cx, &["ws", "2"]).unwrap();
+        // winman stops reporting 1 and 2 (another Space, say); the window server still has both.
+        set_windows(vec![win(3, PARK_X)]);
+        calls();
+        changed(t, cx);
+        assert_eq!(calls(), ["drain"]);
+        assert_eq!(stored(cx), [1, 2, 3]);
+        // 1 comes back still parked: its old frame, not the centre, on the focused workspace.
+        set_windows(vec![win(1, PARK_X), win(3, PARK_X)]);
+        changed(t, cx);
+        assert_eq!(calls(), ["drain", "place 1"]);
+        assert_eq!(x_of(1), Some(0.0));
+        assert_eq!(stored(cx), [2, 3]);
+        assert_eq!(t.spaces.of(1), Some(1));
+        // 2 closes while unreported: its row goes.
+        GONE.with(|g| g.borrow_mut().insert(2));
+        changed(t, cx);
+        assert_eq!(calls(), ["drain"]);
+        assert_eq!(stored(cx), [3]);
     });
 }
 

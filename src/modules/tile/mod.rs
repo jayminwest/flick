@@ -8,8 +8,10 @@
 //! `tile_hidden` (`store`) before it is parked and leaves once it is back. Quit (menu, `quit`,
 //! SIGTERM) and a reload that turns tile off put every parked window back. After a `kill -9`,
 //! `Started` keeps the rows whose window still exists and puts each back as winman reports
-//! it; any other window that turns up parked at a corner is centred on its screen. Real
-//! platform calls sit behind `wire::Hooks`.
+//! it; any other window that turns up parked at a corner is centred on its screen. A parked
+//! window that winman's snapshot loses but the window server still has keeps its row the same
+//! way, and goes back to its old frame when it returns. Real platform calls sit behind
+//! `wire::Hooks`.
 //!
 //! Pure cores for the next steps, not wired in yet (flick-ac1d): the split tree of a workspace
 //! (`tree`) and the frames it gives its windows (`layout`), workspaces and screen pins
@@ -78,7 +80,8 @@ pub struct Tile {
     running: bool,
     /// flick.db's path, for `Drop`; None for an in-memory store.
     db: Option<String>,
-    /// Windows this run parked, by id, as in `tile_hidden`.
+    /// Windows this run parked, by id, as in `tile_hidden`; some may be missing from the
+    /// snapshot for a while.
     parked: BTreeMap<WinId, Parked>,
     /// Rows a killed Flick left whose window still exists but winman has not reported yet.
     leftover: BTreeMap<WinId, Parked>,
@@ -166,13 +169,16 @@ impl Tile {
         for id in self.seen.iter().copied().filter(|id| !live.contains(id)).collect::<Vec<_>>() {
             self.seen.remove(&id);
             self.spaces.remove(id);
-            forget.extend(self.parked.remove(&id).map(|r| r.id));
         }
+        // The snapshot can miss a window for a while (AXWindows leaves out other Spaces'): a
+        // parked one keeps its row, like a leftover one, until it is back or really gone.
         let exists = self.hooks.exists;
-        let closed: Vec<WinId> =
-            self.leftover.keys().copied().filter(|id| !live.contains(id) && !exists(*id)).collect();
+        let mut closed: Vec<WinId> = self.leftover.keys().copied().collect();
+        closed.extend(self.parked.keys());
+        closed.retain(|id| !live.contains(id) && !exists(*id));
         for id in closed {
             self.leftover.remove(&id);
+            self.parked.remove(&id);
             forget.push(id);
         }
         let mut moves = vec![];
@@ -180,7 +186,7 @@ impl Tile {
             if !self.seen.insert(w.id) {
                 continue;
             }
-            if let Some(row) = self.leftover.remove(&w.id) {
+            if let Some(row) = self.leftover.remove(&w.id).or_else(|| self.parked.remove(&w.id)) {
                 moves.push((w.id, row.frame));
                 forget.push(w.id);
             } else if let Some(frame) = (self.hooks.stray)(w.frame) {
