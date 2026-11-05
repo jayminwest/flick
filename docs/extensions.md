@@ -303,7 +303,7 @@ printf %s "$json" | flick ext call hello --stdin
 - `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, and the time from the spawn to the reply. It does not wait for a call that runs. A query that a newer one replaced does not count.
 - `ext open` works like a press of a hotkey bound to the view, except that it only shows: if the launcher shows that view already, it stays (a second hotkey press hides it).
 - `ext call` is for debugging. It sends the text as it is (it must be a JSON object; Flick adds nothing) on the extension's worker, behind its other calls. It prints the program's stdout without checking it, so it shows a reply that Flick would refuse. A failed exit or a timeout is an error. The verb waits at most 60 s.
-- Over the network, a peer may send `ext ls` and `ext refresh`, but not `ext open` or `ext call`: a peer must not open the launcher on this Mac or run an extension with a request of its choosing.
+- Over the network, a peer may send `ext ls`, but not `ext refresh`, `ext open` or `ext call`: a peer must not make this Mac spawn extensions, open the launcher on it, or run an extension with a request of its choosing.
 
 ## Example extension
 

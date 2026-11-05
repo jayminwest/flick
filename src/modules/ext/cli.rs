@@ -10,8 +10,9 @@
 //!   the answer is the extension's stdout, unparsed, once it exits (`core::later`): a reply
 //!   `proto` would refuse still shows. With `--json` a reply that is JSON is sent as JSON.
 //!
-//! `ext open` and `ext call` are in `NET_DENIED`: a peer must not pop the launcher on this
-//! Mac or make it run an extension with a request of its choosing.
+//! `ext refresh`, `ext open` and `ext call` are in `NET_DENIED`: a peer must not make this
+//! Mac spawn extension processes, pop the launcher on it, or run an extension with a request
+//! of its choosing.
 
 use serde_json::Value;
 

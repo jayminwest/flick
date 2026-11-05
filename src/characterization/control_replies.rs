@@ -225,7 +225,10 @@ fn network_callers_are_refused_side_effecting_requests() {
         (&["sys", "window"], "sys window"),
         (&["sys", "window", "--snapshot", "/tmp/x.png"], "sys window"),
         // Extensions (flick-f594): a peer must not pop the launcher on a view or make this
-        // Mac run an extension with a request of its choosing.
+        // Mac run an extension with a request of its choosing. Nor spawn the extensions at
+        // all (flick-96d6): unlike `kota refresh`, `ext refresh` has no rate limit.
+        (&["ext", "refresh", "todo"], "ext refresh"),
+        (&["ext", "refresh"], "ext refresh"),
         (&["ext", "open", "todo", "inbox"], "ext open"),
         (&["ext", "call", "todo", "{\"op\":\"root\"}"], "ext call"),
         (&["ext", "call"], "ext call"),
@@ -407,17 +410,13 @@ fn peers_may_read_kota_presence() {
 }
 
 #[test]
-fn peers_may_list_and_refresh_extensions() {
-    // `ext ls` reads what the workers recorded and `ext refresh` asks the configured
-    // extensions again, as a launcher open does (flick-f594); only `open` and `call` are
-    // denied.
-    for verb in ["ls", "refresh"] {
-        assert_eq!(net_policy(&["ext", verb].map(String::from)), Ok(()), "{verb}");
-    }
+fn peers_may_list_extensions() {
+    // `ext ls` reads what the workers recorded and spawns nothing (flick-f594); every other
+    // ext verb is denied (flick-96d6).
+    assert_eq!(net_policy(&["ext", "ls"].map(String::from)), Ok(()));
     assert_eq!(
         net_reply(&["ext", "ls"]),
         r#"{"ok":"ext: no extensions (add [[ext.extensions]] to config.toml)"}"#
     );
     assert_eq!(net_reply(&["ext", "ls", "--json"]), r#"{"ok":[]}"#);
-    assert_eq!(net_reply(&["ext", "refresh", "todo"]), r#"{"error":"ext: no extension \"todo\""}"#);
 }
