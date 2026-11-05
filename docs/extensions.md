@@ -253,7 +253,7 @@ Each query starts a new process. An interpreted program (Python, Node, Bun) can 
 | `unlocked` | the screen unlocked. |
 | `launcher_opened` | the launcher opened on root search (not on a hotkey view). |
 
-Events are fire-and-forget. Flick ignores the reply, and logs a failed event call. An event waits behind every other call of that extension: it runs only when no other call is queued, so a user's action or search waits at most for the event that runs already. Events coalesce per kind: while one of a kind waits, another of that kind is dropped.
+Events are fire-and-forget. Flick ignores the reply, and logs a failed event call. An event waits behind every other call of that extension: it runs only when no other call is queued, and a user's action, search or `ext call` queued while one runs kills it, so they never wait for an event. A killed event runs again from the start once no other call is queued. Events coalesce per kind: while one of a kind waits, another of that kind is dropped.
 
 ## Errors
 

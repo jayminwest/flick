@@ -1,7 +1,7 @@
 //! One call to an extension: spawn its argv (no shell) in its own process group, write the
 //! request to stdin, read one reply from stdout, wait for exit 0. Past the call's budget the
-//! group is killed, and so it is when `stop` says a newer query came (newest wins). Only
-//! the extension's worker thread calls this.
+//! group is killed, and so it is when `stop` says a newer query came (newest wins) or, for
+//! an event, a user's call. Only the extension's worker thread calls this.
 //!
 //! The child gets `FLICK_EXT` (its name), `FLICK_SOCKET` (this Flick's control socket, for
 //! `flick ...` calls back) and `FLICK_VERSION`, and `FLICK_HOST` removed so the CLI talks to
@@ -30,7 +30,7 @@ pub const FLICK_BUDGET: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(10);
 /// Bytes of stderr kept, from the end: enough for the last line.
 const TAIL: usize = 4096;
-/// The error of a call killed because a newer query came; never shown.
+/// The error of a call killed by `stop` (a newer query came); never shown.
 pub const STOPPED: &str = "a newer query came; stopped";
 /// How long to wait for the pipes after exit; a grandchild may hold them open.
 const DRAIN: Duration = Duration::from_secs(1);
