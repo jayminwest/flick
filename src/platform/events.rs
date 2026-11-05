@@ -191,7 +191,7 @@ fn observe_with(center: &NSNotificationCenter, name: &NSNotificationName, f: imp
 }
 
 /// The pid of the app a workspace notification is about (its `NSWorkspaceApplicationKey`).
-fn app_pid(note: &NSNotification) -> Option<i32> {
+pub(super) fn app_pid(note: &NSNotification) -> Option<i32> {
     // SAFETY: an immutable framework constant, set at load time.
     let key = unsafe { NSWorkspaceApplicationKey };
     let app = note.userInfo()?.objectForKey(key)?;
