@@ -101,7 +101,7 @@ A reply to `root`, `query` and `keyword` is `{"items": [ … ]}`. A view has `it
 | `actions` | See [Actions](#actions). Without `actions`, the item gets one action: `{"key": "open", "title": "Open"}` (`do: ext`, `after: hide`). A list with no valid action skips the item. |
 | `tab` | The key of the action that Tab runs. A key that names no action is ignored. |
 
-Enter runs the first action, ⌘K lists all of them, and Tab runs the one `tab` names. The row shows the first action's title as its verb.
+Enter runs the first action, ⌘K lists all of them, and Tab runs the one `tab` names. The row shows the first action's title as its verb. A view's footer names Tab after its title, `⇥ <action title>`, or `⇥ Action` when its items' Tab actions have different titles.
 
 An item's id is `ext:<name>/<key>`. Flick counts its use for ranking by that id, so keep a key stable while the item is the same thing.
 
@@ -386,7 +386,7 @@ Any language works the same way: read stdin to its end, parse one JSON object, p
 Unit tests cover the parser, the transport with a shell fixture (`tests/fixtures/ext-echo.sh`), the worker queue, the caches, actions, forms, queries and events with fake hooks. This checklist covers the real launcher, the HUD and notifications. Use the example above, on the installed Flick.app.
 
 - [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms	<s> s ago`.
-- [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
+- [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings  ·  ⇥ Copy`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
 - [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time leaves it on the screen.
 - [ ] **Actions.** In the view, ↵ on **Hello, World** runs **Greet**: the launcher stays, the footer shows `Greet…` and then `Hello from world`. Tab copies `Hello, World` and hides the launcher. ⌘K lists Greet, Copy and New Greeting….
 - [ ] **Toast.** Type `hi Ada` in root search: **Hello, Ada** shows above the ranked results. ↵ runs **Greet**: a `hello` card in the top right says `Hello from typed` and goes away after about 6 s.

@@ -63,8 +63,8 @@ pub fn by_use(items: Vec<Item>, usage: &Usage, now: i64) -> Vec<Item> {
 /// Fill `view` of extension `ext` for `cx.query` from `cached`. A `filter: "flick"` view is
 /// ranked here, by fuzzy score plus frecency; an `"ext"` one shows `found` (the answer to
 /// its query) or else its own items, in the extension's order with the used ones first
-/// (`by_use`). The footer is `error` (the view's last failed call), else the view's title;
-/// the placeholder follows the answer.
+/// (`by_use`). The footer is `error` (the view's last failed call), else the view's title
+/// and, when its items have a Tab action, `⇥ <action>`; the placeholder follows the answer.
 pub fn fill(
     view: &mut ListView,
     ext: &str,
@@ -82,6 +82,9 @@ pub fn fill(
         return;
     };
     let list = if cached.filter == Filter::Ext { found.unwrap_or(&cached.items) } else { &cached.items };
+    if let (None, Some(hint)) = (error, tab_hint(list)) {
+        view.footer = format!("{}  ·  {hint}", view.footer);
+    }
     let items: Vec<Item> = list.iter().map(|e| item(ext, e)).collect();
     let (usage, now) = (cx.store.usage(), store::now());
     view.items = match cached.filter {
@@ -89,6 +92,17 @@ pub fn fill(
         // The extension filtered them (`op: query`).
         Filter::Ext => by_use(items, &usage, now),
     };
+}
+
+/// What Tab does on `items`: `⇥ <title>` of the action their `tab` names when they agree,
+/// `⇥ Action` when they differ; None when no item has one.
+fn tab_hint(items: &[ExtItem]) -> Option<String> {
+    let mut titles = items.iter().filter_map(|e| {
+        let key = e.tab.as_ref()?;
+        e.actions.iter().find(|a| &a.key == key).map(|a| a.title.as_str())
+    });
+    let first = titles.next()?;
+    Some(format!("⇥ {}", if titles.all(|t| t == first) { first } else { "Action" }))
 }
 
 #[cfg(test)]
@@ -126,6 +140,24 @@ mod tests {
         assert_eq!(got[0].tab, Tab::act("copy"));
         let none = ExtItem { actions: vec![], ..items(json)[1].clone() };
         assert_eq!(item("x", &none).verb, "Open");
+    }
+
+    #[test]
+    fn the_footer_names_what_tab_does_unless_an_error_shows() {
+        let json = r#"{"items": [{"key": "a", "title": "A", "tab": "copy",
+            "actions": [{"key": "open", "title": "Open"}, {"key": "copy", "title": "Copy"}]},
+            {"key": "b", "title": "B"}, {"key": "c", "title": "C", "tab": "copy",
+            "actions": [{"key": "copy", "title": "Copy"}]}]}"#;
+        let notes = View { items: items(json), ..view(Filter::Flick) };
+        let mut v = list("notes/inbox", "notes", None);
+        test_cx("", |cx| fill(&mut v, "notes", Some(&notes), None, None, cx));
+        assert_eq!(v.footer, "Notes  ·  ⇥ Copy");
+        test_cx("", |cx| fill(&mut v, "notes", Some(&notes), None, Some("notes: boom"), cx));
+        assert_eq!(v.footer, "notes: boom");
+        let mut mixed = items(json);
+        mixed[2].actions[0].title = "Paste".into();
+        assert_eq!(tab_hint(&mixed).as_deref(), Some("⇥ Action"));
+        assert_eq!(tab_hint(&mixed[1..2]), None);
     }
 
     #[test]
