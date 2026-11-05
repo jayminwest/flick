@@ -192,13 +192,13 @@ impl Tree {
         })
     }
 
-    /// Add `win` right after `focused` in its container, or at the end of the root when
-    /// `focused` is `None` or not in the tree. False when `win` is already in the tree.
-    pub fn insert(&mut self, win: WinId, focused: Option<WinId>) -> bool {
+    /// Add `win` right after the window focused last, in its container, or at the end of the
+    /// root when none has been. False when `win` is already in the tree.
+    pub fn insert(&mut self, win: WinId) -> bool {
         if self.contains(win) {
             return false;
         }
-        let at = focused.and_then(|f| self.path(f)).and_then(|p| {
+        let at = self.recent.first().and_then(|&f| self.path(f)).and_then(|p| {
             let (i, parent) = p.split_last()?;
             Some((parent.to_vec(), i + 1))
         });

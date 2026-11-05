@@ -134,20 +134,24 @@ fn reads_paths_containers_and_windows() {
 }
 
 #[test]
-fn insert_goes_after_the_focused_window_at_the_mean_weight() {
+fn insert_goes_after_the_window_focused_last_at_the_mean_weight() {
     let mut t = Tree::default();
-    assert!(t.insert(1, None));
-    assert!(t.insert(2, Some(1)));
-    assert!(t.insert(3, Some(1)));
-    assert_eq!(shape(&t), "h[1 3 2]");
-    assert!(!t.insert(3, None));
+    assert!(t.insert(1));
+    assert!(t.insert(2), "none focused yet: the end of the root");
+    assert_eq!(shape(&t), "h[1 2]");
+    t.focus(1);
+    assert!(t.insert(3));
+    assert_eq!(shape(&t), "h[1 3 2]", "the new window does not take the focus");
+    assert!(!t.insert(3));
     let mut t =
         tree(Orientation::H, vec![win(1), v(vec![weighted(1.0, win(2)), weighted(3.0, win(3))])]);
-    t.insert(4, Some(2));
+    t.focus(2);
+    t.insert(4);
     assert_eq!(shape(&t), "h[1 v[2 4 3]]");
     assert!(close(&weights(t.container(&[1]).unwrap()), &[1.0, 2.0, 3.0]));
-    t.insert(5, Some(9));
-    assert_eq!(shape(&t), "h[1 v[2 4 3] 5]");
+    t.remove(2);
+    t.insert(5);
+    assert_eq!(shape(&t), "h[1 v[4 3] 5]", "the focused window gone: the end of the root");
 }
 
 #[test]
@@ -339,7 +343,7 @@ fn random_op(t: &mut Tree, rng: &mut Rng, accordion: bool) {
     }
     let delta = rng.below(400) as i32 - 200;
     let _ = match rng.below(12) {
-        0..=3 => t.insert(a, focused),
+        0..=3 => t.insert(a),
         4 => t.remove(a),
         5 => t.swap(a, b),
         6 | 7 => t.join(a, rng.orientation(), rng.below(2) == 0),
