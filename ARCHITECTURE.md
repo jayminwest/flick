@@ -216,8 +216,9 @@ Sources:
 - `platform::winman` observes every regular app, beside `axwatch` (which stays as is for
   `activity`): on each app's own thread one AX observer with `AXWindowCreated`,
   `AXFocusedWindowChanged` and `AXMainWindowChanged`, and per window `AXUIElementDestroyed`,
-  `AXWindowMiniaturized`, `AXWindowDeminiaturized`, `AXMoved` and `AXResized`; windows that
-  exist when a thread starts come from one `AXWindows` enumeration. On the main thread,
+  `AXWindowMiniaturized`, `AXWindowDeminiaturized`, `AXMoved`, `AXResized` and `AXTitleChanged`
+  (`Change::Retitled`, so a cached title is fresh without waiting for another notification);
+  windows that exist when a thread starts come from one `AXWindows` enumeration. On the main thread,
   `NSWorkspace` launch, terminate, hide and unhide start and end app threads, and a global
   left-mouse-up monitor queues `Change::MouseUp` and rescans every app, because
   `AXUIElementDestroyed` does not always come. Nothing is installed before `start`. Callbacks
