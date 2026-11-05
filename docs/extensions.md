@@ -233,9 +233,9 @@ Text never holds control characters (see [Errors](#errors)). One in a top-level 
 
 ## Search
 
-**`"filter": "ext"` views.** Each keystroke sends `op: query` with the search text. The view shows the items of the reply in the extension's order; Flick does not rank them. Until the reply comes, the view keeps the last answer to a query of that view, else the `open` items. An empty search text sends no query and shows the `open` items.
+**`"filter": "ext"` views.** Each keystroke sends `op: query` with the search text. The view shows the items of the reply in the extension's order, except that items you used before come first, most used and most recent first; Flick does not filter them. Until the reply comes, the view keeps the last answer to a query of that view, else the `open` items. An empty search text sends no query and shows the `open` items.
 
-**Keywords.** `<keyword> <text>` in root search, with a word from the extension's `keywords` and text that is not blank, sends `op: keyword` with the text trimmed. The reply's items show above the ranked results. Until the reply comes, the last answer for that keyword shows, but never one from before the launcher opened.
+**Keywords.** `<keyword> <text>` in root search, with a word from the extension's `keywords` and text that is not blank, sends `op: keyword` with the text trimmed. The reply's items show above the ranked results, in the same order as in an `ext` view. Until the reply comes, the last answer for that keyword shows, but never one from before the launcher opened.
 
 **Newest wins.** A query waits 60 ms on the worker before it runs, and runs only if no newer query came. A newer query kills the process that answers an older one. An empty search text, another screen or a config reload stops the query that runs. Only the reply to the newest query shows.
 

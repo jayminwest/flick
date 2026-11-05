@@ -5,7 +5,7 @@
 use super::proto::item::ExtItem;
 use super::proto::{Filter, View};
 use crate::core::store;
-use crate::core::{Cx, Icon, Item, ItemId, ListView, Tab, frecency};
+use crate::core::{Cx, Icon, Item, ItemId, ListView, Tab, Usage, frecency};
 
 /// The icon of an item that names none.
 pub const ICON: &str = "puzzlepiece.extension";
@@ -52,10 +52,19 @@ pub fn list(name: &str, ext: &str, cached: Option<&View>) -> ListView {
     }
 }
 
+/// `items` of a list the extension ordered (keyword rows, a `filter: "ext"` view): the used
+/// ones first, by frecency; the rest, and ties, keep the extension's order.
+pub fn by_use(items: Vec<Item>, usage: &Usage, now: i64) -> Vec<Item> {
+    let mut scored: Vec<(f64, Item)> = items.into_iter().map(|i| (frecency(usage, i.id.as_str(), now), i)).collect();
+    scored.sort_by(|(a, _), (b, _)| b.total_cmp(a));
+    scored.into_iter().map(|(_, i)| i).collect()
+}
+
 /// Fill `view` of extension `ext` for `cx.query` from `cached`. A `filter: "flick"` view is
 /// ranked here, by fuzzy score plus frecency; an `"ext"` one shows `found` (the answer to
-/// its query) or else its own items, in the extension's order. The footer is `error` (the
-/// view's last failed call), else the view's title; the placeholder follows the answer.
+/// its query) or else its own items, in the extension's order with the used ones first
+/// (`by_use`). The footer is `error` (the view's last failed call), else the view's title;
+/// the placeholder follows the answer.
 pub fn fill(
     view: &mut ListView,
     ext: &str,
@@ -74,13 +83,11 @@ pub fn fill(
     };
     let list = if cached.filter == Filter::Ext { found.unwrap_or(&cached.items) } else { &cached.items };
     let items: Vec<Item> = list.iter().map(|e| item(ext, e)).collect();
+    let (usage, now) = (cx.store.usage(), store::now());
     view.items = match cached.filter {
-        Filter::Flick => {
-            let (usage, now) = (cx.store.usage(), store::now());
-            cx.ranker.rank(cx.query, items, |i| frecency(&usage, i.id.as_str(), now))
-        }
+        Filter::Flick => cx.ranker.rank(cx.query, items, |i| frecency(&usage, i.id.as_str(), now)),
         // The extension filtered them (`op: query`).
-        Filter::Ext => items,
+        Filter::Ext => by_use(items, &usage, now),
     };
 }
 
@@ -152,6 +159,17 @@ mod tests {
         let unnamed = View { placeholder: None, ..view(Filter::Flick) };
         test_cx("", |cx| fill(&mut v, "notes", Some(&unnamed), None, None, cx));
         assert_eq!(v.placeholder, "Search notes…");
+    }
+
+    #[test]
+    fn by_use_puts_the_most_used_first_and_keeps_the_order_of_the_rest() {
+        let json = r#"{"items": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"},
+            {"key": "c", "title": "C"}, {"key": "d", "title": "D"}]}"#;
+        let list: Vec<Item> = items(json).iter().map(|e| item("notes", e)).collect();
+        let usage: Usage = [("ext:notes/c".to_string(), (1, 0)), ("ext:notes/d".to_string(), (5, 0))].into();
+        let got = by_use(list, &usage, 0);
+        let got: Vec<&str> = got.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(got, ["D", "C", "A", "B"]);
     }
 
     #[test]
