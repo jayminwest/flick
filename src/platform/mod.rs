@@ -4,7 +4,8 @@
 //!
 //! `AppKit` runs on the main thread, and so does every function here except
 //! `browser::front_tab_url`, which blocks on another app and runs on a worker thread, and
-//! `host::local_host_name`, which runs anywhere.
+//! `host::local_host_name`, which runs anywhere. `winman` is called on the main thread but
+//! makes its AX calls on one thread per app, and calls its `on_change` from any thread.
 
 pub mod app;
 pub mod ax;
@@ -33,6 +34,7 @@ pub mod spaces;
 pub mod status_item;
 pub mod surface;
 pub mod timer;
+pub mod winman;
 pub mod workspace;
 
 use objc2::MainThreadMarker;

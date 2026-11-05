@@ -4,9 +4,9 @@
 //!
 //! Config: each module reads its own `[<module id>]` table in `Module::configure`, into a
 //! settings type private to the module. `enabled = false` in that table leaves the module
-//! out of the registry, so it adds no items, views or hotkeys. The `OPT_IN` modules (KOTA and
-//! the local models) are left out too unless their table sets a key (`Section::is_set`): a Mac
-//! that never names them runs none of their code.
+//! out of the registry, so it adds no items, views or hotkeys. The `OPT_IN` modules (KOTA,
+//! the local models and tile) are left out too unless their table sets a key
+//! (`Section::is_set`): a Mac that never names them runs none of their code.
 
 use crate::config::{Config, Section};
 use crate::core::{Module, Registry};
@@ -62,13 +62,14 @@ modules! {
         mod feedback => "feedback", feedback::Feedback::default;
         mod message => "message", message::Inbox::default;
         mod remote => "remote", || remote::Remote::new(crate::control::net::HOOKS);
+        mod tile => "tile", tile::Tile::default;
         mod help => "help", || help::Help::new(opt_in_off(config));
     }
 }
 
-/// Modules registered only when their table sets a key: they talk to KOTA or run models,
-/// which a Mac must ask for (flick-0c67).
-pub const OPT_IN: [&str; 3] = ["kota", "llm", "dictation"];
+/// Modules registered only when their table sets a key: they talk to KOTA, run models or
+/// move every window, which a Mac must ask for (flick-0c67).
+pub const OPT_IN: [&str; 4] = ["kota", "llm", "dictation", "tile"];
 
 /// The `OPT_IN` modules `config` leaves out, as `Modules::add` decides.
 fn opt_in_off(config: &Config) -> Vec<&'static str> {
@@ -238,6 +239,7 @@ pub fn opt_in_config() -> String {
     let on = |id: &str| match id {
         "kota" => "[kota]\nmachine = \"m\"\ncwd = \"/k\"\ndash = \"http://m:1\"\npoll_secs = 0",
         "llm" => "[llm]\nhistory = true",
+        "tile" => "[tile]\nworkspaces = 8",
         _ => "[dictation]\nengine = \"whisper\"",
     };
     OPT_IN.map(on).join("\n")

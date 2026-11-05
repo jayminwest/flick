@@ -538,6 +538,16 @@
 # Let peers stream events ("flick --host <mac> events").
 #events = false
 
+# --- tile: Flick's tiling window manager (spike: workspaces only, no tiling yet). Off until
+# this table sets at least one key. Workspaces are lists of windows; new windows join the
+# focused one. "flick tile ws <n>" shows workspace n and parks the other windows at a screen
+# corner; "flick tile ls [--json]" lists windows by workspace; "flick tile restore" puts every
+# parked window back. Quit and SIGTERM put them back too, and a start after a crash does.
+# Peers may not use ws or restore. Needs Accessibility permission.
+#[tile]
+# Workspaces 1 to this (at most 9).
+#workspaces = 8
+
 # --- help: "Flick Help" lists each feature with a one-line how-to and opens its docs. No
 # settings.
 #[help]

@@ -169,11 +169,11 @@ pub fn selected_text(pid: i32) -> Option<String> {
 /// How long one AX message to another app may take while reading summon context.
 const SUMMON_TIMEOUT: f32 = 0.2;
 
-fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
+fn get_value<T: Default>(el: CFTypeRef, attr: &str, kind: u32) -> Option<T> {
     let attr = NSString::from_str(attr);
     let mut value: CFTypeRef = ptr::null();
     // SAFETY: live element and attribute; `value` receives a +1 reference on success.
-    if unsafe { AXUIElementCopyAttributeValue(win.0, cfstr(&attr), &mut value) } != 0
+    if unsafe { AXUIElementCopyAttributeValue(el, cfstr(&attr), &mut value) } != 0
         || value.is_null()
     {
         return None;
@@ -184,28 +184,48 @@ fn get_value<T: Default>(win: &Cf, attr: &str, kind: u32) -> Option<T> {
     unsafe { AXValueGetValue(value.0, kind, &mut out as *mut T as *mut c_void) }.then_some(out)
 }
 
-fn set_value<T>(win: &Cf, attr: &str, kind: u32, v: &T) {
+fn set_value<T>(el: CFTypeRef, attr: &str, kind: u32, v: &T) {
     let attr = NSString::from_str(attr);
     // SAFETY: callers pass the `T` (CGPoint or CGSize) that matches `kind`; +1 result.
     let value = Cf(unsafe { AXValueCreate(kind, v as *const T as *const c_void) });
     // SAFETY: element, attribute and value are live CF objects for the whole call.
-    unsafe { AXUIElementSetAttributeValue(win.0, cfstr(&attr), value.0) };
+    unsafe { AXUIElementSetAttributeValue(el, cfstr(&attr), value.0) };
+}
+
+/// The frame (`AXPosition`, `AXSize`) of window element `el`.
+pub(super) fn frame(el: CFTypeRef) -> Option<Rect> {
+    let p: NSPoint = get_value(el, "AXPosition", AX_VALUE_CGPOINT)?;
+    let s: NSSize = get_value(el, "AXSize", AX_VALUE_CGSIZE)?;
+    Some(Rect { x: p.x, y: p.y, w: s.width, h: s.height })
+}
+
+/// Set `AXPosition` of window element `el`.
+pub(super) fn set_position(el: CFTypeRef, x: f64, y: f64) {
+    set_value(el, "AXPosition", AX_VALUE_CGPOINT, &NSPoint::new(x, y));
+}
+
+/// Set `AXSize` of window element `el`.
+pub(super) fn set_size(el: CFTypeRef, w: f64, h: f64) {
+    set_value(el, "AXSize", AX_VALUE_CGSIZE, &NSSize::new(w, h));
+}
+
+/// Perform AX action `action` (`AXRaise`, `AXPress`) on `el`. False if it failed.
+pub(super) fn perform(el: CFTypeRef, action: &str) -> bool {
+    let action = NSString::from_str(action);
+    // SAFETY: element and action name are live CF objects for the whole call.
+    unsafe { AXUIElementPerformAction(el, cfstr(&action)) == 0 }
 }
 
 impl FocusedWindow {
     pub fn frame(&self) -> Option<Rect> {
-        let p: NSPoint = get_value(&self.0, "AXPosition", AX_VALUE_CGPOINT)?;
-        let s: NSSize = get_value(&self.0, "AXSize", AX_VALUE_CGSIZE)?;
-        Some(Rect { x: p.x, y: p.y, w: s.width, h: s.height })
+        frame(self.0.0)
     }
 
     pub fn set_frame(&self, r: Rect) {
-        let pos = NSPoint::new(r.x, r.y);
-        let size = NSSize::new(r.w, r.h);
         // Position, size, position: moving across screens can clamp the size otherwise.
-        set_value(&self.0, "AXPosition", AX_VALUE_CGPOINT, &pos);
-        set_value(&self.0, "AXSize", AX_VALUE_CGSIZE, &size);
-        set_value(&self.0, "AXPosition", AX_VALUE_CGPOINT, &pos);
+        set_position(self.0.0, r.x, r.y);
+        set_size(self.0.0, r.w, r.h);
+        set_position(self.0.0, r.x, r.y);
     }
 
     pub fn minimize(&self) {
@@ -235,15 +255,15 @@ pub(super) fn copy_attr(el: CFTypeRef, attr: &str) -> Option<Retained<AnyObject>
     unsafe { Retained::from_raw(value as *mut AnyObject) }
 }
 
-fn string_attr(el: CFTypeRef, attr: &str) -> Option<String> {
+pub(super) fn string_attr(el: CFTypeRef, attr: &str) -> Option<String> {
     copy_attr(el, attr)?.downcast::<NSString>().ok().map(|s| s.to_string())
 }
 
-fn bool_attr(el: CFTypeRef, attr: &str) -> bool {
+pub(super) fn bool_attr(el: CFTypeRef, attr: &str) -> bool {
     copy_attr(el, attr).and_then(|v| v.downcast::<NSNumber>().ok()).is_some_and(|n| n.boolValue())
 }
 
-fn set_bool_attr(el: CFTypeRef, attr: &str, value: bool) {
+pub(super) fn set_bool_attr(el: CFTypeRef, attr: &str, value: bool) {
     let attr = NSString::from_str(attr);
     let value = NSNumber::new_bool(value);
     // SAFETY: element, attribute and value are live CF objects for the whole call.
@@ -289,9 +309,7 @@ pub fn focus(pid: i32, window: Option<&AxWindow>, minimized: bool) {
     if minimized {
         set_bool_attr(el, "AXMinimized", false);
     }
-    let raise = NSString::from_str("AXRaise");
-    // SAFETY: element and action name are live CF objects for the whole call.
-    unsafe { AXUIElementPerformAction(el, cfstr(&raise)) };
+    perform(el, "AXRaise");
     set_bool_attr(el, "AXMain", true);
     if !make_frontmost(pid) {
         super::workspace::open_running(&app);
