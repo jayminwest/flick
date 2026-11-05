@@ -139,9 +139,10 @@ pub fn peer_matches(names: &[String], peers: &[String]) -> bool {
 /// run code, take the keyboard (`message chat`), start the microphone, make this Mac ssh
 /// (`kota ask`, `message ask`) or send
 /// requests to model servers (`llm`, any verb), restart services or read logs (`sys restart`,
-/// `sys tail`), pop a key window (`sys window`), pop the launcher or run an extension with a
-/// request of the caller's choosing (`ext open`, `ext call`), read the screen, write files or delete data
-/// that cannot come back (`task rm` drops the task's tracked time). Review this table when a
+/// `sys tail`), pop a key window (`sys window`), pop the launcher, run an extension with a
+/// request of the caller's choosing or spawn extensions at all (`ext open`, `ext call`,
+/// `ext refresh`: unlike `kota refresh` it has no rate limit), read the screen, write files
+/// or delete data that cannot come back (`task rm` drops the task's tracked time). Review this table when a
 /// module gains a verb with side effects. `remote` is handled apart: only `remote status` is
 /// allowed.
 const NET_DENIED: &[(&str, &[&str])] = &[
@@ -160,7 +161,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("kota", &["ask"]),
     ("llm", &[]),
     ("sys", &["restart", "tail", "window"]),
-    ("ext", &["open", "call"]),
+    ("ext", &["refresh", "open", "call"]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.
