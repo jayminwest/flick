@@ -28,6 +28,15 @@ impl Quicklink {
         entry
     }
 
+    /// The text Copy URL puts on the clipboard: the URL with `query` filled in when the link
+    /// takes one and `query` is not blank, else the URL as configured (paths stay paths).
+    pub fn copy_text(&self, query: Option<&str>) -> String {
+        match query.map(str::trim) {
+            Some(q) if self.takes_query() && !q.is_empty() => self.expand(q),
+            _ => self.url.clone(),
+        }
+    }
+
     /// The URL to open. Paths (`/…`, `~/…`) become file URLs.
     pub fn expand(&self, query: &str) -> String {
         let url = self.url.replace("{query}", &percent_encode(query));
@@ -72,6 +81,17 @@ mod tests {
         assert_eq!(q.expand("rust lang&co"), "https://x.com/?q=rust%20lang%26co");
         let p = Quicklink { name: "P".into(), url: "/tmp".into(), keyword: None, app: None };
         assert_eq!(p.expand(""), "file:///tmp");
+    }
+
+    #[test]
+    fn copy_text_fills_a_query_else_keeps_the_configured_url() {
+        let q =
+            Quicklink { name: "G".into(), url: "https://x.com/?q={query}".into(), keyword: None, app: None };
+        assert_eq!(q.copy_text(Some(" a b ")), "https://x.com/?q=a%20b");
+        assert_eq!(q.copy_text(Some("  ")), "https://x.com/?q={query}");
+        assert_eq!(q.copy_text(None), "https://x.com/?q={query}");
+        let p = Quicklink { name: "P".into(), url: "~/notes".into(), keyword: None, app: None };
+        assert_eq!(p.copy_text(Some("x")), "~/notes");
     }
 
     #[test]

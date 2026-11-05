@@ -249,9 +249,13 @@ pub fn control(words: &[String], flags: Flags) -> Result<String, String> {
         let s = s.as_mut().ok_or("Flick is still starting")?;
         match words {
             [verb] if verb == "reload" => s.reload(),
-            _ => s
-                .registry
-                .command(words, &mut Cx { json: flags.json, remote: flags.remote, ..s.env.cx("") }),
+            _ => {
+                let before = s.registry.hotkeys();
+                let cx = &mut Cx { json: flags.json, remote: flags.remote, ..s.env.cx("") };
+                let result = s.registry.command(words, cx);
+                s.rebind_since(&before);
+                result
+            }
         }
     })
 }

@@ -10,6 +10,12 @@ use crate::core::{Action, Confirm, ConfirmRow, Field, Form, Icon, ItemId, Outcom
 const EDIT: &str = "edit/";
 const DELETE: &str = "delete/";
 
+/// Puts text on the clipboard; tests record it instead.
+#[cfg(not(test))]
+const COPY: fn(&str) = crate::platform::pasteboard::set_text;
+#[cfg(test)]
+const COPY: fn(&str) = tests::record_copy;
+
 impl Quicklinks {
     /// Write `edit` to the file that holds the links: this Mac's overlay when it sets them,
     /// else config.toml (or the test files). `Ok` holds where a reload puts the link.
@@ -85,15 +91,20 @@ impl Quicklinks {
         }
         vec![
             Action::new("open", "Open Quicklink", Icon::symbol("link")),
+            Action::new("copy", "Copy URL", Icon::symbol("doc.on.doc")),
             Action::new("edit", "Edit Quicklink", Icon::symbol("pencil")),
             Action::new("delete", "Delete Quicklink", Icon::symbol("trash")),
         ]
     }
 
-    /// `edit` and `delete`; `open` is the caller's (it activates the item).
+    /// `copy`, `edit` and `delete`; `open` is the caller's (it activates the item).
     pub(super) fn link_act(&self, id: &ItemId, key: &str) -> Outcome {
         let Some(link) = self.find(id.key()) else { return Outcome::Stay(None) };
         match key {
+            "copy" => {
+                COPY(&link.copy_text(id.arg()));
+                Outcome::Stay(Some(format!("Copied URL of {}", link.name)))
+            }
             "edit" => Outcome::Form { module: "quicklink", name: format!("{EDIT}{}", link.name) },
             "delete" => Outcome::Confirm(Confirm {
                 rows: vec![ConfirmRow { subtitle: link.url.clone(), ..ConfirmRow::new(&link.name) }],
@@ -300,11 +311,11 @@ mod tests {
     }
 
     #[test]
-    fn actions_are_open_edit_delete() {
+    fn actions_are_open_copy_edit_delete() {
         let Fixture { mut m, _dir, .. } = module("actions", CONFIG);
         let id = ItemId::new("quicklink", "Docs");
         let keys: Vec<_> = test_cx("", |cx| m.actions(&id, cx)).into_iter().map(|a| a.key).collect();
-        assert_eq!(keys, ["open", "edit", "delete"]);
+        assert_eq!(keys, ["open", "copy", "edit", "delete"]);
         let nope = ItemId::new("quicklink", "Nope");
         assert!(test_cx("", |cx| m.actions(&nope, cx)).is_empty());
         assert_eq!(status(test_cx("", |cx| m.act(&nope, "edit", cx))), None);
@@ -313,6 +324,27 @@ mod tests {
         assert!(matches!(edit, Outcome::Form { module: "quicklink", name } if name == "edit/Docs"));
         // "open" on a link taking a query asks for the argument.
         assert!(matches!(test_cx("", |cx| m.act(&id, "open", cx)), Outcome::Push(_)));
+    }
+
+    thread_local! {
+        static COPIED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    pub fn record_copy(text: &str) {
+        COPIED.with(|c| c.borrow_mut().push(text.to_string()));
+    }
+
+    #[test]
+    fn copy_url_copies_without_opening() {
+        let Fixture { mut m, _dir, .. } = module("copy", CONFIG);
+        let docs = ItemId::new("quicklink", "Docs");
+        let copy = |m: &mut Quicklinks, id: &ItemId| status(test_cx("", |cx| m.act(id, "copy", cx)));
+        assert_eq!(copy(&mut m, &docs).as_deref(), Some("Copied URL of Docs"));
+        assert_eq!(copy(&mut m, &docs.clone().with_arg("serde json")).as_deref(), Some("Copied URL of Docs"));
+        assert_eq!(copy(&mut m, &ItemId::new("quicklink", "Old").with_arg(String::new())).as_deref(), Some("Copied URL of Old"));
+        assert_eq!(copy(&mut m, &ItemId::new("quicklink", "Nope")), None);
+        let copied = COPIED.with(std::cell::RefCell::take);
+        assert_eq!(copied, ["https://docs.rs/{query}", "https://docs.rs/serde%20json", "https://old.example"]);
     }
 
     #[test]

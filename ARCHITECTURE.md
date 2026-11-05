@@ -747,6 +747,9 @@ writes a commented default (`DEFAULT_CONFIG`).
   the caller updates its own state. For that it returns `Landed`, the index the added or
   replaced entry has in the list a reload of that file sees (table entries, then legacy ones),
   so an appended link goes before legacy `[[quicklinks]]` in memory too.
+- Hotkeys after a save: a form submit, a confirmation and a control command take
+  `Registry::hotkeys` before and call `State::rebind_since` (`app::overlay`) after; it binds
+  again when they differ, so a snippet hotkey saved by the editor works without a reload.
 
 ## Control socket and CLI
 

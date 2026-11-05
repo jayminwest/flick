@@ -4,15 +4,21 @@
 //! snippet is typed. Each snippet is a root item: Enter hides the launcher and types it.
 //! Its hotkey types it at once. `flick snippet type <name>` types it from this Mac (a
 //! `[[keys.chord]]` can run that), and `flick snippet show <name>` prints it. Ids are
-//! `snippet:<name>`.
+//! `snippet:<name>`. View `all` browses them; the editor (`editor.rs`) adds, edits and
+//! removes them in config.toml, or in the per-host overlay when the overlay sets the list.
 
+mod editor;
 mod wire;
+
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
 use crate::config::Section;
 use crate::core::track::local_time;
-use crate::core::{Binding, Cx, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb};
+use crate::core::{
+    Action, Binding, Cx, Form, Icon, Item, ItemId, ListView, Module, Outcome, unknown_verb,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 struct Snippet {
@@ -41,11 +47,15 @@ struct Env {
 pub struct Snippets {
     texts: Vec<Snippet>,
     env: Env,
+    /// The config file and overlay host the editor writes; `None` is config.toml and this
+    /// Mac's overlay. Tests point it at temp files.
+    file: Option<(PathBuf, Option<String>)>,
 }
 
 impl Default for Snippets {
     fn default() -> Self {
-        Snippets { texts: vec![], env: Env { now: wire::now, type_text: wire::type_text } }
+        let env = Env { now: wire::now, type_text: wire::type_text };
+        Snippets { texts: vec![], env, file: None }
     }
 }
 
@@ -80,6 +90,20 @@ fn read(table: &Section) -> Result<Vec<Snippet>, String> {
 impl Snippets {
     fn find(&self, name: &str) -> Option<&Snippet> {
         self.texts.iter().find(|s| s.name == name)
+    }
+
+    fn item(&self, s: &Snippet) -> Item {
+        Item {
+            subtitle: self.render(s),
+            accessory: "Snippet".into(),
+            keywords: vec!["snippet".into()],
+            ..Item::new(
+                ItemId::new("snippet", &s.name),
+                s.name.clone(),
+                "Type Snippet",
+                Icon::symbol("text.cursor"),
+            )
+        }
     }
 
     fn render(&self, s: &Snippet) -> String {
@@ -118,23 +142,21 @@ impl Module for Snippets {
     }
 
     fn items(&mut self, _cx: &mut Cx) -> Vec<Item> {
-        self.texts
-            .iter()
-            .map(|s| Item {
-                subtitle: self.render(s),
-                accessory: "Snippet".into(),
-                keywords: vec!["snippet".into()],
-                ..Item::new(
-                    ItemId::new("snippet", &s.name),
-                    s.name.clone(),
-                    "Type Snippet",
-                    Icon::symbol("text.cursor"),
-                )
-            })
-            .collect()
+        self.texts.iter().map(|s| self.item(s)).collect()
+    }
+
+    fn open(&mut self, view: &str, _cx: &mut Cx) -> Option<ListView> {
+        (view == editor::ALL).then(Self::browse)
+    }
+
+    fn refresh(&mut self, view: &mut ListView, cx: &mut Cx) {
+        self.fill(view, cx);
     }
 
     fn activate(&mut self, id: &ItemId, cx: &mut Cx) -> Outcome {
+        if id.key() == editor::CREATE {
+            return Outcome::Form { module: "snippet", name: "new".into() };
+        }
         let Some(s) = self.find(id.key()) else { return Outcome::Stay(None) };
         let text = self.render(s);
         cx.hide();
@@ -157,7 +179,33 @@ impl Module for Snippets {
         None
     }
 
+    fn form(&mut self, name: &str, _cx: &mut Cx) -> Option<Form> {
+        self.editor_form(name)
+    }
+
+    fn submit(&mut self, form: &Form, _cx: &mut Cx) -> Result<String, String> {
+        self.submit_form(form)
+    }
+
+    fn actions(&mut self, id: &ItemId, _cx: &mut Cx) -> Vec<Action> {
+        self.snippet_actions(id)
+    }
+
+    fn act(&mut self, id: &ItemId, key: &str, cx: &mut Cx) -> Outcome {
+        match key {
+            "type" => self.activate(id, cx),
+            _ => self.snippet_act(id, key),
+        }
+    }
+
+    fn confirmed(&mut self, token: &str, _cx: &mut Cx) -> Outcome {
+        self.delete_confirmed(token)
+    }
+
     fn command(&mut self, args: &[String], _cx: &mut Cx) -> Result<String, String> {
+        if let Some(result) = self.edit_verb(args) {
+            return result;
+        }
         match args.split_first() {
             Some((verb, [])) if verb == "type" || verb == "show" => {
                 Err(format!("usage: snippet {verb} <name>"))
@@ -168,7 +216,8 @@ impl Module for Snippets {
     }
 
     fn verbs(&self) -> &'static str {
-        "snippet type <name> | snippet show <name>"
+        "snippet type <name> | snippet show <name> | snippet list | \
+         snippet add <name> <text> [--hotkey h] | snippet remove <name>"
     }
 }
 

@@ -80,10 +80,10 @@ fn fuzzy_score_plus_frecency() {
             "app:/Applications/Spotify.app",
             "app:/Applications/Safari.app",
             "builtin:Clipboard History",
+            "builtin:Snippets",
             "quicklink:GitHub Search",
             "builtin:Switch Windows",
             "app:/System/Applications/System Settings.app",
-            "app:/Applications/Visual Studio Code.app",
         ]
     );
     assert_eq!(

@@ -3,11 +3,22 @@
 
 use super::screen::{self, Back, ConfirmStep, Screen};
 use super::{State, VISIBLE_ROWS};
-use crate::core::Tab;
+use crate::core::{Binding, Tab};
 use crate::platform::panel::Key;
 use crate::ui;
 
 impl State {
+    /// Rebind hotkeys when a module's differ from `before` (`Registry::hotkeys` taken before
+    /// a save, e.g. in the snippet editor), so a new or edited hotkey works without a reload.
+    /// A bind error is logged.
+    pub(super) fn rebind_since(&self, before: &[(&'static str, Binding)]) {
+        if self.registry.hotkeys() != before
+            && let Err(e) = self.bind()
+        {
+            eprintln!("flick: rebinding hotkeys: {e}");
+        }
+    }
+
     /// Take the screen on the panel, as the user left it, to come back to later.
     pub(super) fn back(&mut self) -> Back {
         Back {
@@ -116,7 +127,9 @@ impl State {
                 else {
                     return false;
                 };
+                let before = self.registry.hotkeys();
                 let outcome = self.registry.confirmed(&confirm, &mut self.env.cx(&back.query));
+                self.rebind_since(&before);
                 self.apply(outcome, Some(back));
             }
             ConfirmStep::Hint => {
@@ -187,10 +200,12 @@ impl State {
         if form.pending.is_some() {
             return;
         }
+        let before = self.registry.hotkeys();
         let result = match screen::missing(form) {
             Some(error) => Err(error),
             None => self.registry.submit(form, &mut self.env.cx("")),
         };
+        self.rebind_since(&before);
         match result {
             Ok(status) if !form_is_background(&self.screen) => {
                 self.enter(None);

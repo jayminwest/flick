@@ -33,7 +33,7 @@ name = "Projects"
 url = "~/Projects"
 ```
 
-Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `ext`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Three modules are opt-in: `kota`, `llm` and `dictation` (KOTA and the local models). Flick registers them only when their table sets a key, so a Mac whose config never names them runs none of their code and shows no item, hotkey, help topic or verb of theirs. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
+Each module reads its own table: `app`, `desktop`, `switcher`, `window`, `quicklink`, `script`, `ext`, `builtin`, `clip`, `activity`, `herdr`, `kota`, `llm`, `sys`, `task`, `keys`, `dictation`, `capture`, `feedback`, `message`, `snippet`, `flick`, `remote`, `help`. Set `enabled = false` in a table to turn that module off. Three modules are opt-in: `kota`, `llm` and `dictation` (KOTA and the local models). Flick registers them only when their table sets a key, so a Mac whose config never names them runs none of their code and shows no item, hotkey, help topic or verb of theirs. `[launcher]` is the launcher's own table (see [Launcher appearance](#launcher-appearance)). Config files from older versions keep working: the flat keys `windows_hotkey`, `desktop_toggle`, `[window_keys]` and `[[quicklinks]]` still apply.
 
 ## Per-host overlay
 
@@ -119,7 +119,7 @@ Status icons in some rows have a color: green for running, done or healthy, oran
 
 ### Create and edit
 
-Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to edit or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml, or to this Mac's [overlay](#per-host-overlay) when the overlay sets `[[quicklink.links]]`, and keeps all other text in the file, comments included. A file in the read-only Nix store is not changed; see [Files managed by Nix](#files-managed-by-nix). The change applies at once, without a reload. A renamed link loses its usage history.
+Run **Create Quicklink** from root search to add a link with a form. Select a quicklink and press ⌘K to copy its URL (**Copy URL**: with the typed argument filled in, if any), edit it or delete it. From a shell: `flick quicklink add <name> <url> [--keyword k] [--app a]`, `flick quicklink remove <name>` and `flick quicklink list`. Flick writes the change to config.toml, or to this Mac's [overlay](#per-host-overlay) when the overlay sets `[[quicklink.links]]`, and keeps all other text in the file, comments included. A file in the read-only Nix store is not changed; see [Files managed by Nix](#files-managed-by-nix). The change applies at once, without a reload. A renamed link loses its usage history.
 
 ### Import from Raycast
 
@@ -130,6 +130,19 @@ In Raycast, run **Export Quicklinks**. Then:
 ```
 
 Flick appends the links as `[[quicklink.links]]` entries to the file that holds the links (config.toml, or the overlay when it sets them). It changes `{argument}` placeholders to `{query}` and skips links with the same name or URL as an existing link. It reports placeholders that it cannot fill, such as `{clipboard}`.
+
+## Snippets
+
+A snippet is text that Flick types into the front app. Each `[[snippet.texts]]` entry has a `name`, a `text` and an optional global `hotkey`. In the text, `{date}` becomes today's date (`YYYY-MM-DD`) and `{time}` the local time (`HH:MM`) when the snippet is typed.
+
+```toml
+[[snippet.texts]]
+name = "Today's Date"
+text = "{date}"
+hotkey = "cmd+ctrl+alt+shift+KeyD"
+```
+
+Type the snippet's name in root search and press Enter, or press its hotkey. **Snippets** in root search lists every snippet with its hotkey. Enter types the selected one. ⌘K offers **Type Snippet**, **Copy Text**, **Edit Snippet** and **Delete Snippet**. **Create Snippet**, the last row of **Snippets**, adds one with a form. The text field takes several lines, so press ⌘↵ to save. From a shell: `flick snippet type|show <name>`, `flick snippet add <name> <text> [--hotkey h]`, `flick snippet remove <name>` and `flick snippet list`. Saves work as they do for [quicklinks](#create-and-edit): Flick writes config.toml, or this Mac's overlay when the overlay sets `[[snippet.texts]]`, and never a file in the Nix store. A new or changed hotkey works at once, without a reload.
 
 ## Extensions
 
