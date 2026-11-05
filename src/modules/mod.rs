@@ -84,6 +84,8 @@ const REBUILT: [&str; 1] = ["help"];
 
 // Not registered yet: its `modules!` line lands with the module itself (flick-3ffa).
 mod bridge;
+// Not registered yet: its `modules!` line lands with the module itself (flick-ac1d).
+mod tile;
 
 #[cfg(test)]
 pub use clipboard::store::Clips;
