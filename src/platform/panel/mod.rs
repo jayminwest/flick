@@ -435,10 +435,13 @@ pub fn query() -> String {
 }
 
 pub fn set_query(text: &str, placeholder: &str) {
-    with_ui(|ui| {
-        ui.field.setStringValue(&ns(text));
-        ui.field.setPlaceholderString(Some(&ns(placeholder)));
-    });
+    with_ui(|ui| ui.field.setStringValue(&ns(text)));
+    set_placeholder(placeholder);
+}
+
+/// Change the search field's placeholder; its text stays.
+pub fn set_placeholder(placeholder: &str) {
+    with_ui(|ui| ui.field.setPlaceholderString(Some(&ns(placeholder))));
 }
 
 #[cfg(test)]

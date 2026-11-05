@@ -86,7 +86,8 @@ pub trait Module {
     /// change does. After a reload it may name a view this instance never opened.
     fn closed(&mut self, _view: &str, _cx: &mut Cx) {}
 
-    /// Fill `view` (one this module opened) for `cx.query`.
+    /// Fill `view` (one this module opened) for `cx.query`. A changed `view.placeholder`
+    /// replaces the search field's.
     fn refresh(&mut self, _view: &mut ListView, _cx: &mut Cx) {}
 
     /// Run the item `id` (whose `module()` is this module).
