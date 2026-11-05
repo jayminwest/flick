@@ -7,7 +7,8 @@
 //! peeking out. Gaps are 0. Ported from `AeroSpace` (MIT, commit bc6be84):
 //! layout/layoutRecursive.swift.
 
-use crate::modules::tile::tree::{Container, Layout, Node, Orientation, Tree, WinId};
+use crate::modules::tile::WinId;
+use crate::modules::tile::tree::{Container, Layout, Node, Orientation, Tree};
 
 /// A frame in whole pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -23,20 +24,18 @@ pub const ACCORDION_PADDING: i32 = 30;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Opts {
-    /// The focused window: an accordion shows the child that holds it on top, with its
-    /// neighbours peeking out further.
-    pub focused: Option<WinId>,
     /// The screens stack vertically. macOS can then refuse a window on the upper screen the
     /// full height, so the workspace loses its bottom pixel (layoutRecursive.swift:9-12).
     pub stacked: bool,
 }
 
-/// The frame of each window of `tree`, depth first, laid out in `area`. A zoomed window
+/// The frame of each window of `tree`, depth first, laid out in `area`. An accordion shows
+/// its most recent child on top, with its neighbours peeking out further. A zoomed window
 /// gets the whole workspace; the others keep their tiles behind it.
 pub fn layout(tree: &Tree, area: Frame, opts: Opts) -> Vec<(WinId, Frame)> {
     let rect = workspace(area, opts);
     let mut out = vec![];
-    place(tree.root(), rect, opts.focused, &mut out);
+    place(tree, tree.root(), rect, &mut out);
     if let Some(zoom) = tree.zoomed() {
         out.iter_mut().filter(|(w, _)| *w == zoom).for_each(|(_, f)| *f = rect);
     }
@@ -48,7 +47,7 @@ pub fn rect_at(tree: &Tree, path: &[usize], area: Frame, opts: Opts) -> Option<F
     let mut c = tree.root();
     let mut rect = workspace(area, opts);
     for &i in path {
-        rect = *frames(c, rect, opts.focused).get(i)?;
+        rect = *frames(tree, c, rect).get(i)?;
         let Node::Split(inner) = &c.children.get(i)?.node else { return None };
         c = inner;
     }
@@ -59,17 +58,17 @@ fn workspace(area: Frame, opts: Opts) -> Frame {
     if opts.stacked { Frame { h: area.h - 1, ..area } } else { area }
 }
 
-fn place(c: &Container, rect: Frame, focused: Option<WinId>, out: &mut Vec<(WinId, Frame)>) {
-    for (child, frame) in c.children.iter().zip(frames(c, rect, focused)) {
+fn place(tree: &Tree, c: &Container, rect: Frame, out: &mut Vec<(WinId, Frame)>) {
+    for (child, frame) in c.children.iter().zip(frames(tree, c, rect)) {
         match &child.node {
             Node::Window(w) => out.push((*w, frame)),
-            Node::Split(inner) => place(inner, frame, focused, out),
+            Node::Split(inner) => place(tree, inner, frame, out),
         }
     }
 }
 
-/// The frame of each child of `c` in `rect`.
-fn frames(c: &Container, rect: Frame, focused: Option<WinId>) -> Vec<Frame> {
+/// The frame of each child of `c` (a container of `tree`) in `rect`.
+fn frames(tree: &Tree, c: &Container, rect: Frame) -> Vec<Frame> {
     let (start, extent) = match c.orientation {
         Orientation::H => (rect.x, rect.w),
         Orientation::V => (rect.y, rect.h),
@@ -78,15 +77,7 @@ fn frames(c: &Container, rect: Frame, focused: Option<WinId>) -> Vec<Frame> {
         Layout::Tiles => {
             tiles(start, extent, &c.children.iter().map(|ch| ch.weight).collect::<Vec<_>>())
         }
-        Layout::Accordion => {
-            let top = focused.and_then(|f| {
-                c.children.iter().position(|ch| match &ch.node {
-                    Node::Window(w) => *w == f,
-                    Node::Split(inner) => inner.contains(f),
-                })
-            });
-            accordion(start, extent, c.children.len(), top.unwrap_or(0))
-        }
+        Layout::Accordion => accordion(start, extent, c.children.len(), tree.recent_child(c)),
     };
     spans
         .into_iter()

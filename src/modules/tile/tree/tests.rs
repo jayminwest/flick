@@ -76,6 +76,11 @@ fn check(t: &Tree) {
         assert!(matches!(only.node, Node::Window(_)), "root holds a single container");
     }
     assert!(t.zoomed().is_none_or(|z| seen.contains(&z)), "zoomed window not in tree");
+    assert!(t.recent.iter().all(|w| seen.contains(w)), "focus history outside the tree");
+    let mut history = t.recent.clone();
+    history.sort_unstable();
+    history.dedup();
+    assert_eq!(history.len(), t.recent.len(), "a window twice in the focus history");
     assert_eq!(seen, t.windows());
 }
 
@@ -247,6 +252,25 @@ fn toggle_zoom_zooms_and_unzooms() {
     assert!(!t.toggle_zoom(9));
 }
 
+#[test]
+fn focus_makes_a_window_the_most_recent_child_of_each_container_above_it() {
+    let mut t = tree(Orientation::H, vec![win(1), v(vec![win(2), win(3)]), win(4)]);
+    let column = |t: &Tree| t.recent_child(t.container(&[1]).unwrap());
+    assert_eq!((t.recent_child(t.root()), column(&t)), (0, 0), "nothing focused: the first");
+    assert!(t.focus(3));
+    assert_eq!((t.recent_child(t.root()), column(&t)), (1, 1));
+    t.focus(4);
+    assert_eq!((t.recent_child(t.root()), column(&t)), (2, 1), "the column keeps 3");
+    assert!(!t.focus(9));
+    t.swap(3, 2);
+    assert_eq!(column(&t), 0, "recency follows the window");
+    t.remove(4);
+    assert_eq!(t.recent_child(t.root()), 1, "then the one focused before");
+    t.remove(2);
+    assert_eq!(t.recent, [3]);
+    assert_eq!(t.windows(), [1, 3]);
+}
+
 const AREA: Frame = Frame { x: 0, y: 0, w: 1000, h: 600 };
 
 fn frame(t: &Tree, w: u32) -> Frame {
@@ -309,7 +333,10 @@ fn random_op(t: &mut Tree, rng: &mut Rng, accordion: bool) {
     let (a, b) = (rng.win(), rng.win());
     let focused = if rng.below(4) == 0 { None } else { Some(b) };
     let layout = if accordion && rng.below(2) == 0 { Layout::Accordion } else { Layout::Tiles };
-    let opts = Opts { focused, stacked: rng.below(2) == 0 };
+    let opts = Opts { stacked: rng.below(2) == 0 };
+    if let Some(f) = focused {
+        t.focus(f);
+    }
     let delta = rng.below(400) as i32 - 200;
     let _ = match rng.below(12) {
         0..=3 => t.insert(a, focused),
@@ -346,8 +373,7 @@ fn overlap(a: Frame, b: Frame) -> bool {
 /// Every window gets a frame inside the workspace; in a tiles-only tree, unzoomed, the
 /// frames cover it exactly, with no gaps or overlaps. True when it checked that.
 fn check_layout(t: &Tree, area: Frame) -> bool {
-    let frames =
-        layout::layout(t, area, Opts { focused: t.windows().first().copied(), stacked: false });
+    let frames = layout::layout(t, area, Opts::default());
     assert_eq!(frames.iter().map(|(w, _)| *w).collect::<Vec<_>>(), t.windows());
     assert!(frames.iter().all(|(_, f)| inside(*f, area) && f.w >= 0 && f.h >= 0));
     if has_accordion(t.root()) || t.zoomed().is_some() || frames.is_empty() {

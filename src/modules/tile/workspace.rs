@@ -3,10 +3,8 @@
 //! it (back-and-forth); and which workspace each managed window is on. Pure Rust: switches
 //! return a `Plan` of windows for the caller to show and hide.
 
+use super::WinId;
 use crate::platform::Rect;
-
-/// A window, by its `CGWindowID` (as winman reports it).
-pub type WinId = u32;
 
 /// How many workspaces there are: a fixed list, numbered 1 to `COUNT`.
 pub const COUNT: usize = 8;

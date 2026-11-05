@@ -2,9 +2,11 @@
 //! workspace's tree (`AeroSpace`'s `closestParent(hasChildrenInDirection:)` and
 //! `findLeafWindowRecursive(snappedTo:)`), crossing at the tree's edge to the workspace
 //! visible on the screen that way. Pure Rust. The walk reads the tree through `Tree`, so it
-//! does not depend on how the tree is stored.
+//! does not depend on how the tree is stored; `tree::Tree` implements it.
 
-use super::workspace::{WinId, Workspaces, Ws};
+use super::WinId;
+use super::tree::Orientation;
+use super::workspace::{Workspaces, Ws};
 use crate::platform::Rect;
 
 /// A direction, as `h/j/k/l` name them.
@@ -39,11 +41,11 @@ impl Dir {
         }
     }
 
-    /// The axis it moves along.
-    pub fn axis(self) -> Axis {
+    /// The orientation of the containers it moves along.
+    pub fn orientation(self) -> Orientation {
         match self {
-            Dir::Left | Dir::Right => Axis::H,
-            Dir::Down | Dir::Up => Axis::V,
+            Dir::Left | Dir::Right => Orientation::H,
+            Dir::Down | Dir::Up => Orientation::V,
         }
     }
 
@@ -63,13 +65,6 @@ impl Dir {
     }
 }
 
-/// How a container lines up its children: `H` left to right, `V` top to bottom.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Axis {
-    H,
-    V,
-}
-
 /// What the walk reads from one workspace's tree: containers with ordered children, and
 /// window leaves.
 pub trait Tree {
@@ -83,8 +78,8 @@ pub trait Tree {
     fn child(&self, n: Self::Node, i: usize) -> Option<Self::Node>;
     /// How many children `n` has (0 for a leaf).
     fn len(&self, n: Self::Node) -> usize;
-    /// Container `n`'s axis (an accordion's too).
-    fn axis(&self, n: Self::Node) -> Axis;
+    /// Container `n`'s orientation (an accordion's too).
+    fn orientation(&self, n: Self::Node) -> Orientation;
     /// The child of `n` focused most recently.
     fn recent(&self, n: Self::Node) -> Option<Self::Node>;
     /// Leaf `n`'s window; `None` for a container.
@@ -99,22 +94,23 @@ pub enum Target {
     Screen(usize),
 }
 
-/// The node beside `n`'s branch in `dir`: from `n` up, the first container along `dir`'s
-/// axis with a child next to the branch that way; that child.
+/// The node beside `n`'s branch in `dir`: from `n` up, the first container of `dir`'s
+/// orientation with a child next to the branch that way; that child.
 fn sibling<T: Tree>(t: &T, n: T::Node, dir: Dir) -> Option<T::Node> {
     let (parent, i) = t.parent(n)?;
     let j = if dir.positive() { Some(i + 1) } else { i.checked_sub(1) };
-    let beside = j.filter(|_| t.axis(parent) == dir.axis()).and_then(|j| t.child(parent, j));
+    let beside =
+        j.filter(|_| t.orientation(parent) == dir.orientation()).and_then(|j| t.child(parent, j));
     beside.or_else(|| sibling(t, parent, dir))
 }
 
-/// The window in `n` against its `side` edge: along `side`'s axis the child on that edge,
-/// across it the child focused most recently.
+/// The window in `n` against its `side` edge: in a container of `side`'s orientation the
+/// child on that edge, across it the child focused most recently.
 fn leaf_at<T: Tree>(t: &T, n: T::Node, side: Dir) -> Option<WinId> {
     if let Some(w) = t.window(n) {
         return Some(w);
     }
-    let next = if t.axis(n) != side.axis() {
+    let next = if t.orientation(n) != side.orientation() {
         t.recent(n)
     } else if side.positive() {
         t.child(n, t.len(n).checked_sub(1)?)
