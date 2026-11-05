@@ -10,15 +10,20 @@
 //!   orientation (the root may hold a single window);
 //! - a nested container has the opposite orientation of its parent;
 //! - every weight is positive and finite, each window appears once, and the zoomed window
-//!   is in the tree.
+//!   and the focus history hold only windows in the tree.
+//!
+//! Each container's most recent child is the one holding the window focused last of those
+//! under it (`focus`, `recent_child`): one focus history per tree, so the ops never have to
+//! keep a per-container index in step. `nav` reads the tree through `nav::Tree`, with
+//! `Handle` for a node.
 //!
 //! Ported from `AeroSpace` (MIT, commit bc6be84): tree/normalizeContainers.swift and
 //! tree/TilingContainer.swift.
 
 mod ops;
 
-/// A window, by its window-server id (`CGWindowID`).
-pub type WinId = u32;
+use super::WinId;
+use super::nav;
 
 /// The axis a container splits along: `H` puts its children side by side.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -66,13 +71,20 @@ pub struct Container {
     pub children: Vec<Child>,
 }
 
+impl Child {
+    /// Whether this child is `win` or holds it.
+    pub fn holds(&self, win: WinId) -> bool {
+        match &self.node {
+            Node::Window(w) => *w == win,
+            Node::Split(inner) => inner.contains(win),
+        }
+    }
+}
+
 impl Container {
     /// Whether `win` is anywhere under this container.
     pub fn contains(&self, win: WinId) -> bool {
-        self.children.iter().any(|c| match &c.node {
-            Node::Window(w) => *w == win,
-            Node::Split(inner) => inner.contains(win),
-        })
+        self.children.iter().any(|c| c.holds(win))
     }
 
     /// The weight a new child gets: the mean of its siblings', or 1 for the first.
@@ -97,12 +109,14 @@ impl Container {
 pub struct Tree {
     root: Container,
     zoom: Option<WinId>,
+    /// Windows by focus, most recent first.
+    recent: Vec<WinId>,
 }
 
 impl Tree {
     /// The tree `root` gives, normalized.
     pub fn from_root(root: Container) -> Self {
-        let mut tree = Self { root, zoom: None };
+        let mut tree = Self { root, zoom: None, recent: vec![] };
         tree.normalize();
         tree
     }
@@ -118,6 +132,23 @@ impl Tree {
 
     pub fn contains(&self, win: WinId) -> bool {
         self.root.contains(win)
+    }
+
+    /// Mark `win` focused: it becomes the most recent child of every container it is under.
+    /// False when it is not in the tree.
+    pub fn focus(&mut self, win: WinId) -> bool {
+        if !self.contains(win) {
+            return false;
+        }
+        self.recent.retain(|&w| w != win);
+        self.recent.insert(0, win);
+        true
+    }
+
+    /// The index of `c`'s child focused most recently: the one holding the window focused
+    /// last of those under it, else the first.
+    pub fn recent_child(&self, c: &Container) -> usize {
+        self.recent.iter().find_map(|&w| c.children.iter().position(|ch| ch.holds(w))).unwrap_or(0)
     }
 
     /// Every window, depth first (left to right, top to bottom).
@@ -228,6 +259,94 @@ impl Tree {
         }
         orient(&mut self.root);
         self.zoom = self.zoom.filter(|&z| seen.contains(&z));
+        self.recent.retain(|w| seen.contains(w));
+    }
+
+    /// The path from the root to node `n`, when `n` is in this tree.
+    fn locate(&self, n: Handle) -> Option<Vec<usize>> {
+        let mut path = match n.first {
+            Some(w) => self.path(w)?,
+            None => vec![],
+        };
+        (path.len() >= n.depth).then(|| {
+            path.truncate(n.depth);
+            path
+        })
+    }
+
+    /// The handle of the node at `path`.
+    fn handle(&self, path: &[usize]) -> Option<Handle> {
+        let Some((&i, up)) = path.split_last() else { return Some(Handle::ROOT) };
+        let first = first_window(&self.container(up)?.children.get(i)?.node)?;
+        Some(Handle { first: Some(first), depth: path.len() })
+    }
+
+    /// Node `n`, when it is a container.
+    fn split(&self, n: Handle) -> Option<&Container> {
+        self.container(&self.locate(n)?)
+    }
+}
+
+/// A node of a `Tree`, as `nav` reads it: the root, or the node `depth` steps down the path
+/// to window `first`, the first window under it, so every node has exactly one handle. A
+/// handle is valid until the tree changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Handle {
+    first: Option<WinId>,
+    depth: usize,
+}
+
+impl Handle {
+    const ROOT: Handle = Handle { first: None, depth: 0 };
+}
+
+impl nav::Tree for Tree {
+    type Node = Handle;
+
+    fn root(&self) -> Handle {
+        Handle::ROOT
+    }
+
+    fn leaf(&self, w: WinId) -> Option<Handle> {
+        Some(Handle { first: Some(w), depth: self.path(w)?.len() })
+    }
+
+    fn parent(&self, n: Handle) -> Option<(Handle, usize)> {
+        let path = self.locate(n)?;
+        let (&i, up) = path.split_last()?;
+        Some((self.handle(up)?, i))
+    }
+
+    fn child(&self, n: Handle, i: usize) -> Option<Handle> {
+        let mut path = self.locate(n)?;
+        path.push(i);
+        self.handle(&path)
+    }
+
+    fn len(&self, n: Handle) -> usize {
+        self.split(n).map_or(0, |c| c.children.len())
+    }
+
+    fn orientation(&self, n: Handle) -> Orientation {
+        self.split(n).map_or(Orientation::H, |c| c.orientation)
+    }
+
+    fn recent(&self, n: Handle) -> Option<Handle> {
+        let c = self.split(n)?;
+        self.child(n, self.recent_child(c))
+    }
+
+    fn window(&self, n: Handle) -> Option<WinId> {
+        let path = self.locate(n)?;
+        n.first.filter(|_| self.container(&path).is_none())
+    }
+}
+
+/// The first window under `node` (`node` itself for a window).
+fn first_window(node: &Node) -> Option<WinId> {
+    match node {
+        Node::Window(w) => Some(*w),
+        Node::Split(c) => first_window(&c.children.first()?.node),
     }
 }
 

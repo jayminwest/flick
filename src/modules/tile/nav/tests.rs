@@ -1,24 +1,26 @@
 use super::*;
+use crate::modules::tile::tree::{self as split, Container};
 use crate::modules::tile::workspace::{COUNT, Screen};
 
-/// A tree spec: a window, or a container with its axis, most recent child and children.
+/// A tree spec: a window, or a container with its orientation, most recent child and
+/// children.
 enum Spec {
     W(WinId),
-    C(Axis, usize, Vec<Spec>),
+    C(Orientation, usize, Vec<Spec>),
 }
 
 fn h(kids: Vec<Spec>) -> Spec {
-    Spec::C(Axis::H, 0, kids)
+    Spec::C(Orientation::H, 0, kids)
 }
 
 fn v(recent: usize, kids: Vec<Spec>) -> Spec {
-    Spec::C(Axis::V, recent, kids)
+    Spec::C(Orientation::V, recent, kids)
 }
 
 struct Node {
     parent: Option<(usize, usize)>,
     kids: Vec<usize>,
-    axis: Axis,
+    orientation: Orientation,
     recent: usize,
     window: Option<WinId>,
 }
@@ -36,11 +38,11 @@ impl Arena {
 
     fn add(&mut self, spec: Spec, parent: Option<(usize, usize)>) -> usize {
         let id = self.0.len();
-        let (axis, recent, kids, window) = match spec {
-            Spec::W(w) => (Axis::H, 0, vec![], Some(w)),
-            Spec::C(axis, recent, kids) => (axis, recent, kids, None),
+        let (orientation, recent, kids, window) = match spec {
+            Spec::W(w) => (Orientation::H, 0, vec![], Some(w)),
+            Spec::C(orientation, recent, kids) => (orientation, recent, kids, None),
         };
-        self.0.push(Node { parent, kids: vec![], axis, recent, window });
+        self.0.push(Node { parent, kids: vec![], orientation, recent, window });
         for (i, kid) in kids.into_iter().enumerate() {
             let k = self.add(kid, Some((id, i)));
             self.0[id].kids.push(k);
@@ -66,8 +68,8 @@ impl Tree for Arena {
     fn len(&self, n: usize) -> usize {
         self.0[n].kids.len()
     }
-    fn axis(&self, n: usize) -> Axis {
-        self.0[n].axis
+    fn orientation(&self, n: usize) -> Orientation {
+        self.0[n].orientation
     }
     fn recent(&self, n: usize) -> Option<usize> {
         self.child(n, self.0[n].recent)
@@ -93,7 +95,8 @@ fn keys_name_directions() {
     assert_eq!(Dir::from_key('x'), None);
     let back: Vec<_> = Dir::ALL.map(Dir::opposite).to_vec();
     assert_eq!(back, [Dir::Right, Dir::Up, Dir::Down, Dir::Left]);
-    assert_eq!(Dir::ALL.map(Dir::axis), [Axis::H, Axis::V, Axis::V, Axis::H]);
+    let (h, v) = (Orientation::H, Orientation::V);
+    assert_eq!(Dir::ALL.map(Dir::orientation), [h, v, v, h]);
 }
 
 #[test]
@@ -204,4 +207,107 @@ fn focus_crosses_from_a_workspace_without_a_tree_and_stops_without_screens() {
     assert_eq!(focus_target(&ws, Some(1), Dir::Right, none), Some(Target::Screen(1)));
     let bare = Workspaces::new(std::array::from_fn(|_| vec![]));
     assert_eq!(focus_target(&bare, Some(1), Dir::Right, none), None);
+}
+
+/// The arena with `t`'s shape and most recent children.
+fn arena_of(t: &split::Tree) -> Arena {
+    fn spec(t: &split::Tree, c: &Container) -> Spec {
+        let kids = c.children.iter().map(|ch| match &ch.node {
+            split::Node::Window(w) => Spec::W(*w),
+            split::Node::Split(inner) => spec(t, inner),
+        });
+        Spec::C(c.orientation, t.recent_child(c), kids.collect())
+    }
+    Arena::of(spec(t, t.root()))
+}
+
+/// The first window under node `n` and how many children `n` has, to compare nodes of two
+/// kinds of tree.
+fn sketch<T: Tree>(t: &T, n: T::Node) -> (Option<WinId>, usize) {
+    fn first<T: Tree>(t: &T, n: T::Node) -> Option<WinId> {
+        t.window(n).or_else(|| first(t, t.child(n, 0)?))
+    }
+    (first(t, n), t.len(n))
+}
+
+/// Every walk over the real tree `t` gives what it gives over the plain arena of it.
+fn agrees(t: &split::Tree) {
+    let a = arena_of(t);
+    for dir in Dir::ALL {
+        assert_eq!(entry(t, dir), entry(&a, dir), "entry {dir:?}");
+        for w in 0..=9 {
+            assert_eq!(neighbour(t, w, dir), neighbour(&a, w, dir), "{w} {dir:?}");
+            let (real, plain) = (join_target(t, w, dir), join_target(&a, w, dir));
+            assert_eq!(real.map(|n| sketch(t, n)), plain.map(|n| sketch(&a, n)), "{w} {dir:?}");
+        }
+    }
+}
+
+/// `1 | (2 over 3) | 4`, as a real tree.
+fn real() -> split::Tree {
+    let mut t = split::Tree::default();
+    for w in 1..=4 {
+        t.insert(w, None);
+    }
+    t.join(2, Orientation::H, true);
+    t
+}
+
+#[test]
+fn the_walks_read_the_real_tree_and_its_focus_history() {
+    let mut t = real();
+    agrees(&t);
+    assert_eq!(neighbour(&t, 1, Dir::Right), Some(2), "nothing focused: the first child");
+    t.focus(3);
+    t.focus(4);
+    agrees(&t);
+    assert_eq!(neighbour(&t, 1, Dir::Right), Some(3), "into a split: its most recent child");
+    assert_eq!(neighbour(&t, 3, Dir::Up), Some(2));
+    assert_eq!(entry(&t, Dir::Down), Some(4), "across the axis: the most recent child");
+    t.remove(3);
+    assert_eq!(neighbour(&t, 1, Dir::Right), Some(2));
+    agrees(&split::Tree::default());
+}
+
+#[test]
+fn the_walks_agree_on_deep_trees_and_accordions() {
+    let mut t = real();
+    for w in 5..=8 {
+        t.insert(w, Some(w - 2));
+    }
+    t.join(5, Orientation::V, true);
+    t.join(2, Orientation::V, true);
+    t.join(8, Orientation::H, false);
+    t.set_layout(5, split::Layout::Accordion);
+    assert_eq!(t.path(5), Some(vec![1, 1, 0]), "three levels deep");
+    for w in [7, 2, 5, 8] {
+        t.focus(w);
+        agrees(&t);
+    }
+}
+
+#[test]
+fn real_tree_nodes_have_one_handle_each() {
+    let t = real();
+    let root = Tree::root(&t);
+    let col = t.child(root, 1).unwrap();
+    assert_eq!(t.parent(t.leaf(3).unwrap()), Some((col, 1)), "found from below or above");
+    assert_eq!(t.parent(col), Some((root, 1)));
+    assert_eq!(t.parent(root), None);
+    assert_eq!((t.len(col), t.orientation(col), t.window(col)), (2, Orientation::V, None));
+    let leaf = t.leaf(2).unwrap();
+    assert_eq!((t.len(leaf), t.window(leaf), t.recent(leaf)), (0, Some(2), None));
+    assert_eq!(t.orientation(leaf), Orientation::H, "a leaf has none: the default");
+    assert_eq!((t.child(root, 3), t.child(leaf, 0), t.leaf(9)), (None, None, None));
+    let empty = split::Tree::default();
+    assert_eq!((empty.len(root), empty.recent(root), empty.window(root)), (0, None, None));
+}
+
+#[test]
+fn a_handle_from_before_a_change_finds_nothing_or_the_node_now_there() {
+    let mut t = real();
+    let deep = t.leaf(3).unwrap();
+    t.remove(2);
+    assert_eq!((t.window(deep), t.parent(deep), t.len(deep)), (None, None, 0));
+    assert_eq!(t.leaf(3).and_then(|n| t.window(n)), Some(3));
 }

@@ -14,3 +14,6 @@ pub mod nav;
 pub mod rules;
 pub mod tree;
 pub mod workspace;
+
+/// A window, by its window-server id: winman's `WinId`, which every part of tile uses.
+pub use crate::platform::winman::WinId;
