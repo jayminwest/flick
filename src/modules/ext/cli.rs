@@ -3,7 +3,8 @@
 //! - `ext ls [--json]`: each configured extension and how its last call went (op, ok or the
 //!   error, and how long it took), copied from its worker without waiting on a call.
 //! - `ext refresh <name>`: ask for its root items again, and for its view on the screen.
-//! - `ext open <name> <view>`: view `<name>/<view>`, like a press of a hotkey bound to it.
+//! - `ext open <name> <view>`: show view `<name>/<view>`, like a press of a hotkey bound to
+//!   it, except that a view already on the screen stays (a hotkey would hide it).
 //! - `ext call <name> <json>|--stdin`: a raw call, for debugging. The request text goes to
 //!   the extension as it is (it must be a JSON object; nothing is added), on its worker, and
 //!   the answer is the extension's stdout, unparsed, once it exits (`core::later`): a reply

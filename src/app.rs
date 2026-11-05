@@ -19,7 +19,7 @@ use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
 use screen::{Back, ListNav, Screen};
-use toggle::toggle_view;
+pub use toggle::{hotkey, hotkey_later, show_later, toggle};
 
 const ROOT_PLACEHOLDER: &str = "Search for apps and commands…";
 
@@ -105,30 +105,9 @@ pub fn init(config: Config, store: Store) -> String {
     launcher
 }
 
-/// Module `module`'s hotkey `key`, on the main queue's next turn: for a status item's `Open`
-/// row, because `AppKit` is mid-event and may already hold the state (mulch mx-fcbc43), and
-/// for a verb (`ext open`), which runs with the state borrowed.
-pub fn hotkey_later(module: &str, key: &str) {
-    let (module, key) = (module.to_owned(), key.to_owned());
-    events::on_main(move || hotkey(&module, &key));
-}
-
 /// Bind the launcher hotkey and every module's hotkeys from the current config.
 pub fn bind_hotkeys() -> Result<(), String> {
     with_state(|s| s.bind()).unwrap_or(Ok(()))
-}
-
-/// The launcher hotkey: show root search, or hide it if it's showing.
-pub fn toggle() {
-    toggle_view(None);
-}
-
-/// Module `module`'s hotkey `key`; a view it returns toggles like the launcher hotkey.
-pub fn hotkey(module: &str, key: &str) {
-    let view = with_state(|s| s.registry.hotkey(module, key, &mut s.env.cx(""))).flatten();
-    if let Some(view) = view {
-        toggle_view(Some(view));
-    }
 }
 
 /// Show `query` in the root search (for `flick snapshot`).

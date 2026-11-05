@@ -295,13 +295,13 @@ Notifications need permission: macOS asks the first time Flick posts one.
 flick ext ls                     # <name>\t<op>\tok|error\t<ms> ms[\t<error>]; <name>\t- before the first call
 flick --json ext ls              # [{"name":"hello","last":{"op":"root","ok":true,"error":null,"ms":41}}]
 flick ext refresh hello          # send root again, and open for its view on the screen
-flick ext open hello greetings   # open view hello/greetings, as its hotkey does
+flick ext open hello greetings   # show view hello/greetings, as its hotkey does
 flick ext call hello '{"v":1,"op":"root"}'
 printf %s "$json" | flick ext call hello --stdin
 ```
 
 - `ext ls` shows how each extension's last call went: its op (`call` for `ext call`), ok or the error, and the time from the spawn to the reply. It does not wait for a call that runs. A query that a newer one replaced does not count.
-- `ext open` works like a press of a hotkey bound to the view: if the launcher shows that view already, it hides.
+- `ext open` works like a press of a hotkey bound to the view, except that it only shows: if the launcher shows that view already, it stays (a second hotkey press hides it).
 - `ext call` is for debugging. It sends the text as it is (it must be a JSON object; Flick adds nothing) on the extension's worker, behind its other calls. It prints the program's stdout without checking it, so it shows a reply that Flick would refuse. A failed exit or a timeout is an error. The verb waits at most 60 s.
 - Over the network, a peer may send `ext ls` and `ext refresh`, but not `ext open` or `ext call`: a peer must not open the launcher on this Mac or run an extension with a request of its choosing.
 
@@ -385,7 +385,7 @@ Unit tests cover the parser, the transport with a shell fixture (`tests/fixtures
 
 - [ ] **Root item.** Open the launcher and type `greet`: **Greetings** shows, with the hand icon. `flick ext ls` shows `hello	root	ok	<ms> ms`.
 - [ ] **View.** ↵ on **Greetings** opens the view: the footer says `Greetings`, and the rows are **Hello, World** and **Hello, Flick**. Type `fli`: only **Hello, Flick** remains.
-- [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time hides the launcher.
+- [ ] **Hotkey and CLI.** The `hotkeys` entry opens the same view. `flick ext open hello greetings` opens it, and a second time leaves it on the screen.
 - [ ] **Actions.** In the view, ↵ on **Hello, World** runs **Greet**: the launcher stays, the footer shows `Greet…` and then `Hello from world`. Tab copies `Hello, World` and hides the launcher. ⌘K lists Greet, Copy and New Greeting….
 - [ ] **Toast.** Type `hi Ada` in root search: **Hello, Ada** shows above the ranked results. ↵ runs **Greet**: a `hello` card in the top right says `Hello from typed` and goes away after about 6 s.
 - [ ] **Form.** ⌘K → **New Greeting…** opens the form (`Loading…` the first time). Type `Ada` and press ↵: `Saving…`, then root search with `Hello, Ada` in the footer.

@@ -224,8 +224,9 @@ Sources:
   `on_pick(key)`, and `Open { title, module, key }`, which goes to the one opener the
   controller installs at `app::init` (`status_item::set_opener(app::hotkey_later)`): it defers through
   `events::on_main` to `app::hotkey(module, key)`, so an `Open` row behaves exactly like that
-  module's hotkey press. `app::hotkey_later` is also the `ext` module's opener for
-  `ext open`, a verb that runs with the state borrowed. `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
+  module's hotkey press. The `ext` module's opener for `ext open`, a verb that runs with
+  the state borrowed, is `app::show_later`: deferred the same way, but show-only (a view
+  that already shows stays, and a cycle view shows without its cycle). `on_menu_open(owner, fn())` (`NSMenuDelegate` `menuWillOpen:`) is
   called as the owner's menu opens. Pick handlers and menu-open hooks run inside `AppKit`'s
   event handling, so they only set a flag and post an event (the module reads it on
   `ModuleChanged`), never borrow the state (mx-fcbc43). Items do not activate Flick or
@@ -237,7 +238,8 @@ Sources:
   the reload just enabled hears it without either importing the other (`message` re-sends
   `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
   flick-4bb4).
-- `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
+- `app::toggle` (the launcher hotkey; `app/toggle.rs`) dispatches and publishes `LauncherOpened`
+  when root search opens.
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
   main thread. One handler per process (the first `on_click` wins); `herdr` sets it at
