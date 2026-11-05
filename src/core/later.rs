@@ -5,8 +5,8 @@
 //! immediate text, while the main thread stays free (the thread may itself send requests
 //! to this Flick).
 //!
-//! The control layer calls `take` on the main thread right after the verb returns (every
-//! caller, so a slot never leaks into the next request), then `settle` on its own
+//! The control layer calls `take_with_wait` on the main thread right after the verb returns
+//! (every caller, so a slot never leaks into the next request), then `settle` on its own
 //! thread. Callers that do not wait (`control::local`) drop it.
 
 use std::cell::RefCell;
@@ -16,23 +16,34 @@ use std::time::Duration;
 /// A verb's answer: `Ok` text, or the error for the caller.
 pub type Answer = Result<String, String>;
 
-/// How long the socket waits for a later answer.
+/// How long the socket waits for a later answer, unless the verb asked `answer_within`.
 pub const MAX_WAIT: Duration = Duration::from_secs(60);
 
 thread_local! {
-    static SLOT: RefCell<Option<Receiver<Answer>>> = const { RefCell::new(None) };
+    static SLOT: RefCell<Option<(Receiver<Answer>, Duration)>> = const { RefCell::new(None) };
 }
 
 /// From a verb on the main thread: the request's answer becomes what the returned sender
 /// sends. If it is dropped without sending, the verb's own answer stands.
 pub fn answer_later() -> Sender<Answer> {
+    answer_within(MAX_WAIT)
+}
+
+/// `answer_later` for a verb whose thread may take longer than `MAX_WAIT`: the socket
+/// waits `wait` for the answer.
+pub fn answer_within(wait: Duration) -> Sender<Answer> {
     let (tx, rx) = channel();
-    SLOT.with(|s| *s.borrow_mut() = Some(rx));
+    SLOT.with(|s| *s.borrow_mut() = Some((rx, wait)));
     tx
 }
 
 /// The control layer, right after a verb returned: its later answer, if it asked for one.
 pub fn take() -> Option<Receiver<Answer>> {
+    take_with_wait().map(|(rx, _)| rx)
+}
+
+/// `take`, and how long to wait for the answer (`MAX_WAIT`, or the verb's `answer_within`).
+pub fn take_with_wait() -> Option<(Receiver<Answer>, Duration)> {
     SLOT.with(|s| s.borrow_mut().take())
 }
 
@@ -85,5 +96,14 @@ mod tests {
             settle(Ok("k1".into()), take(), Duration::from_millis(10)),
             Err("no answer after 0 s".into())
         );
+    }
+
+    #[test]
+    fn a_verb_may_ask_for_a_longer_wait() {
+        let _tx = answer_later();
+        assert_eq!(take_with_wait().map(|(_, wait)| wait), Some(MAX_WAIT));
+        let _tx = answer_within(Duration::from_secs(130));
+        assert_eq!(take_with_wait().map(|(_, wait)| wait), Some(Duration::from_secs(130)));
+        assert!(take_with_wait().is_none(), "taken once");
     }
 }

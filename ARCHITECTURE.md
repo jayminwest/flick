@@ -305,8 +305,9 @@ Main-thread rules:
 - A control request that finds the state borrowed returns `"Flick is busy; try again"`.
 - A verb that only knows its answer after work on a thread calls `core::later::answer_later`
   and hands the `Sender` to that thread. The control layer takes the slot right after the
-  verb returns (`later::take`, on the main thread) and its socket thread waits (at most
-  `later::MAX_WAIT`, 60 s) for the answer instead of the verb's immediate text; an error from
+  verb returns (`later::take_with_wait`, on the main thread) and its socket thread waits (at
+  most `later::MAX_WAIT`, 60 s, or what the verb asked with `later::answer_within`) for the
+  answer instead of the verb's immediate text; an error from
   the verb, or a dropped sender, keeps the immediate answer. The main thread stays free, so
   the thread may itself send requests to this Flick (`kota ask`). `control::local` drops the
   slot: nothing waits there.
@@ -346,7 +347,8 @@ and every hotkey.
   into the same inbox. Forms are `background`: `Saving…` until the submit reply. Each
   worker keeps its last call's op, error and duration behind a lock held only to store or
   copy it (`ext ls`). `ext call` queues a raw request on the same worker and answers
-  through `core::later` with the unparsed stdout. The wire protocol, for extension
+  through `core::later` with the unparsed stdout, waited for up to its budget plus
+  `MAX_WAIT`. The wire protocol, for extension
   authors, is `docs/extensions.md`.
 - A polled fleet (`src/modules/sys/poll.rs`, like herdr's remote round): a round starts
   one thread per due machine that is not being read already (a peer's Flick through
