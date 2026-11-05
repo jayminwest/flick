@@ -147,6 +147,15 @@ fn root_items_are_cached_and_asked_again_when_the_launcher_opens() {
 }
 
 #[test]
+fn root_items_are_asked_for_at_started_so_the_first_open_shows_them() {
+    let mut m = module(&entry("echo", &["echo"], 2000));
+    assert!(!event(&mut m, Event::Started));
+    assert_eq!(m.pending, [("echo".to_string(), Request::Root)]);
+    assert!(settle(&mut m));
+    assert_eq!(ids(&test_cx("", |cx| m.items(cx))), ["ext:echo/root"]);
+}
+
+#[test]
 fn only_an_answer_is_stale_data_and_reload_asks_again() {
     let mut m = module(&entry("echo", &["echo"], 2000));
     // Another module's change, an empty inbox or another event is not stale data for ext.
@@ -264,7 +273,7 @@ fn root_false_is_never_asked_for_root_items_nor_spawned_for_them() {
     // Turning `root` off drops the cached items and the worker of the old entry.
     configure(&mut m, &format!("{}root = false\n", entry("echo", &["echo"], 2000))).unwrap();
     assert!(test_cx("", |cx| m.items(cx)).is_empty());
-    for e in [Event::LauncherOpened, Event::Reloaded] {
+    for e in [Event::Started, Event::LauncherOpened, Event::Reloaded] {
         assert!(!event(&mut m, e));
     }
     m.refetch("echo");
@@ -312,8 +321,8 @@ fn failures_are_logged_and_notified_with_the_name() {
 fn subscribed_events_are_sent_and_a_failed_one_is_only_logged() {
     let table = format!("{}subscribe = [\"wake\", \"unlocked\"]\n{}", entry("broken", &["fail"], 2000), entry("other", &["echo"], 2000));
     let mut m = module(&table);
-    // Not subscribed to, or not an extension event: no call, no worker.
-    assert!(!event(&mut m, Event::Locked) && !event(&mut m, Event::Started));
+    // Not an extension event: no call, no worker.
+    assert!(!event(&mut m, Event::Locked));
     assert!(m.workers.is_empty());
     assert!(!event(&mut m, Event::Wake) && !event(&mut m, Event::Unlocked));
     assert_eq!(m.workers.len(), 1);

@@ -6,8 +6,8 @@
 //! `ModuleChanged { module: "ext" }` drains it.
 //!
 //! Stale while revalidate: root items and views are served at once from the last answer
-//! (`items`), and asked for again on the worker, root items at `LauncherOpened` and
-//! `Reloaded`, a view each time it opens (`Loading…` until its first answer). A view opened
+//! (`items`), and asked for again on the worker, root items at `Started` (so the first
+//! launcher open shows them), `LauncherOpened` and `Reloaded`, a view each time it opens (`Loading…` until its first answer). A view opened
 //! by a hotkey or `ext open` asks only for itself: the app sends `LauncherOpened` only when
 //! root search opens, so no `root` call and no `launcher_opened` event (flick-04e6). A call
 //! already queued is not queued again. `root` is never sent to an extension with
@@ -383,7 +383,7 @@ impl Module for Ext {
     fn on_event(&mut self, event: Event, _cx: &mut Cx) -> bool {
         let stale = match event {
             Event::ModuleChanged { module: "ext" } => self.drain(),
-            Event::LauncherOpened | Event::Reloaded => {
+            Event::Started | Event::LauncherOpened | Event::Reloaded => {
                 if event == Event::LauncherOpened {
                     self.launcher_opened();
                 }

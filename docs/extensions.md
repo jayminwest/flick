@@ -44,7 +44,7 @@ Every request has `"v": 1` and an `op`:
 
 | `op` | Other keys | When | Reply |
 |---|---|---|---|
-| `root` | | the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item; never with `root = false` | [items](#items) |
+| `root` | | Flick starts, the launcher opens on root search (not on a view: see [Views](#views)), a config reload, `flick ext refresh`, a stale item; never with `root = false` | [items](#items) |
 | `open` | `view` | a view opens (hotkey, `push` action, `flick ext open`) | a [view](#views) |
 | `query` | `view`, `query` | a keystroke in a `"filter": "ext"` view | items |
 | `keyword` | `keyword`, `query` | `<keyword> <text>` in root search | items |
