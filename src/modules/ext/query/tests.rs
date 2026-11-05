@@ -141,3 +141,28 @@ fn the_launcher_opening_drops_the_keyword_answers_of_its_last_showing() {
     m.launcher_opened();
     assert_eq!(m.found.len(), 1);
 }
+
+#[test]
+fn keyword_rows_and_query_answers_put_the_used_items_first() {
+    let table = format!("{}keywords = [\"e\"]\n", entry("echo", &["echo"], 2000));
+    let mut m = module(&table);
+    let json = r#"{"items": [{"key": "a", "title": "A"}, {"key": "b", "title": "B"}, {"key": "c", "title": "C"}]}"#;
+    let Reply::Items(items) = proto::parse(Op::Keyword, json.as_bytes()).unwrap().reply else { panic!() };
+    let ids = |items: &[Item]| items.iter().map(|i| i.id.to_string()).collect::<Vec<_>>();
+    m.sent = vec![("echo".into(), keyword("foo"))];
+    m.found = vec![("echo".into(), keyword("foo"), items.clone())];
+    let rows = test_cx("e foo", |cx| {
+        cx.store.record_use("ext:echo/c");
+        m.direct(cx)
+    });
+    assert_eq!(ids(&rows), ["ext:echo/c", "ext:echo/a", "ext:echo/b"]);
+    showing(&mut m);
+    m.sent = vec![("echo".into(), query("x"))];
+    m.found = vec![("echo".into(), query("x"), items)];
+    let mut view = ListView::new("ext", "echo/v");
+    test_cx("x", |cx| {
+        cx.store.record_use("ext:echo/b");
+        m.refresh(&mut view, cx);
+    });
+    assert_eq!(ids(&view.items), ["ext:echo/b", "ext:echo/a", "ext:echo/c"]);
+}
