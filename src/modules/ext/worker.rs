@@ -12,7 +12,8 @@
 //! Queries (`op: query`, `op: keyword`) are numbered, newest wins: one waits `DEBOUNCE` after
 //! it was queued, on the worker, and runs only if no newer one came; a newer one kills the
 //! child that answers an older one (`transport::call`'s `stop`). A superseded query leaves no
-//! answer and no `Last`.
+//! answer and no `Last`. While a query waits, the calls queued after it (an action, a raw
+//! call) run first, so a keystroke never delays them.
 //!
 //! Events (`op: event`) are fire-and-forget and wait behind every other call: one runs only
 //! when nothing else is queued, so a user's call waits at most for the event already running.
@@ -159,34 +160,50 @@ impl Worker {
         let thread = thread
             .spawn(move || {
                 let mut backlog = VecDeque::new();
+                // The newest query, its number and when its debounce ends. Calls queued
+                // around it run while it waits, so it never holds up an action.
+                let mut pending: Option<(u64, Instant, Request)> = None;
                 loop {
                     backlog.extend(calls.try_iter());
-                    let call = match backlog.pop_front() {
-                        Some(call) => call,
-                        // Nothing else waits: an event, else the next call.
-                        None => match next_event(&events) {
-                            Some(kind) => Call::Ext(Request::Event(kind)),
-                            None => match calls.recv() {
-                                Ok(call) => call,
-                                Err(_) => break,
-                            },
-                        },
-                    };
                     // A query's number: it runs and answers only while it is the newest.
-                    let (request, n) = match call {
-                        Call::Events => continue,
-                        Call::Ext(request) => (request, None),
-                        Call::Query(n, queued, request) => {
-                            thread::sleep((queued + DEBOUNCE).saturating_duration_since(Instant::now()));
-                            (request, Some(n))
+                    let (request, n) = match backlog.pop_front() {
+                        Some(Call::Query(n, queued, request)) => {
+                            pending = Some((n, queued + DEBOUNCE, request));
+                            continue;
                         }
-                        Call::Raw(text, reply) => {
+                        Some(Call::Events) => continue,
+                        Some(Call::Ext(request)) => (request, None),
+                        Some(Call::Raw(text, reply)) => {
                             let started = Instant::now();
                             let result = (job.raw)(&ext, &text, &(job.socket)());
                             keep("call", result.as_ref().err(), started);
                             let _ = reply.send(result);
                             continue;
                         }
+                        None => match pending.take() {
+                            Some((n, ..)) if latest.load(Ordering::SeqCst) != n => continue,
+                            // Its debounce ends, or a call comes and runs first.
+                            Some((n, due, request)) => match calls.recv_timeout(due.saturating_duration_since(Instant::now())) {
+                                Ok(call) => {
+                                    backlog.push_back(call);
+                                    pending = Some((n, due, request));
+                                    continue;
+                                }
+                                // Due, or the `Worker` is gone (the next `recv` ends the thread).
+                                Err(_) => (request, Some(n)),
+                            },
+                            // Nothing else waits: an event, else the next call.
+                            None => match next_event(&events) {
+                                Some(kind) => (Request::Event(kind), None),
+                                None => match calls.recv() {
+                                    Ok(call) => {
+                                        backlog.push_back(call);
+                                        continue;
+                                    }
+                                    Err(_) => break,
+                                },
+                            },
+                        },
                     };
                     let stale = || n.is_some_and(|n| latest.load(Ordering::SeqCst) != n);
                     if stale() {
@@ -396,6 +413,23 @@ mod tests {
         let got = wait(&inbox, 1);
         assert_eq!(got[0].request, Request::Root);
         assert_eq!(inbox.len(), 0);
+    }
+
+    #[test]
+    fn calls_queued_behind_a_waiting_query_run_first() {
+        let inbox = Inbox::default();
+        let job = Job { run: fake, socket, post: || {}, flick: no_flick, raw: echo };
+        let w = Worker::start(spec(), job, inbox.clone()).unwrap();
+        // Queued while the slow call runs: the query waits its debounce, the others go first.
+        let (tx, rx) = mpsc::channel();
+        assert!(w.send(Request::Open { view: "slow".into() }) && w.query(query("q")));
+        assert!(w.send(Request::Root) && w.raw("{}".into(), tx));
+        let got = wait(&inbox, 3);
+        let requests: Vec<&Request> = got.iter().map(|a| &a.request).collect();
+        assert_eq!(requests, [&Request::Open { view: "slow".into() }, &Request::Root, &query("q")]);
+        assert_eq!(rx.try_recv(), Ok(Ok("{}".into())));
+        // The query ran last, after the raw call.
+        assert_eq!(w.last().unwrap().op, "query");
     }
 
     #[test]
