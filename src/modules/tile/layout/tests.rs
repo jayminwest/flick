@@ -106,17 +106,17 @@ fn an_accordion_tops_the_child_that_holds_focus() {
 
 #[test]
 fn an_accordion_off_the_focus_keeps_its_most_recent_child_on_top() {
-    let inner = split(Orientation::V, Layout::Accordion, vec![win(2), win(3), win(5), win(6)]);
+    let inner =
+        split(Orientation::V, Layout::Accordion, vec![win(2), win(3), win(5), win(6), win(7)]);
     let t = tree(Orientation::H, Layout::Tiles, vec![win(1), inner]);
     let mut t = focus(focus(focus(t, 5), 3), 1);
     let ys = |t: &Tree| -> Vec<i32> {
         frames_of(t, AREA, Opts::default()).iter().map(|f| f.y - 25).collect()
     };
-    assert_eq!(ys(&t), [0, 0, P, 2 * P, P], "3 stays on top after focus moves to 1");
+    assert_eq!(ys(&t), [0, 0, P, 2 * P, P, P], "3 stays on top after focus moves to 1");
     t.remove(3);
-    assert_eq!(ys(&t), [0, 0, P, P], "then the one focused before it");
+    assert_eq!(ys(&t), [0, 0, P, 2 * P, P], "then the one focused before it");
     t.remove(5);
-    t.insert(7, Some(6));
     assert_eq!(ys(&t), [0, 0, 2 * P, P], "none focused under it: the first");
 }
 

@@ -247,7 +247,7 @@ fn agrees(t: &split::Tree) {
 fn real() -> split::Tree {
     let mut t = split::Tree::default();
     for w in 1..=4 {
-        t.insert(w, None);
+        t.insert(w);
     }
     t.join(2, Orientation::H, true);
     t
@@ -273,7 +273,8 @@ fn the_walks_read_the_real_tree_and_its_focus_history() {
 fn the_walks_agree_on_deep_trees_and_accordions() {
     let mut t = real();
     for w in 5..=8 {
-        t.insert(w, Some(w - 2));
+        t.focus(w - 2);
+        t.insert(w);
     }
     t.join(5, Orientation::V, true);
     t.join(2, Orientation::V, true);
