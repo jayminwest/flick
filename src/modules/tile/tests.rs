@@ -212,18 +212,52 @@ fn a_parked_window_the_snapshot_loses_keeps_its_row_until_it_is_gone() {
         changed(t, cx);
         assert_eq!(calls(), ["drain"]);
         assert_eq!(stored(cx), [1, 2, 3]);
-        // 1 comes back still parked: its old frame, not the centre, on the focused workspace.
+        // 1 comes back still parked: it stays on workspace 1, parked, with its row.
         set_windows(vec![win(1, PARK_X), win(3, PARK_X)]);
         changed(t, cx);
-        assert_eq!(calls(), ["drain", "place 1"]);
-        assert_eq!(x_of(1), Some(0.0));
-        assert_eq!(stored(cx), [2, 3]);
-        assert_eq!(t.spaces.of(1), Some(1));
-        // 2 closes while unreported: its row goes.
+        assert_eq!(calls(), ["drain"]);
+        assert_eq!((x_of(1), t.spaces.of(1), t.spaces.of(2)), (Some(PARK_X), Some(0), Some(0)));
+        assert_eq!(stored(cx), [1, 2, 3]);
+        // Workspace 1 shows 1 and 3 at their old frames; 2, still unreported, keeps its row.
+        assert_eq!(run(t, cx, &["ws", "1"]).unwrap(), "workspace 1: 2 shown, 0 hidden");
+        assert_eq!(calls()[..2], ["place 1,3", "hide "]);
+        assert_eq!((x_of(1), x_of(3)), (Some(0.0), Some(600.0)));
+        assert_eq!(stored(cx), [2]);
+        // 2 closes while unreported: its row and its workspace go.
         GONE.with(|g| g.borrow_mut().insert(2));
         changed(t, cx);
         assert_eq!(calls(), ["drain"]);
-        assert_eq!(stored(cx), [3]);
+        assert_eq!((stored(cx), t.spaces.of(2)), (vec![], None));
+    });
+}
+
+#[test]
+fn a_parked_window_missing_at_a_switch_or_restore_goes_back_when_it_returns() {
+    with_tile(vec![win(1, 0.0), win(2, 300.0)], |t, cx| {
+        t.on_event(Event::Started, cx);
+        run(t, cx, &["ws", "2"]).unwrap();
+        set_windows(vec![win(2, PARK_X)]);
+        changed(t, cx);
+        calls();
+        assert_eq!(run(t, cx, &["restore"]).unwrap(), "put back 1 windows");
+        assert_eq!(calls(), ["place 2"]);
+        assert_eq!(stored(cx), [1]);
+        // 1 returns parked on the focused workspace: back to its saved frame, not centred.
+        set_windows(vec![win(1, PARK_X), win(2, 300.0)]);
+        changed(t, cx);
+        assert_eq!(calls(), ["drain", "place 1"]);
+        assert_eq!((x_of(1), stored(cx)), (Some(0.0), vec![]));
+        // The same for a switch to the workspace of a missing parked window.
+        run(t, cx, &["ws", "1"]).unwrap();
+        set_windows(vec![win(2, PARK_X)]);
+        changed(t, cx);
+        calls();
+        assert_eq!(run(t, cx, &["ws", "2"]).unwrap(), "workspace 2: 1 shown, 0 hidden");
+        assert_eq!(stored(cx), [1]);
+        set_windows(vec![win(1, PARK_X), win(2, 300.0)]);
+        changed(t, cx);
+        assert_eq!(calls()[3..], ["drain", "place 1"]);
+        assert_eq!((x_of(1), stored(cx)), (Some(0.0), vec![]));
     });
 }
 

@@ -10,7 +10,8 @@
 //! `Started` keeps the rows whose window still exists and puts each back as winman reports
 //! it; any other window that turns up parked at a corner is centred on its screen. A parked
 //! window that winman's snapshot loses but the window server still has keeps its row the same
-//! way, and goes back to its old frame when it returns. Real platform calls sit behind
+//! and its workspace the same way: it returns still parked, and goes back to its old frame
+//! once its workspace is focused. Real platform calls sit behind
 //! `wire::Hooks`.
 //!
 //! Pure cores for the next steps, not wired in yet (flick-ac1d): the split tree of a workspace
@@ -166,39 +167,49 @@ impl Tile {
         let windows = (self.hooks.snapshot)();
         let live: HashSet<WinId> = windows.iter().map(|w| w.id).collect();
         let mut forget = vec![];
-        for id in self.seen.iter().copied().filter(|id| !live.contains(id)).collect::<Vec<_>>() {
-            self.seen.remove(&id);
-            self.spaces.remove(id);
-        }
         // The snapshot can miss a window for a while (AXWindows leaves out other Spaces'): a
-        // parked one keeps its row, like a leftover one, until it is back or really gone.
+        // parked one keeps its row and its workspace, a leftover one its row, until it is back
+        // or really gone.
         let exists = self.hooks.exists;
         let mut closed: Vec<WinId> = self.leftover.keys().copied().collect();
         closed.extend(self.parked.keys());
         closed.retain(|id| !live.contains(id) && !exists(*id));
-        for id in closed {
+        for &id in &closed {
             self.leftover.remove(&id);
             self.parked.remove(&id);
-            forget.push(id);
         }
+        let mut gone = closed.clone();
+        for id in self.seen.iter().copied().filter(|id| !live.contains(id)).collect::<Vec<_>>() {
+            self.seen.remove(&id);
+            if !self.parked.contains_key(&id) {
+                gone.push(id);
+            }
+        }
+        for id in gone {
+            self.spaces.remove(id);
+        }
+        forget.extend(closed);
         let mut moves = vec![];
         for w in &windows {
             if !self.seen.insert(w.id) {
                 continue;
             }
-            if let Some(row) = self.leftover.remove(&w.id).or_else(|| self.parked.remove(&w.id)) {
+            // A parked window back from a gap stays parked on its workspace.
+            if let Some(row) = self.leftover.remove(&w.id) {
                 moves.push((w.id, row.frame));
                 forget.push(w.id);
-            } else if let Some(frame) = (self.hooks.stray)(w.frame) {
+            } else if !self.parked.contains_key(&w.id)
+                && let Some(frame) = (self.hooks.stray)(w.frame)
+            {
                 moves.push((w.id, frame));
             }
             if managed(w) {
                 self.spaces.add(w.id);
             }
         }
-        // The focused workspace never has parked windows (a smaller `workspaces` moves them
-        // there).
-        for &id in self.spaces.windows(self.spaces.focused()) {
+        // The focused workspace never has parked windows winman reports (a smaller
+        // `workspaces`, a switch or `restore` while one was missing moves them there).
+        for &id in self.spaces.windows(self.spaces.focused()).iter().filter(|id| live.contains(id)) {
             if let Some(row) = self.parked.remove(&id) {
                 moves.push((id, row.frame));
                 forget.push(id);
@@ -245,9 +256,12 @@ impl Tile {
             self.spaces.switch(from);
             return Err(e);
         }
+        // A parked window winman does not report stays parked: its row puts it back when it
+        // returns (flick-cb18).
         let show: Vec<(WinId, Rect)> = switch
             .show
             .iter()
+            .filter(|id| windows.contains_key(id))
             .filter_map(|id| self.parked.remove(id))
             .map(|r| (r.id, r.frame))
             .collect();
@@ -271,15 +285,25 @@ impl Tile {
         self.switching = None;
     }
 
-    /// `tile restore`: put every parked window back now, all on the focused workspace.
+    /// `tile restore`: put every parked window back now, all on the focused workspace. One
+    /// winman does not report keeps its row and goes back when it returns (flick-cb18).
     fn restore(&mut self, cx: &mut Cx) -> Result<String, String> {
         if !self.running {
             return Err(NOT_RUNNING.into());
         }
-        let frames: Vec<(WinId, Rect)> = self.parked.values().map(|r| (r.id, r.frame)).collect();
+        let live: HashSet<WinId> = (self.hooks.snapshot)().iter().map(|w| w.id).collect();
+        let frames: Vec<(WinId, Rect)> = self
+            .parked
+            .values()
+            .filter(|r| live.contains(&r.id))
+            .map(|r| (r.id, r.frame))
+            .collect();
         (self.hooks.place)(&frames);
-        cx.store.parked_delete(&frames.iter().map(|&(id, _)| id).collect::<Vec<_>>());
-        self.parked.clear();
+        let back: Vec<WinId> = frames.iter().map(|&(id, _)| id).collect();
+        for id in &back {
+            self.parked.remove(id);
+        }
+        cx.store.parked_delete(&back);
         self.spaces.gather();
         Ok(format!("put back {} windows", frames.len()))
     }
