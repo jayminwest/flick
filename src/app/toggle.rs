@@ -26,10 +26,26 @@ thread_local! {
     static PRESSED: Cell<Option<(Instant, Instant)>> = const { Cell::new(None) };
 }
 
-/// Show `request` (root search for `None`), or hide the launcher if it already shows it. A
-/// cycle request on its own view steps the selection instead of hiding.
-pub fn toggle_view(request: Option<ListView>) {
-    open_view(request, true);
+/// The launcher hotkey: show root search, or hide it if it's showing.
+pub fn toggle() {
+    open_view(None, true);
+}
+
+/// Module `module`'s hotkey `key`; a view it returns toggles like the launcher hotkey: shows
+/// it, or hides the launcher if it already shows it. A cycle view on its own view steps the
+/// selection instead of hiding.
+pub fn hotkey(module: &str, key: &str) {
+    if let Some(view) = module_view(module, key) {
+        open_view(Some(view), true);
+    }
+}
+
+/// `hotkey` on the main queue's next turn: for a status item's `Open` row, because `AppKit` is
+/// mid-event and may already hold the state (mulch mx-fcbc43). A verb (`ext open`) uses the
+/// show-only `show_later`.
+pub fn hotkey_later(module: &str, key: &str) {
+    let (module, key) = (module.to_owned(), key.to_owned());
+    events::on_main(move || hotkey(&module, &key));
 }
 
 /// Module `module`'s hotkey `key`, on the main queue's next turn (a verb runs with the state
@@ -38,11 +54,15 @@ pub fn toggle_view(request: Option<ListView>) {
 pub fn show_later(module: &str, key: &str) {
     let (module, key) = (module.to_owned(), key.to_owned());
     events::on_main(move || {
-        let view = with_state(|s| s.registry.hotkey(&module, &key, &mut s.env.cx(""))).flatten();
-        if view.is_some() {
-            open_view(view, false);
+        if let Some(view) = module_view(&module, &key) {
+            open_view(Some(view), false);
         }
     });
+}
+
+/// The view module `module`'s hotkey `key` asks for, if any.
+fn module_view(module: &str, key: &str) -> Option<ListView> {
+    with_state(|s| s.registry.hotkey(module, key, &mut s.env.cx(""))).flatten()
 }
 
 /// Show `request`; one that already shows hides the launcher if `toggle`, else stays.

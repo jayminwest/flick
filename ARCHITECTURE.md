@@ -238,7 +238,8 @@ Sources:
   the reload just enabled hears it without either importing the other (`message` re-sends
   `CardsPending` for `kota`, flick-b220; `task` re-sends `TaskChanged` for `activity`,
   flick-4bb4).
-- `app::toggle_view` dispatches and publishes `LauncherOpened` when root search opens.
+- `app::toggle` (the launcher hotkey; `app/toggle.rs`) dispatches and publishes `LauncherOpened`
+  when root search opens.
 - The key tap thread posts `Chord` (see below).
 - `platform::notify::on_click(fn(&str))` reports a click on a notification by its id, on the
   main thread. One handler per process (the first `on_click` wins); `herdr` sets it at
