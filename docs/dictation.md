@@ -12,7 +12,13 @@ Everything stays on this Mac. The recorder (sox's `rec`) and the speech-to-text 
    brew install whisper-cpp sox
    ```
 
-2. **Download the model.** Flick never downloads models. The default `model` is whisper large-v3-turbo, 5-bit quantized (`ggml-large-v3-turbo-q5_0.bin`, about 574 MB), at the path Flick expects:
+2. **Download the model.** Flick never downloads models. The default `model` is whisper large-v3-turbo, 5-bit quantized (`ggml-large-v3-turbo-q5_0.bin`, about 574 MB), at the path Flick expects. From a checkout, the script downloads it and checks its SHA-256 (it keeps a good file, so it is safe to run again):
+
+   ```bash
+   scripts/fetch-dictation-model.sh
+   ```
+
+   Without a checkout:
 
    ```bash
    curl -L --fail --create-dirs \
