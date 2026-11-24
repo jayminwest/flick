@@ -827,7 +827,10 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   through the `server::Stream` trait; `server::Limits` holds what differs (line cap, idle
   timeout, write timeout, whether `["events"]` is allowed). It binds one listener per address `tailscale ip`
   reports that `core::control::is_tailnet` accepts, never a wildcard; loopback is admitted
-  only by the test constructor `Net::loopback`. Before reading a request it requires a
+  only by the test constructor `Net::loopback` and in a driven instance, whose `Net::process`
+  uses `tailscale::Loopback` instead of the CLI: it listens on 127.0.0.1 and ::1 only, never a
+  tailnet address, and names every loopback peer `localhost`, so `[remote] peers =
+  ["localhost"]` plus `flick remote on` lets a simulator on this Mac (flick-ios) post to it. Before reading a request it requires a
   Tailscale peer address and a `tailscale whois` name in `peers`; any failure closes the
   connection and is kept as `NetStatus::last`. Each request is `split_flags`, then forced
   `remote = true`, then checked by `net_policy`. Limits: 64 KiB lines, 30 s idle, 10 s writes,
