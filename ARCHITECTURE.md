@@ -953,7 +953,8 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   writes `panel::snapshot`. `wait [ms]` (default 5000, at most 60000) answers the scene once
   it differs from the one the last drive verb left, at once if it already does, else an error
   after `ms`: background answers (`ModuleChanged`) land after a verb's reply. It answers
-  later (`core::later`), polling on a main-thread timer.
+  later (`core::later`), polling on a main-thread timer. Recipe: `docs/drive.md`; what a
+  driven instance cannot show: `docs/hand-check.md`.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets

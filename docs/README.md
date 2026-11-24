@@ -39,3 +39,5 @@ Each page has the module's settings and commands, then a manual test checklist.
 - [`how-it-works.md`](how-it-works.md): source map and macOS mechanics.
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md): layers, the `Module` contract, events, store, config, control socket.
 - [`../CLAUDE.md`](../CLAUDE.md): quality gates and agent rules.
+- [`drive.md`](drive.md): a driven launcher (`flick --drive`) that agents drive and read with `flick drive`.
+- [`hand-check.md`](hand-check.md): what a driven instance cannot show, for the owner to check by hand.
