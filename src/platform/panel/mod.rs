@@ -2,7 +2,7 @@
 //! It shows what `render` or `render_form` gives it and reports typing and keys to the
 //! `Handlers`.
 
-mod form;
+pub mod form;
 mod keys;
 mod rows;
 mod scroll;

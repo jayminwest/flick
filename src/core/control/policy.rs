@@ -8,7 +8,7 @@
 /// run code, take the keyboard (`message chat`), start the microphone, make this Mac ssh
 /// (`kota ask`, `message ask`) or send
 /// requests to model servers (`llm`, any verb), restart services or read logs (`sys restart`,
-/// `sys tail`), pop a key window (`sys window`), pop the launcher, run an extension with a
+/// `sys tail`), pop a key window (`sys window`), pop or drive the launcher (`drive`), run an extension with a
 /// request of the caller's choosing or spawn extensions at all (`ext open`, `ext call`,
 /// `ext refresh`: unlike `kota refresh` it has no rate limit), read the screen, write files
 /// or delete data that cannot come back (`task rm` drops the task's tracked time). Review this table when a
@@ -32,6 +32,7 @@ const NET_DENIED: &[(&str, &[&str])] = &[
     ("sys", &["restart", "tail", "window"]),
     ("ext", &["refresh", "open", "call"]),
     ("tile", &["ws", "restore"]),
+    ("drive", &[]),
 ];
 
 /// The module whose network-access toggle a network caller may only read.

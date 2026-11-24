@@ -259,6 +259,18 @@ pub fn field_value(index: usize) -> String {
         .unwrap_or_default()
 }
 
+/// Replace the text of form field `index`, as typing would (a driven instance's `drive`
+/// verbs). The caller tells the controller (`Handlers::field_changed`).
+pub fn set_field(index: usize, text: &str) {
+    with_ui(|ui| ui.form.inputs.get(index).map(|f| f.setStringValue(&ns(text))));
+}
+
+/// Replace the search field's text, as typing would; its placeholder stays. The caller tells
+/// the controller (`Handlers::query_changed`).
+pub fn set_search(text: &str) {
+    with_ui(|ui| ui.field.setStringValue(&ns(text)));
+}
+
 /// The form field being edited, which a mouse click can change behind the controller's back.
 pub fn focused_field() -> Option<usize> {
     with_ui(|ui| ui.form.inputs.iter().position(|f| f.currentEditor().is_some())).flatten()

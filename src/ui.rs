@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use crate::core::{Field, Form, Icon, Item, Tone};
 use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
+pub use crate::platform::panel::form::{FORM_FIELDS, set_field, set_search};
 pub use crate::platform::panel::{
     VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, scroll_text,
     set_opacity, set_placeholder, set_query, show, snapshot,
@@ -100,7 +101,6 @@ fn keep(outline: String) {
 
 /// What the panel shows, as a text outline of the last view or form it was handed (see
 /// `scene`); empty before the first render.
-#[cfg_attr(not(test), expect(dead_code, reason = "the drive verbs (flick-355ef9) read it"))]
 pub fn scene() -> String {
     SCENE.with_borrow(Clone::clone)
 }
