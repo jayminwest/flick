@@ -379,6 +379,7 @@ impl State {
             _ => ("", false),
         };
         ui::render(&View {
+            screen: self.screen.kind(),
             title,
             items: &self.results,
             selected: rows.then_some(self.selected),
