@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod control;
 mod core;
+mod drive;
 mod hotkey;
 mod modules;
 mod platform;

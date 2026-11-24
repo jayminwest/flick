@@ -111,8 +111,11 @@ thread_local! {
 
 /// Show `owner`'s item with `symbol` as its title ("●"), `tooltip`, and `menu`. Calling it
 /// again while shown updates the same item and menu in place, so an open menu shows the
-/// new rows. A `Pick` row calls `on_pick(key)`.
+/// new rows. A `Pick` row calls `on_pick(key)`. A driven process (`app::is_driven`) shows none.
 pub fn show(owner: &'static str, symbol: &str, tooltip: &str, menu: &[Entry], on_pick: fn(&str)) {
+    if super::app::is_driven() {
+        return;
+    }
     let mtm = super::mtm();
     let target = TARGET.with(|t| t.get_or_init(|| new_target(mtm)).clone());
     let (item, ns_menu) = OWNERS.with_borrow_mut(|owners| {

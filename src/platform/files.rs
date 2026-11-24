@@ -9,6 +9,9 @@ use objc2_foundation::{NSFileManager, NSString, NSURL};
 /// `Ok` holds its new location in the Trash; `Err` holds the system's description of why it
 /// could not move (missing, no permission, protected container).
 pub fn trash(path: &Path) -> Result<PathBuf, String> {
+    if super::app::is_driven() {
+        return Err(format!("{}: a driven instance moves nothing to the Trash", path.display()));
+    }
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
     let mut moved = None;
     NSFileManager::defaultManager()

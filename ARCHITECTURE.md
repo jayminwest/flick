@@ -13,10 +13,10 @@ this file in the same commit.
 | core | `src/core/` | Plain Rust: `Item`, `ItemId`, `Outcome`, `ListView`, `Form`, `Action`, `Confirm`, `Module`, `Registry`, `Event`, `Ranker` and frecency, control protocol types (`core::control`) and later answers of verbs (`core::later`), the span clock (`core::track`: idle backdating, pause/resume, title normalization, flicker merge, local-day split; `track::civil`: day starts, dates, local times, short durations and range clipping for the `activity` and `task` reports), the card model (`core::card`: KOTA card schema v1, parser with caps and degrade-to-text, normalized JSON, `plain()` fallback; `core::card::action`: the closed `do` vocabulary, its policy (remote-origin `flick` words must pass `net_policy`; `open_app` takes a name or bundle id, never a path), the press values JSON), shared by `message`, `platform::hud`, chat and the status item; the markdown-lite parser (`core::markup`: `parse(md) -> Vec<Block>` of paragraph / heading 1-3 / bullet / fenced code blocks holding `Span { text, style: Style { bold, italic, code }, link }`, never panics, unclosed markers stay literal; `platform::surface::render` draws the blocks styled, for surface bubbles and HUD card text blocks; `plain(md)` is the plain-text form), and the SQLite store and its migrations (`core::store`). Unit tests run without `AppKit`. |
 | modules | `src/modules/<name>/` | One directory per feature. Registered in `src/modules/mod.rs`. |
 | ui | `src/ui.rs` | Turns `Item`s and `Form`s into the rows and form fields that `platform::panel` draws. Forwards typing and keys to the controller. Keeps the last view or form it handed the panel as a text outline, `ui::scene()` (pure `ui::scene`, 100% floor): `screen:` (`root`, `list`, `actions`, `confirm` from `Screen::kind`, or `form`), `title:` or the search `query:`, `rows: a-b of n` with the visible rows (1-based index, `>` on the selected one, ` — subtitle`, `  [accessory]`, a non-neutral tone), or `empty:`, then `footer:`, `action:` and the `text:` block; a form lists `fields:` (`>` on the focused one, the value quoted, its placeholder while empty, required, multiline) and its `error:`. Knows no feature. |
-| controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. |
+| controller | `src/app.rs`, `src/app/`, `src/root.rs`, `src/hotkey.rs`, `src/drive.rs` | `app` holds the registry, the screen on the panel and the selection, and applies `Outcome`s. `app/screen.rs` is the `Screen` enum and its pure decisions; `app/overlay.rs` runs the action menu, confirmation and form screens. `root` ranks root search. `hotkey` binds hotkeys and routes presses to the controller. `drive` boots a driven instance (`flick --drive`, below). |
 | shared services | `src/config.rs` | Config loading and per-module tables. |
 | control | `src/control/` | The Unix socket server and the network transport over Tailscale (`control::net`). Runs requests on the main thread. Streams events. |
-| cli | `src/cli/` | Argument parsing and the socket client. `snapshot`, `import-raycast`, `config example` and `config path` run in-process. |
+| cli | `src/cli/` | Argument parsing and the socket client. `--drive`, `snapshot`, `import-raycast`, `config example` and `config path` run in-process. |
 
 There is no `src/ui/` directory. `src/raycast.rs` (quicklink import) is CLI code that uses
 `crate::modules::quicklinks` directly.
@@ -754,7 +754,9 @@ writes a commented default (`DEFAULT_CONFIG`).
   registry keeps the ids the config leaves out (`Registry::off`): a verb to one answers
   `<id> is off: ...`, and `help` hides their topics. `help` is rebuilt on every reload
   (`modules::REBUILT`) for that, without `Started`. No opt-in module has a default that names
-  a machine: `[kota]` requires `machine`, `cwd` and `dash`.
+  a machine: `[kota]` requires `machine`, `cwd` and `dash`. A driven instance also leaves out
+  `modules::DRIVEN_OFF` (desktop, switcher, window, tile, keys, dictation, capture, flick), whatever
+  the config says.
 - A module reads its table with `section.get::<Settings>()` into a private type. Give the type
   `#[derive(Default, Deserialize)]` and `#[serde(default)]`. Errors start with `[<id>]: `.
 - `LEGACY` in `src/config.rs` is the only place that knows the old flat keys:
@@ -922,12 +924,27 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   unreachable, connection dropped), 2 for usage errors. `flick events` prints the stream.
   `flick snapshot`, `flick import-raycast`, `flick config example` and `flick config path` do
   not use the socket.
+- Driven instance (`flick --drive`, `src/drive.rs`): the real launcher for an agent to drive
+  over a scratch socket. It needs `$FLICK_CONFIG` (its fixture config, also on `reload`) and
+  `$FLICK_SOCKET` set and not empty (exit 2), and exits 1 when a Flick already answers on that
+  socket. It boots as `flick snapshot` does: in-memory store, no hotkeys, key tap, status items
+  or bundle already-running check; `events::start_posted` delivers posted events
+  (`ModuleChanged`) but observes nothing (no workspace, sleep, screen or pasteboard
+  observers). `platform::app::set_driven` runs before any window exists: from then on
+  `panel::show` and `hide` only flip what `panel::is_visible` reports, HUD cards and surfaces
+  never order in, `status_item::show` does nothing and `notify::available` is false. Nothing acts on the
+  desktop: pasteboard writes, injected keys (`keytap`, `ax::send_paste`), app and window
+  activation (`ax::make_frontmost`, `ax::focus`), `workspace` open, quit, reveal and hide,
+  `files::trash` and the `hid` remap do nothing or return an error. `hotkey::register` binds
+  nothing.
+  `modules::DRIVEN_OFF` modules, which act on the real desktop or hardware, are left out of
+  the registry; every other module runs on the fixture config.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets
   to give a port). The name resolves through `ToSocketAddrs` (MagicDNS), each address gets a
   5 s connect timeout. A host request always sends `--remote`. `--host` with a command that
-  runs in this process (launcher, help, snapshot, import-raycast, config example, config path)
+  runs in this process (launcher, `--drive`, help, snapshot, import-raycast, config example, config path)
   is a usage error;
   `$FLICK_HOST` leaves those alone. An error line instead of the event stream exits 1.
 - `--stdin` (`src/cli/stdin.rs`): before a request is sent, locally or to a host, a request

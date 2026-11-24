@@ -247,6 +247,10 @@ fn utf16_chunks(text: &str, max: usize) -> Vec<Vec<u16>> {
 /// Post a down and an up of `keycode` with exactly `flags`, carrying `unicode` if not
 /// empty, stamped with `INJECTED_MARK`.
 fn post_marked(keycode: u16, flags: u64, unicode: &[u16]) {
+    // A driven instance (`app::is_driven`) types into no app.
+    if crate::platform::app::is_driven() {
+        return;
+    }
     for down in [true, false] {
         // SAFETY: a null source is allowed; the result is a +1 reference or null.
         let event = unsafe { CGEventCreateKeyboardEvent(ptr::null(), keycode, down) };
