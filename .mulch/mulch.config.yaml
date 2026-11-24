@@ -24,6 +24,8 @@ domains:
   tooling: {}
   ext: {}
   tile: {}
+  ui: {}
+  drive: {}
 governance:
   max_entries: 100
   warn_entries: 150
