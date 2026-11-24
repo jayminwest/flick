@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::io::Read;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -169,6 +169,30 @@ impl<T: Tailnet> Tailnet for Cached<T> {
     }
 }
 
+/// The name every loopback peer goes by under `Loopback`: a driven instance serves it when
+/// `[remote] peers` lists it.
+pub const LOOPBACK_PEER: &str = "localhost";
+
+/// A driven instance's stand-in for Tailscale (`flick --drive`): this machine's loopback
+/// addresses, and `LOOPBACK_PEER` for any loopback peer, so a simulator on this Mac (the
+/// flick-ios app) can post to a scratch Flick. It names no Tailscale address, so a driven
+/// instance never listens on, or admits a peer from, the tailnet.
+pub struct Loopback;
+
+impl Tailnet for Loopback {
+    fn ips(&self) -> Result<Vec<IpAddr>, String> {
+        Ok(vec![Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()])
+    }
+
+    fn whois(&self, peer: SocketAddr) -> Result<Vec<String>, String> {
+        if peer.ip().is_loopback() {
+            Ok(vec![LOOPBACK_PEER.into()])
+        } else {
+            Err("not a loopback address".into())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +290,17 @@ mod tests {
         assert_eq!(calls(), 4);
         assert_eq!(tailnet.ips().unwrap().len(), 1);
         assert!(tailnet.whois(a).is_ok());
+    }
+
+    #[test]
+    fn loopback_names_only_loopback_addresses_and_peers() {
+        let ips = Loopback.ips().unwrap();
+        assert!(!ips.is_empty() && ips.iter().all(IpAddr::is_loopback), "{ips:?}");
+        for peer in ["127.0.0.1:50000", "[::1]:50000"] {
+            assert_eq!(Loopback.whois(peer.parse().unwrap()).unwrap(), [LOOPBACK_PEER]);
+        }
+        for peer in ["100.64.0.1:1", "[fd7a:115c:a1e0::1]:1", "192.168.1.2:1"] {
+            assert!(Loopback.whois(peer.parse().unwrap()).is_err(), "{peer}");
+        }
     }
 }
