@@ -40,8 +40,12 @@ fn copied_text_from(pb: &NSPasteboard) -> Option<String> {
     pb.stringForType(string_type).map(|text| text.to_string())
 }
 
-/// Replace the pasteboard's contents with `text`.
+/// Replace the pasteboard's contents with `text`. Every write here does nothing in a driven
+/// instance (`app::is_driven`), which must leave the user's clipboard alone.
 pub fn set_text(text: &str) {
+    if super::app::is_driven() {
+        return;
+    }
     let pb = NSPasteboard::generalPasteboard();
     pb.clearContents();
     // SAFETY: NSPasteboardTypeString is an immutable framework constant, set at load time.
@@ -53,6 +57,9 @@ pub fn set_text(text: &str) {
 /// `TransientType`, so Flick's clip history (`copied_text`) and other clipboard managers do
 /// not record it. For copies out of a private surface.
 pub fn set_text_concealed(text: &str) {
+    if super::app::is_driven() {
+        return;
+    }
     set_transient_text_on(&NSPasteboard::generalPasteboard(), text);
 }
 
@@ -60,6 +67,9 @@ pub fn set_text_concealed(text: &str) {
 /// writes TIFF, for apps that read only TIFF; skipped when `NSBitmapImageRep` cannot decode
 /// `bytes`.
 pub fn set_png(bytes: &[u8]) {
+    if super::app::is_driven() {
+        return;
+    }
     let png = NSData::with_bytes(bytes);
     let tiff = NSBitmapImageRep::imageRepWithData(&png).and_then(|rep| rep.TIFFRepresentation());
     let pb = NSPasteboard::generalPasteboard();
@@ -93,6 +103,9 @@ pub fn snapshot() -> Snapshot {
 
 /// Put `snap` back on the general pasteboard; returns the new change count.
 pub fn restore(snap: &Snapshot) -> isize {
+    if super::app::is_driven() {
+        return change_count();
+    }
     restore_to(&NSPasteboard::generalPasteboard(), snap)
 }
 
@@ -100,6 +113,9 @@ pub fn restore(snap: &Snapshot) -> isize {
 /// so clip history and clipboard managers skip it; returns the new change count (restore
 /// only while it is still this).
 pub fn set_transient_text(text: &str) -> isize {
+    if super::app::is_driven() {
+        return change_count();
+    }
     set_transient_text_on(&NSPasteboard::generalPasteboard(), text)
 }
 

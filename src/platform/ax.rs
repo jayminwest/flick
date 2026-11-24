@@ -84,8 +84,12 @@ pub fn is_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(Retained::as_ptr(&options) as CFTypeRef) }
 }
 
-/// Press Cmd+V in the frontmost app.
+/// Press Cmd+V in the frontmost app. This, `make_frontmost` and `focus` do nothing in a
+/// driven instance (`app::is_driven`).
 pub fn send_paste() {
+    if super::app::is_driven() {
+        return;
+    }
     for down in [true, false] {
         // SAFETY: a null source is allowed; the result is a +1 reference or null.
         let event = unsafe { CGEventCreateKeyboardEvent(ptr::null(), KEY_V, down) };
@@ -103,7 +107,7 @@ pub fn send_paste() {
 
 /// Activate app `pid` through Accessibility. Returns false if that failed.
 pub fn make_frontmost(pid: i32) -> bool {
-    if !is_trusted(false) {
+    if super::app::is_driven() || !is_trusted(false) {
         return false;
     }
     let app_el = app_element(pid);
@@ -295,6 +299,9 @@ pub fn standard_windows(pid: i32) -> Vec<AxWindow> {
 /// Raise `window` of app `pid` and activate the app (switching desktops if needed). Without a
 /// window, just activate the app. `minimized`: the window was minimized when listed.
 pub fn focus(pid: i32, window: Option<&AxWindow>, minimized: bool) {
+    if super::app::is_driven() {
+        return;
+    }
     let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else {
         return;
     };

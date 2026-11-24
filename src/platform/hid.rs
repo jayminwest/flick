@@ -39,13 +39,20 @@ type Run<'a> = &'a mut dyn FnMut(&[&str]) -> Result<String, String>;
 
 /// Map Caps Lock to Right Control, keeping every other mapping. Replaces another tool's Caps Lock entry
 /// (two entries for one key are ambiguous). Writes nothing when the mapping is already set.
+/// A driven instance (`app::is_driven`) changes no mapping, here or in `clear_caps_remap`.
 pub fn set_caps_remap() -> Result<(), String> {
+    if super::app::is_driven() {
+        return Ok(());
+    }
     set_with(&mut hidutil)
 }
 
 /// Remove Flick's Caps Lock entry (either target), keeping every other mapping. Writes nothing
 /// when it is not set.
 pub fn clear_caps_remap() -> Result<(), String> {
+    if super::app::is_driven() {
+        return Ok(());
+    }
     clear_with(&mut hidutil)
 }
 

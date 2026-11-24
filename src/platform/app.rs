@@ -5,6 +5,7 @@ use std::ffi::c_void;
 use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use block2::RcBlock;
 use objc2::MainThreadMarker;
@@ -38,6 +39,9 @@ unsafe extern "C" {
     fn signal(sig: i32, handler: usize) -> usize;
 }
 
+/// Set by `set_driven`.
+static DRIVEN: AtomicBool = AtomicBool::new(false);
+
 const SIGTERM: i32 = 15;
 const SIG_IGN: usize = 1;
 
@@ -51,6 +55,18 @@ thread_local! {
 #[expect(clippy::expect_used, reason = "startup invariant: no UI without the main thread")]
 pub fn require_main_thread() {
     MainThreadMarker::new().expect("must start on the main thread");
+}
+
+/// Make this process a driven instance (`flick --drive`), before any window exists: from
+/// now on the launcher panel, HUD cards, surfaces, status items and notifications never
+/// reach the screen. There is no way back.
+pub fn set_driven() {
+    DRIVEN.store(true, Ordering::Relaxed);
+}
+
+/// Whether `set_driven` ran: nothing of this process may show on screen.
+pub fn is_driven() -> bool {
+    DRIVEN.load(Ordering::Relaxed)
 }
 
 /// Run as an accessory app: no Dock icon or menu bar.

@@ -71,6 +71,17 @@ modules! {
 /// move every window, which a Mac must ask for (flick-0c67).
 pub const OPT_IN: [&str; 4] = ["kota", "llm", "dictation", "tile"];
 
+/// Modules a driven instance (`flick --drive`) leaves out whatever its config says, because
+/// they act on the real desktop or hardware: `desktop`, `switcher` and `window` move,
+/// hide and focus the user's windows, `tile` moves every window, `keys` installs the key
+/// tap and the Caps Lock remap (`platform::hid`), `dictation` records the microphone,
+/// `capture` shoots the screen and draws over it, and `flick` rebuilds and reinstalls the
+/// app. Every other module runs on the fixture config and the in-memory store; what it would
+/// show (panel, cards, surfaces, status items, banners) stays off screen
+/// (`platform::app::is_driven`).
+pub const DRIVEN_OFF: [&str; 8] =
+    ["desktop", "switcher", "window", "tile", "keys", "dictation", "capture", "flick"];
+
 /// The `OPT_IN` modules `config` leaves out, as `Modules::add` decides.
 fn opt_in_off(config: &Config) -> Vec<&'static str> {
     OPT_IN
@@ -91,7 +102,7 @@ pub use clipboard::store::Clips;
 
 /// Every enabled module over `apps`, in `modules!` order. Errors name the bad table.
 pub fn with_apps(config: &Config, apps: Vec<apps::App>) -> Result<Registry, String> {
-    let mut m = Modules { config, list: vec![], off: vec![], skipped: None };
+    let mut m = Modules { config, driven: driven(), list: vec![], off: vec![], skipped: None };
     add_all(&mut m, apps)?;
     Ok(Registry::new(m.list).with_off(m.off))
 }
@@ -105,7 +116,12 @@ pub fn lenient(config: &Config) -> (Registry, Vec<String>) {
 
 /// `lenient` over `apps`.
 pub fn lenient_with_apps(config: &Config, apps: Vec<apps::App>) -> (Registry, Vec<String>) {
-    let mut m = Modules { config, list: vec![], off: vec![], skipped: Some(vec![]) };
+    lenient_for(config, apps, driven())
+}
+
+/// `lenient_with_apps`, in a driven instance when `driven` (`DRIVEN_OFF` left out).
+fn lenient_for(config: &Config, apps: Vec<apps::App>, driven: bool) -> (Registry, Vec<String>) {
+    let mut m = Modules { config, driven, list: vec![], off: vec![], skipped: Some(vec![]) };
     // `add` fails only when `skipped` is `None`.
     let _ = add_all(&mut m, apps);
     (Registry::new(m.list).with_off(m.off), m.skipped.unwrap_or_default())
@@ -150,8 +166,15 @@ pub fn reload(registry: &mut Registry, config: &Config) -> Result<Vec<&'static s
     Ok(started)
 }
 
+/// This process is a driven instance.
+fn driven() -> bool {
+    crate::platform::app::is_driven()
+}
+
 struct Modules<'a> {
     config: &'a Config,
+    /// A driven instance: `DRIVEN_OFF` modules stay out.
+    driven: bool,
     list: Vec<Box<dyn Module>>,
     /// The modules the config leaves out.
     off: Vec<&'static str>,
@@ -179,11 +202,13 @@ impl Modules<'_> {
         Ok(())
     }
 
-    /// Module `id`'s table, or `None` (recorded in `off`) when the config leaves it out.
-    /// Not generic, so the `add` of each module stays small.
+    /// Module `id`'s table, or `None` (recorded in `off`) when the config leaves it out, or
+    /// a driven instance does (`DRIVEN_OFF`). Not generic, so the `add` of each module stays
+    /// small.
     fn table(&mut self, id: &'static str) -> Result<Option<Section>, String> {
         let opt_in = OPT_IN.contains(&id);
         let table = match self.config.section(id) {
+            _ if self.driven && DRIVEN_OFF.contains(&id) => None,
             Ok(Some(table)) if table.is_set() || !opt_in => Some(table),
             Ok(_) => None,
             Err(e) => {
@@ -296,6 +321,24 @@ mod tests {
         assert!(!ids(&mut r).iter().any(|id| id.starts_with("app:")));
         test_cx("", |cx| r.dispatch_to(&["app"], crate::core::Event::Started, cx));
         assert!(ids(&mut r).iter().any(|id| id.starts_with("app:")));
+    }
+
+    #[test]
+    fn a_driven_instance_leaves_out_the_desktop_modules_whatever_the_config() {
+        let config = parse(&format!("{}\n[window]\nenabled = true", opt_in_config())).unwrap();
+        let ids = |driven| {
+            let (r, errors) = lenient_for(&config, vec![], driven);
+            assert!(errors.is_empty(), "{errors:?}");
+            let off = r.off().to_vec();
+            (r.into_modules().iter().map(|m| m.id()).collect::<Vec<_>>(), off)
+        };
+        let (on, off) = ids(true);
+        assert!(DRIVEN_OFF.iter().all(|id| off.contains(id) && !on.contains(id)), "{on:?}");
+        assert!(DRIVEN_OFF.iter().all(|id| IDS.contains(id)));
+        // The rest run, opt-in ones included; outside a driven instance so do these.
+        assert!(["app", "task", "ext", "kota", "llm", "help"].iter().all(|id| on.contains(id)));
+        let (all, _) = ids(false);
+        assert!(DRIVEN_OFF.iter().all(|id| all.contains(id)), "{all:?}");
     }
 
     #[test]

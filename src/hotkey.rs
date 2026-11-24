@@ -34,8 +34,11 @@ fn dispatch(id: u32) {
 }
 
 /// Replace all hotkeys with `wanted`, `(spec, target)` pairs bound in order. Registers what
-/// it can and reports the rest.
+/// it can and reports the rest. A driven instance (`flick --drive`) binds none.
 pub fn register(wanted: Vec<(String, Result<Target, String>)>) -> Result<(), String> {
+    if crate::platform::app::is_driven() {
+        return Ok(());
+    }
     if !hotkeys::is_initialized() {
         return Err("Hotkey manager not initialized".into());
     }

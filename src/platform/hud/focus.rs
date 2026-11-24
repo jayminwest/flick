@@ -70,6 +70,9 @@ fn responder(c: &NSControl) -> &NSResponder {
 
 /// Make `panel` key with the keyboard on its first enabled stop (else on the panel).
 fn take(panel: &NSPanel, stops: &[Retained<NSControl>]) {
+    if crate::platform::app::is_driven() {
+        return;
+    }
     panel.makeKeyAndOrderFront(None);
     let first = stops.iter().find(|c| c.isEnabled());
     panel.makeFirstResponder(first.map(|c| responder(c)));

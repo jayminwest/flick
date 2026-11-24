@@ -284,8 +284,12 @@ fn place(s: &Surface) {
 }
 
 /// Show `id` on the screen under the pointer and make it key, with the caret in the input.
-/// Flick does not activate: the app in front stays active.
+/// Flick does not activate: the app in front stays active. A driven process
+/// (`app::is_driven`) never shows one.
 pub fn show(id: SurfaceId) {
+    if super::app::is_driven() {
+        return;
+    }
     let Some(s) = get(id) else { return };
     s.v.rows.flush();
     place(&s);

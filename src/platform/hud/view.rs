@@ -234,7 +234,10 @@ fn place(panel: &NSPanel, frame: Option<NSRect>) {
                 panel.setFrame_display(f, true);
                 panel.invalidateShadow();
             }
-            panel.orderFrontRegardless();
+            // A driven process lays cards out but never shows them.
+            if !crate::platform::app::is_driven() {
+                panel.orderFrontRegardless();
+            }
         }
         None => panel.orderOut(None),
     }

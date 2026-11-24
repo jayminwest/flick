@@ -75,8 +75,12 @@ define_class!(
     }
 );
 
-/// Whether Flick runs from a `.app` bundle with an identifier, which notifications need.
+/// Whether Flick runs from a `.app` bundle with an identifier, which notifications need, and
+/// is not a driven instance (`app::is_driven`), which shows no banners.
 pub fn available() -> bool {
+    if super::app::is_driven() {
+        return false;
+    }
     let bundle = NSBundle::mainBundle();
     let is_app = bundle.bundlePath().to_string().to_ascii_lowercase().ends_with(".app");
     is_app && bundle.bundleIdentifier().is_some_and(|id| !id.is_empty())
