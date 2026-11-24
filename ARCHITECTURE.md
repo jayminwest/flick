@@ -939,6 +939,21 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   nothing.
   `modules::DRIVEN_OFF` modules, which act on the real desktop or hardware, are left out of
   the registry; every other module runs on the fixture config.
+- Drive verbs (`flick drive ...`, `drive::control`): `app::control` hands a request whose
+  first word is `drive` to `crate::drive` before it borrows the controller's state; anything
+  but a driven instance answers `drive: only a driven instance answers (flick --drive)`, and
+  `NET_DENIED` refuses every `drive` request over the network. `key <name>` (up, down,
+  enter, tab, shift-tab, escape, backspace, cmd-k, cmd-q, cmd-enter, line-up, line-down,
+  page-up, page-down, top, bottom) goes through `app::command`; `type <text>` appends to the
+  focused form field (`app::field_changed`) or the search field (`app::query_changed`),
+  and is an error on a screen with a title in its place; `field <n|label> <text>` replaces a
+  form field (1-based number or label). They answer `taken` (handled) or `passed` (the real
+  panel would do its default); a hidden launcher opens root search first, as the hotkey does
+  (`LauncherOpened`). `scene` answers `ui::scene`, or `screen: hidden`; `shot <abs.png>`
+  writes `panel::snapshot`. `wait [ms]` (default 5000, at most 60000) answers the scene once
+  it differs from the one the last drive verb left, at once if it already does, else an error
+  after `ms`: background answers (`ModuleChanged`) land after a verb's reply. It answers
+  later (`core::later`), polling on a main-thread timer.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets

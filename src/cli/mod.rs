@@ -23,6 +23,7 @@ const USAGE: &str = "usage: flick                              run the launcher
        flick --drive                      run a driven launcher for agents: nothing on
                                           screen, in-memory store; needs FLICK_CONFIG
                                           and FLICK_SOCKET set to scratch paths
+       flick drive key|type|field|scene|shot|wait ...  drive a driven launcher
        flick [--json] <module> <verb> [args]  ask the running Flick (--json: raw reply;
                                           FLICK_REMOTE set: marks the request --remote)
        flick --host <name[:port]> ...     ask the Flick on another Mac over Tailscale

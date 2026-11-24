@@ -18,6 +18,7 @@ use crate::platform::panel::Key;
 use crate::platform::{events, status_item};
 use crate::root;
 use crate::ui::{self, VISIBLE_ROWS, View};
+pub use overlay::{form_fields, redraw};
 use screen::{Back, ListNav, Screen};
 pub use toggle::{hotkey, hotkey_later, show_later, toggle};
 
@@ -220,9 +221,15 @@ pub fn on_event(event: Event) {
     }
 }
 
-/// A control request: `reload`, or `<module> <verb> [args...]` for that module.
+/// A control request: `reload`, `drive <verb> [args...]` (`crate::drive`, with the state
+/// free), or `<module> <verb> [args...]` for that module.
 /// `flags`: the request's trailing flag words (`Cx::json`, `Cx::remote`).
 pub fn control(words: &[String], flags: Flags) -> Result<String, String> {
+    if let [first, rest @ ..] = words
+        && first == "drive"
+    {
+        return crate::drive::control(rest);
+    }
     STATE.with(|s| {
         let Ok(mut s) = s.try_borrow_mut() else { return Err("Flick is busy; try again".into()) };
         let s = s.as_mut().ok_or("Flick is still starting")?;
