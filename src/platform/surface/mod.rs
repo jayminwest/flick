@@ -42,6 +42,9 @@
 //!   nothing selected they reach `Handlers::key`, never the pasteboard. `snapshot` refuses.
 //!   What `AppKit` keeps in its views after `set_rows`/`set_input` replace them is outside
 //!   Flick's reach.
+//! - Driven (`driven`, `crate::drive`): in a driven process `show` only counts a surface as
+//!   shown; `driven::scene` outlines every surface as text, and `driven::key`, `input`,
+//!   `submit` and `shot` reach a surface by name through the paths above.
 //! - Threading: main thread only. Handlers run on the main thread with no surface state
 //!   borrowed; `submit`, `chip_removed`, `closed` and `card_action` run on a later run loop
 //!   turn (deferred with `timer::after`), `key` runs synchronously because its answer decides
@@ -49,9 +52,11 @@
 //!   (mx-fcbc43). Surface functions may be called from inside a handler.
 
 mod bubble;
+pub mod driven;
 mod geometry;
 mod input;
 mod keys;
+mod outline;
 mod privacy;
 pub(super) mod render;
 pub mod rows;
@@ -73,7 +78,7 @@ pub use geometry::Size;
 use geometry::{Parts, Rect};
 use input::ns_rect;
 use keys::Fallback;
-pub use keys::{Key, Keystroke};
+pub use keys::{Key, Keystroke, parse};
 pub use rows::{Align, Row};
 use rows::{COALESCE_SECS, Owned};
 use window::{Views, ns};
@@ -163,6 +168,10 @@ struct Surface {
     private: bool,
     v: Views,
     chips: RefCell<Vec<Retained<NSButton>>>,
+    /// In a driven process, whether it counts as shown (`show` puts nothing on screen).
+    shown: Cell<bool>,
+    /// The status dot as last set, for `driven::scene`.
+    status: Cell<Status>,
 }
 
 thread_local! {
@@ -222,6 +231,7 @@ fn submit(s: &Surface) {
 /// Hide on the user's behalf and tell `closed`.
 fn close(s: &Surface) {
     s.v.panel.orderOut(None);
+    s.shown.set(false);
     let (id, h) = (s.id, s.handlers);
     timer::after(0.0, move || (h.closed)(id));
 }
@@ -265,7 +275,17 @@ pub fn open(id: SurfaceId, spec: &Spec, handlers: Handlers) {
     let multi = spec.input == Input::Multi;
     let (hide_on_blur, private) = (spec.hide_on_blur, spec.private.is_some());
     let chips = RefCell::default();
-    let s = Rc::new(Surface { id, handlers, multi, hide_on_blur, private, v, chips });
+    let s = Rc::new(Surface {
+        id,
+        handlers,
+        multi,
+        hide_on_blur,
+        private,
+        v,
+        chips,
+        shown: Cell::new(false),
+        status: Cell::new(Status::Idle),
+    });
     relayout(&s);
     SURFACES.with(|m| m.borrow_mut().insert(id.0, s));
 }
@@ -285,9 +305,12 @@ fn place(s: &Surface) {
 
 /// Show `id` on the screen under the pointer and make it key, with the caret in the input.
 /// Flick does not activate: the app in front stays active. A driven process
-/// (`app::is_driven`) never shows one.
+/// (`app::is_driven`) never shows one: it only counts as shown (`driven`).
 pub fn show(id: SurfaceId) {
     if super::app::is_driven() {
+        if let Some(s) = get(id) {
+            s.shown.set(true);
+        }
         return;
     }
     let Some(s) = get(id) else { return };
@@ -304,12 +327,15 @@ pub fn show(id: SurfaceId) {
 /// Hide `id` without calling `closed`.
 pub fn hide(id: SurfaceId) {
     if let Some(s) = get(id) {
+        s.shown.set(false);
         s.v.panel.orderOut(None);
     }
 }
 
+/// Whether `id` shows; in a driven process, whether it would.
 pub fn is_visible(id: SurfaceId) -> bool {
-    get(id).is_some_and(|s| s.v.panel.isVisible())
+    let driven = super::app::is_driven();
+    get(id).is_some_and(|s| if driven { s.shown.get() } else { s.v.panel.isVisible() })
 }
 
 /// Whether `id` has the keyboard.
@@ -339,6 +365,7 @@ pub fn snapshot(id: SurfaceId, path: &str) -> Result<(), String> {
 
 pub fn set_header(id: SurfaceId, header: &Header) {
     let Some(s) = get(id) else { return };
+    s.status.set(header.status);
     s.v.title.setStringValue(&ns(header.title));
     s.v.subtitle.setStringValue(&ns(header.subtitle));
     let color = match header.status {

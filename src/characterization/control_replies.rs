@@ -251,10 +251,11 @@ fn network_callers_are_refused_side_effecting_requests() {
 #[test]
 fn drive_verbs_answer_only_in_a_driven_instance() {
     // flick-355ef9: `drive key|type|field|scene|shot|wait` drive the launcher of a driven
-    // instance (`flick --drive`). A normal Flick answers every one with an error (exit 1),
+    // instance (`flick --drive`); flick-33e539 adds `card` and `surface` verbs and a shot of
+    // a surface. A normal Flick answers every one with an error (exit 1),
     // and a network caller is refused them all before anything runs.
     let not_driven = r#"{"error":"drive: only a driven instance answers (flick --drive)"}"#;
-    let verbs: [&[&str]; 8] = [
+    let verbs: [&[&str]; 14] = [
         &["drive"],
         &["drive", "key", "enter"],
         &["drive", "type", "tasks"],
@@ -262,6 +263,12 @@ fn drive_verbs_answer_only_in_a_driven_instance() {
         &["drive", "scene"],
         &["drive", "shot", "/tmp/x.png"],
         &["drive", "wait", "100"],
+        &["drive", "card", "press", "c1", "go"],
+        &["drive", "card", "focus"],
+        &["drive", "surface", "key", "chat", "cmd-n"],
+        &["drive", "surface", "input", "chat", "hi"],
+        &["drive", "surface", "submit", "chat"],
+        &["drive", "shot", "/tmp/x.png", "chat"],
         &["drive", "nope"],
     ];
     for words in verbs {

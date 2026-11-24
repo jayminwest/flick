@@ -1,8 +1,8 @@
 # Hand checks
 
-A [driven instance](drive.md) drives and reads the launcher panel. These things it cannot show,
-so the owner checks them at the keyboard. Drive the rest first, then ask for a hand check of
-only what this list names.
+A [driven instance](drive.md) drives and reads the launcher panel, the HUD cards and the
+surfaces. These things it cannot show, so the owner checks them at the keyboard. Drive the
+rest first, then ask for a hand check of only what this list names.
 
 ## Not in a driven instance
 
@@ -13,15 +13,18 @@ only what this list names.
   `drive key` enters at `app::command`, after the panel has read the key.
 - The menu bar: status items, KOTA presence.
 - Notifications: banners never show.
-- HUD cards and surfaces (messages, KOTA chat, cards): they lay out but never show, and
-  `drive scene` and `drive shot` do not include them.
+- HUD cards and surfaces on screen (messages, KOTA chat, cards): `drive scene` reads them
+  and `drive card` and `drive surface` press and type into them, but they never show. Their
+  place, stacking, focus and clicks need the owner. HUD cards have no `drive shot`.
 - The desktop: pasteboard writes and pastes (clip history, snippets, "Copy" actions), opening
   apps, files and URLs, app and window activation, quit, reveal, hide, the Trash, the Caps Lock
   remap. These do nothing or answer an error.
 - Observers: app switches, sleep and wake, screen changes and pasteboard changes are not
   watched, so activity tracking and clip history record nothing by themselves.
-- Network access: `drive` requests are local only, and a driven instance is not a peer for
-  [remote](remote.md) tests.
+- The tailnet: a driven instance serves network peers on loopback only (`localhost`, see
+  [drive.md](drive.md#a-network-peer-a-simulator)), never over Tailscale. Real peers on
+  other Macs, `tailscale whois` and the Tailscale addresses are [remote](remote.md) manual
+  tests. `drive` requests are local only.
 
 ## Only on screen
 

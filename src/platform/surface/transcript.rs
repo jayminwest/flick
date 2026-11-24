@@ -406,6 +406,12 @@ impl Transcript {
         self.layout(pinned);
     }
 
+    /// The rows as last set: the queued ones, else the ones shown.
+    pub(super) fn owned(&self) -> Vec<Owned> {
+        let pending = self.pending.borrow().clone();
+        pending.unwrap_or_else(|| self.rows.borrow().iter().map(|b| b.row.clone()).collect())
+    }
+
     /// Whether a card row was drawn into the view at `host`.
     pub(super) fn has_card(&self, host: usize) -> bool {
         self.rows.borrow().iter().any(|r| card_at(r, host).is_some())

@@ -956,8 +956,16 @@ Protocol: `src/core/control.rs`. Server: `src/control/`. Client: `src/cli/`.
   writes `panel::snapshot`. `wait [ms]` (default 5000, at most 60000) answers the scene once
   it differs from the one the last drive verb left, at once if it already does, else an error
   after `ms`: background answers (`ModuleChanged`) land after a verb's reply. It answers
-  later (`core::later`), polling on a main-thread timer. Recipe: `docs/drive.md`; what a
-  driven instance cannot show: `docs/hand-check.md`.
+  later (`core::later`), polling on a main-thread timer. The scene goes on with the HUD
+  cards (`hud::scene`, each card's outline from its last draw, `hud::card_outline`) and
+  every open surface (`surface::driven::scene`; a driven `surface::show` only counts it as
+  shown; a private one shows only its name). `card press <id> <action>` takes a card
+  button's click path (`on_press`, cap check, keyboard given back); `card focus` is
+  `hud::focus_top`, noted without making a panel key. `surface key <surface> <key>`
+  (`surface::parse`: return, escape, up, down, `cmd-<char>`, plus `shift-`/`opt-`) goes to
+  `Handlers::key` and then the fallback, `surface input` replaces the input, `surface submit`
+  is Return's submit, and `shot <abs.png> <surface>` writes `surface::snapshot`.
+  Recipe: `docs/drive.md`; what a driven instance cannot show: `docs/hand-check.md`.
 - `flick --host <name[:port]> ...` (first, or after a leading `--json`), else `$FLICK_HOST`
   when not empty, sends requests and `flick events` over TCP to the Flick on another Mac
   (`cli::client::Target::Host`; port default `core::control::DEFAULT_PORT`, IPv6 in brackets

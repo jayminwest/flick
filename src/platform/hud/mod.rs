@@ -30,10 +30,12 @@ mod card_layout;
 mod card_view;
 mod clicks;
 mod controls;
+mod driven;
 pub mod embed;
 mod escape;
 mod focus;
 mod keys;
+mod outline;
 mod stack;
 mod text;
 mod timeout;
@@ -50,7 +52,9 @@ use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 pub use card_layout::CANCEL;
 pub use card_layout::CardUi;
+pub use driven::{press, scene};
 pub use focus::{focus_top, unfocus};
+pub use outline::card as card_outline;
 pub use stack::Corner;
 pub use text::TextCard;
 
@@ -144,6 +148,8 @@ struct Entry {
     click_dismisses: bool,
     /// A card's live inputs and buttons; `None` for a `Content` card.
     controls: Option<controls::Controls>,
+    /// What it shows as text, from its last draw (`outline`, for `scene`).
+    outline: Vec<String>,
 }
 
 #[derive(Default)]
@@ -178,11 +184,13 @@ fn fill(mtm: MainThreadMarker, e: &mut Entry, draw: Draw, width: f64, opts: Opti
         Draw::Content(Content::Text(card)) => {
             e.link = card.link.map(str::to_string);
             e.click_dismisses = true;
+            e.outline = outline::text(card);
             text::render(mtm, &e.views.content, card, width)
         }
         Draw::Card(card, ui) => {
             e.link = None;
             e.click_dismisses = false;
+            e.outline = outline::card(card, ui);
             let before = before.as_ref().map(|(i, l)| (i.as_slice(), l.as_slice()));
             let values = card_layout::carry(before, card.inputs());
             let (height, controls) =
@@ -230,6 +238,7 @@ fn show_draw(id: &str, draw: Draw, placement: &Placement, opts: &Options) -> boo
                 link: None,
                 click_dismisses: false,
                 controls: None,
+                outline: Vec::new(),
             };
             s.cards.insert(0, e);
         }
@@ -294,6 +303,7 @@ pub fn dismiss_all() {
     });
     for e in &cards {
         e.views.place(None);
+        focus::forget(e.views.key());
     }
     unmonitor(&monitors);
 }
@@ -305,6 +315,7 @@ fn remove(id: &str) -> Option<Entry> {
         let i = s.cards.iter().position(|e| e.id == id)?;
         let e = s.cards.remove(i);
         e.views.place(None);
+        focus::forget(e.views.key());
         if s.cards.is_empty() {
             return Some((e, empty(s)));
         }
