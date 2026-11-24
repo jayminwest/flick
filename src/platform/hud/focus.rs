@@ -11,16 +11,43 @@
 //! path the launcher takes when it hides; ordering it back in (`orderFrontRegardless`) does
 //! not make it key. `NSWindow::resignKeyWindow` is not used: `AppKit` forbids calling it.
 //!
+//! A driven instance (`app::is_driven`) makes no panel key: `take` only notes the card as
+//! holding the keyboard, so `unfocus`, a press and the scene see it as key.
+//!
 //! The keyboard goes back on Esc, after any press of a card's button (a click after typing
 //! in a field, Space on a focused button, ⌘1..⌘6, ⌘↵), and when the card closes (ordering a
 //! key panel out hands the keyboard back the same way).
+
+use std::cell::Cell;
 
 use objc2::rc::Retained;
 use objc2_app_kit::{NSControl, NSEvent, NSEventModifierFlags, NSEventType, NSPanel, NSResponder};
 
 use super::keys::{self, Command, Mods};
+use super::view::Views;
 use super::{STATE, State};
 use crate::platform::timer;
+
+thread_local! {
+    /// The panel (`Views::key`) a driven instance counts as key; 0 for none.
+    static DRIVEN_KEY: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Whether the card in `v` holds the keyboard (in a driven instance, as `take` noted).
+pub(super) fn holds_key(v: &Views) -> bool {
+    if crate::platform::app::is_driven() {
+        DRIVEN_KEY.get() == v.key()
+    } else {
+        v.panel.isKeyWindow()
+    }
+}
+
+/// The card in panel `window` is gone: it no longer counts as key.
+pub(super) fn forget(window: usize) {
+    if DRIVEN_KEY.get() == window {
+        DRIVEN_KEY.set(0);
+    }
+}
 
 /// Make the newest card key, its keyboard on its first enabled control, without activating
 /// Flick. Returns whether there was a card.
@@ -52,7 +79,7 @@ pub(super) fn pressed(window: usize) {
 /// The key card panel (only the one at `window`, if given).
 fn key_panel(s: &State, window: Option<usize>) -> Option<Retained<NSPanel>> {
     let mut views = s.cards.iter().map(|e| &e.views);
-    let key = views.find(|v| v.panel.isKeyWindow() && window.is_none_or(|w| v.key() == w));
+    let key = views.find(|v| holds_key(v) && window.is_none_or(|w| v.key() == w));
     key.map(|v| v.panel.clone())
 }
 
@@ -71,6 +98,7 @@ fn responder(c: &NSControl) -> &NSResponder {
 /// Make `panel` key with the keyboard on its first enabled stop (else on the panel).
 fn take(panel: &NSPanel, stops: &[Retained<NSControl>]) {
     if crate::platform::app::is_driven() {
+        DRIVEN_KEY.set(std::ptr::from_ref(panel).cast::<()>() as usize);
         return;
     }
     panel.makeKeyAndOrderFront(None);
@@ -79,6 +107,7 @@ fn take(panel: &NSPanel, stops: &[Retained<NSControl>]) {
 }
 
 fn give_back(panel: &NSPanel) {
+    forget(std::ptr::from_ref(panel).cast::<()>() as usize);
     panel.makeFirstResponder(None);
     if panel.isVisible() {
         panel.orderOut(None);

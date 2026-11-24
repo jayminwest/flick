@@ -76,6 +76,38 @@ pub fn command(selector: &str, mods: Mods) -> Option<Keystroke> {
     Some(mods.with(key))
 }
 
+/// The keystroke a driven instance names (`drive surface key`): `return`, `escape`, `up`,
+/// `down` or one character, after any of `cmd-`, `shift-` and `opt-`. A character needs
+/// `cmd-`, as only key equivalents reach a surface's handler; letters are lowercased.
+pub fn parse(name: &str) -> Option<Keystroke> {
+    let mut mods = Mods::default();
+    let mut rest = name;
+    loop {
+        let (flag, tail) = match rest.split_once('-') {
+            Some(("cmd", tail)) if !tail.is_empty() => (&mut mods.cmd, tail),
+            Some(("shift", tail)) if !tail.is_empty() => (&mut mods.shift, tail),
+            Some(("opt", tail)) if !tail.is_empty() => (&mut mods.opt, tail),
+            _ => break,
+        };
+        *flag = true;
+        rest = tail;
+    }
+    let key = match rest {
+        "return" => Key::Return,
+        "escape" => Key::Escape,
+        "up" => Key::Up,
+        "down" => Key::Down,
+        _ => {
+            let mut it = rest.chars();
+            match (it.next(), it.next()) {
+                (Some(c), None) if mods.cmd => Key::Char(c.to_ascii_lowercase()),
+                _ => return None,
+            }
+        }
+    };
+    Some(mods.with(key))
+}
+
 /// What the surface does with a keystroke its module's `key` handler did not take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fallback {
@@ -136,6 +168,23 @@ mod tests {
         assert_eq!(command("moveUp:", NONE), Some(ks(Key::Up, NONE)));
         assert_eq!(command("moveDown:", NONE), Some(ks(Key::Down, NONE)));
         assert_eq!(command("deleteBackward:", NONE), None);
+    }
+
+    #[test]
+    fn a_driven_instance_names_keys_with_modifier_prefixes() {
+        assert_eq!(parse("return"), Some(ks(Key::Return, NONE)));
+        assert_eq!(parse("escape"), Some(ks(Key::Escape, NONE)));
+        assert_eq!(parse("up"), Some(ks(Key::Up, NONE)));
+        assert_eq!(parse("shift-down"), Some(ks(Key::Down, Mods { shift: true, ..NONE })));
+        assert_eq!(parse("cmd-n"), Some(ks(Key::Char('n'), CMD)));
+        assert_eq!(parse("cmd-shift-N"), Some(ks(Key::Char('n'), CMD_SHIFT)));
+        assert_eq!(parse("opt-cmd-]"), Some(ks(Key::Char(']'), Mods { opt: true, ..CMD })));
+        assert_eq!(parse("cmd--"), Some(ks(Key::Char('-'), CMD)));
+        assert_eq!(parse("n"), None);
+        assert_eq!(parse("cmd-"), None);
+        assert_eq!(parse("cmd-ab"), None);
+        assert_eq!(parse("ctrl-n"), None);
+        assert_eq!(parse(""), None);
     }
 
     #[test]

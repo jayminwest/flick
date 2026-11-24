@@ -7,10 +7,11 @@
 //! `$FLICK_SOCKET`; it needs both, so it never reads the user's config (a `reload` included)
 //! or takes the user's socket. `modules::DRIVEN_OFF` modules stay out.
 //!
-//! The drive verbs (`drive key|type|field|scene|shot|wait`, `control`) are control requests
-//! that only a driven instance answers. They enter through the seams real input uses
-//! (`app::command`, `app::query_changed`, `app::field_changed`) and read what the panel was
-//! last handed (`ui::scene`, `ui::snapshot`).
+//! The drive verbs (`drive key|type|field|scene|shot|wait`, `card`, `surface`, `control`)
+//! are control requests that only a driven instance answers. They enter through the seams
+//! real input uses (`app::command`, `app::query_changed`, `app::field_changed`, a HUD card's
+//! button, a surface's `Handlers`) and read what the panel, the cards and the surfaces were
+//! last handed (`ui::scene`, `hud::scene`, `surface::driven::scene`, the snapshots).
 
 use std::cell::{Cell, RefCell};
 use std::ffi::OsString;
@@ -20,13 +21,17 @@ use std::time::{Duration, Instant};
 use crate::core::later::{self, Answer};
 use crate::core::store::Store;
 use crate::platform::panel::Key;
-use crate::platform::{app as macos, events, timer};
+use crate::platform::surface::{self, driven as surfaces};
+use crate::platform::{app as macos, events, hud, timer};
 use crate::{app, config, control, ui};
 
 /// The answer to a drive verb outside a driven instance.
 pub const NOT_DRIVEN: &str = "drive: only a driven instance answers (flick --drive)";
 
-const USAGE: &str = "usage: drive key <name> | type <text> | field <n|label> <text> | scene | shot <abs.png> | wait [ms]";
+const USAGE: &str = "usage: drive key <name> | type <text> | field <n|label> <text> | scene | shot <abs.png> [surface] | wait [ms] | card press <id> <action> | card focus | surface key <surface> <key> | surface input <surface> <text> | surface submit <surface>";
+
+/// What `drive surface key` answers for a name `surface::parse` does not know.
+const SURFACE_KEYS: &str = "return, escape, up, down or one character, after any of cmd-, shift-, opt-; a character needs cmd-";
 
 /// `drive key` names, as the panel's keys.
 const KEYS: [(&str, Key); 16] = [
@@ -120,6 +125,18 @@ pub fn control(args: &[String]) -> Answer {
         ["field", which, text @ ..] => set_field(which, &text.join(" ")),
         ["scene"] => Ok(scene()),
         ["shot", path] => shot(path),
+        ["shot", path, name] => surface_shot(path, name),
+        ["card", "press", id, action] => hud::press(id, action)
+            .map(|()| taken(true))
+            .map_err(|e| format!("drive card press: {e}")),
+        ["card", "focus"] => Ok(taken(hud::focus_top())),
+        ["surface", "key", name, key] => surface_key(name, key),
+        ["surface", "input", name, text @ ..] => surfaces::input(name, &text.join(" "))
+            .map(|()| taken(true))
+            .map_err(|e| format!("drive surface input: {e}")),
+        ["surface", "submit", name] => surfaces::submit(name)
+            .map(|()| taken(true))
+            .map_err(|e| format!("drive surface submit: {e}")),
         ["wait"] => return Ok(wait(WAIT_MS)),
         ["wait", ms] => return wait_ms(ms).map(wait),
         _ => Err(USAGE.into()),
@@ -128,9 +145,13 @@ pub fn control(args: &[String]) -> Answer {
     answer
 }
 
-/// What the launcher shows (`ui::scene`), or `screen: hidden`.
+/// What the launcher shows (`ui::scene`), or `screen: hidden`, then the HUD cards
+/// (`hud::scene`) and the surfaces (`surface::driven::scene`).
 fn scene() -> String {
-    if ui::is_visible() { ui::scene() } else { HIDDEN.into() }
+    let mut out = if ui::is_visible() { ui::scene() } else { HIDDEN.into() };
+    out.push_str(&hud::scene());
+    out.push_str(&surfaces::scene());
+    out
 }
 
 fn taken(handled: bool) -> String {
@@ -204,6 +225,21 @@ fn shot(path: &str) -> Answer {
         return Err("drive shot: give an absolute path".into());
     }
     ui::snapshot(path).map(|()| format!("Wrote {path}"))
+}
+
+fn surface_shot(path: &str, name: &str) -> Answer {
+    if !path.starts_with('/') {
+        return Err("drive shot: give an absolute path".into());
+    }
+    surfaces::shot(name, path)
+        .map(|()| format!("Wrote {path}"))
+        .map_err(|e| format!("drive shot: {e}"))
+}
+
+fn surface_key(name: &str, key: &str) -> Answer {
+    let key = surface::parse(key)
+        .ok_or_else(|| format!("drive surface key: no key \"{key}\" ({SURFACE_KEYS})"))?;
+    surfaces::key(name, key).map(taken).map_err(|e| format!("drive surface key: {e}"))
 }
 
 fn wait_ms(ms: &str) -> Result<u64, String> {
