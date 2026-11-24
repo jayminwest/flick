@@ -155,6 +155,7 @@
     "src/platform/surface/rows.rs": 100.0,
     "src/platform/surface/style.rs": 100.0,
     "src/platform/winman/corner.rs": 100.0,
-    "src/root.rs": 100.0
+    "src/root.rs": 100.0,
+    "src/ui/scene.rs": 100.0
   }
 }

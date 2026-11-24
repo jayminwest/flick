@@ -46,6 +46,17 @@ impl Screen {
         }
     }
 
+    /// The screen's kind for the scene outline (`ui::scene`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Screen::Root => "root",
+            Screen::List(_) => "list",
+            Screen::Form(_) => "form",
+            Screen::Actions { .. } => "actions",
+            Screen::Confirm { .. } => "confirm",
+        }
+    }
+
     /// Root search or a module list: the screens whose items have actions.
     pub fn is_list(&self) -> bool {
         matches!(self, Screen::Root | Screen::List(_))
@@ -227,6 +238,27 @@ mod tests {
         assert_eq!(confirm_hint(&c), "Delete Quicklink  ↵");
         c.destructive = true;
         assert_eq!(confirm_hint(&c), "Delete Quicklink  ⌘↵");
+    }
+
+    #[test]
+    fn each_screen_names_its_kind() {
+        let item = Item::new(ItemId::new("app", "x"), "X", "Open", Icon::symbol("app"));
+        let back = || Back {
+            screen: Box::new(Screen::Root),
+            query: String::new(),
+            selected: 0,
+            scroll: 0,
+        };
+        let confirm = Confirm::new("apps", "x", "X?");
+        let kinds = [
+            Screen::Root,
+            Screen::List(ListView::new("apps", "all")),
+            Screen::Form(Form::new("apps", "f", "F")),
+            Screen::Actions { target: item, actions: vec![], back: back() },
+            Screen::Confirm { confirm, back: back() },
+        ]
+        .map(|s| s.kind());
+        assert_eq!(kinds, ["root", "list", "form", "actions", "confirm"]);
     }
 
     #[test]
