@@ -1,6 +1,7 @@
 //! Loopback tests: a fake tailnet, listeners on 127.0.0.1 through `Net::loopback` only.
 
 use super::*;
+use crate::control::tailscale::LOOPBACK_PEER;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::time::Instant;
 
@@ -426,5 +427,21 @@ fn an_address_in_use_is_named_and_the_others_still_listen() {
     assert_eq!(status.listening, [SocketAddr::from(([127, 0, 0, 1], port))]);
     let e = status.error.unwrap();
     assert!(e.starts_with(&format!("[::1]:{port}: port {port} is in use by ")), "{e}");
+    net.sync(None).unwrap();
+}
+
+#[test]
+fn a_driven_instance_serves_loopback_peers_named_localhost_and_never_the_tailnet() {
+    static HUB: Hub = Hub::new();
+    assert!(Net::process(true).loopback && !Net::process(false).loopback);
+    let ips = Net::process(true).tailnet.ips().unwrap();
+    assert!(ips.iter().all(IpAddr::is_loopback), "{ips:?}");
+    let net = Net::loopback(Box::new(Loopback), handler, &HUB);
+    let status = net.sync(Some(settings(&[LOOPBACK_PEER], false))).unwrap();
+    assert!(!status.listening.is_empty() && status.listening.iter().all(|a| a.ip().is_loopback()));
+    let mut c = connect(&status);
+    let reply = ask(&mut c, r#"["activity","phone","add"]"#);
+    assert!(reply.contains("activity phone add remote=true"), "{reply}");
+    assert_eq!(net.status().last.unwrap().name.as_deref(), Some(LOOPBACK_PEER));
     net.sync(None).unwrap();
 }

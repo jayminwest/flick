@@ -1,9 +1,14 @@
 //! The launcher view: turns results and forms into what the platform panel draws, and wires
 //! the panel's typing and keys to the controller.
 
+mod scene;
+
+use std::cell::RefCell;
+
 use crate::core::{Field, Form, Icon, Item, Tone};
 use crate::platform::panel::{self, FormField, FormFrame, Frame, Handlers, Row};
 
+pub use crate::platform::panel::form::{FORM_FIELDS, set_field, set_search};
 pub use crate::platform::panel::{
     VISIBLE_ROWS, field_value, focused_field, hide, is_visible, place, query, scroll_text,
     set_opacity, set_placeholder, set_query, show, snapshot,
@@ -18,6 +23,8 @@ pub fn init() {
 }
 
 pub struct View<'a> {
+    /// What kind of screen this is, for the scene: `root`, `list`, `actions` or `confirm`.
+    pub screen: &'static str,
     /// A read-only title in place of the search field.
     pub title: Option<&'a str>,
     pub items: &'a [Item],
@@ -66,6 +73,7 @@ pub fn render(view: &View) {
         text: view.text,
         text_tail: view.text_tail,
     });
+    keep(scene::list(view, &query(), VISIBLE_ROWS));
 }
 
 /// Draw `form`, with `footer` on the left and its submit label as the action.
@@ -79,6 +87,22 @@ pub fn render_form(form: &Form, footer: &str) {
         footer,
         action: &form.submit_hint(),
     });
+    keep(scene::form(form, footer));
+}
+
+thread_local! {
+    /// The outline of the last view or form handed to the panel.
+    static SCENE: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+fn keep(outline: String) {
+    SCENE.set(outline);
+}
+
+/// What the panel shows, as a text outline of the last view or form it was handed (see
+/// `scene`); empty before the first render.
+pub fn scene() -> String {
+    SCENE.with_borrow(Clone::clone)
 }
 
 fn form_field(f: &Field) -> FormField<'_> {
@@ -87,5 +111,33 @@ fn form_field(f: &Field) -> FormField<'_> {
         value: &f.value,
         placeholder: &f.placeholder,
         multiline: f.multiline,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ItemId;
+
+    #[test]
+    fn the_last_view_or_form_rendered_is_the_scene() {
+        let items = [Item::new(ItemId::new("test", "a"), "Alpha", "Open", Icon::symbol("star"))];
+        render(&View {
+            screen: "list",
+            title: Some("Things"),
+            items: &items,
+            selected: Some(0),
+            scroll: 0,
+            footer: "3 things",
+            empty: "",
+            action: "Open  ↵",
+            text: "",
+            text_tail: false,
+        });
+        assert!(scene().starts_with("screen: list\ntitle: Things\nrows: 1-1 of 1\n> 1 Alpha\n"));
+        let mut form = Form::new("test", "edit", "Edit");
+        form.fields.push(Field::new("name", "Name"));
+        render_form(&form, "⇥  Next Field");
+        assert!(scene().starts_with("screen: form\ntitle: Edit\nfields:\n> Name: \"\"\n"));
     }
 }

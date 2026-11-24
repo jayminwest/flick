@@ -2,13 +2,14 @@
 //! It shows what `render` or `render_form` gives it and reports typing and keys to the
 //! `Handlers`.
 
-mod form;
+pub mod form;
 mod keys;
 mod rows;
 mod scroll;
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -40,6 +41,9 @@ const ROW_H: f64 = 44.0;
 const LIST_PAD: f64 = 6.0;
 pub const VISIBLE_ROWS: usize = 8;
 const STATUS_WINDOW_LEVEL: isize = 25;
+
+/// Whether a driven process's panel would show: `show` and `hide` only flip it.
+static DRIVEN_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// A key command from the search field, a form field or a read-only title.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -386,12 +390,21 @@ pub fn set_opacity(opacity: f64) {
     with_ui(|ui| ui.backdrop.setAlphaValue(opacity));
 }
 
+/// Whether the panel shows; in a driven process (`app::is_driven`), whether it would.
 pub fn is_visible() -> bool {
+    if super::app::is_driven() {
+        return DRIVEN_SHOWN.load(Ordering::Relaxed);
+    }
     with_ui(|ui| ui.panel.isVisible()).unwrap_or(false)
 }
 
-/// Show on the screen under the mouse, upper-middle like Spotlight.
+/// Show on the screen under the mouse, upper-middle like Spotlight. A driven process's panel
+/// never orders in: it only counts as shown.
 pub fn show() {
+    if super::app::is_driven() {
+        DRIVEN_SHOWN.store(true, Ordering::Relaxed);
+        return;
+    }
     place();
     with_ui(|ui| {
         ui.panel.makeKeyAndOrderFront(None);
@@ -427,6 +440,7 @@ fn origin(v: NSRect) -> NSPoint {
 }
 
 pub fn hide() {
+    DRIVEN_SHOWN.store(false, Ordering::Relaxed);
     with_ui(|ui| ui.panel.orderOut(None));
 }
 

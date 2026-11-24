@@ -249,6 +249,40 @@ fn network_callers_are_refused_side_effecting_requests() {
 }
 
 #[test]
+fn drive_verbs_answer_only_in_a_driven_instance() {
+    // flick-355ef9: `drive key|type|field|scene|shot|wait` drive the launcher of a driven
+    // instance (`flick --drive`); flick-33e539 adds `card` and `surface` verbs and a shot of
+    // a surface. A normal Flick answers every one with an error (exit 1),
+    // and a network caller is refused them all before anything runs.
+    let not_driven = r#"{"error":"drive: only a driven instance answers (flick --drive)"}"#;
+    let verbs: [&[&str]; 14] = [
+        &["drive"],
+        &["drive", "key", "enter"],
+        &["drive", "type", "tasks"],
+        &["drive", "field", "1", "x"],
+        &["drive", "scene"],
+        &["drive", "shot", "/tmp/x.png"],
+        &["drive", "wait", "100"],
+        &["drive", "card", "press", "c1", "go"],
+        &["drive", "card", "focus"],
+        &["drive", "surface", "key", "chat", "cmd-n"],
+        &["drive", "surface", "input", "chat", "hi"],
+        &["drive", "surface", "submit", "chat"],
+        &["drive", "shot", "/tmp/x.png", "chat"],
+        &["drive", "nope"],
+    ];
+    for words in verbs {
+        let request: Vec<String> = words.iter().map(|w| (*w).to_string()).collect();
+        let local = crate::app::control(&request, Flags::default());
+        assert_eq!(Reply::answer(local, false).to_line(), not_driven, "{words:?}");
+        let what = words[..words.len().min(2)].join(" ");
+        let refused = format!(r#"{{"error":"{what}: not allowed over the network"}}"#);
+        assert_eq!(net_reply(words), refused, "{words:?}");
+        assert_eq!(net_reply(&[words, &["--json"]].concat()), refused, "{words:?} --json");
+    }
+}
+
+#[test]
 fn network_requests_are_remote_even_without_the_flag() {
     // Activity checks Cx::remote: a network caller is refused without --remote.
     let refused = r#"{"error":"activity: remote use not permitted; the user can run `flick activity remote allow` or choose 'Allow Agents to Read Activity' in Flick"}"#;

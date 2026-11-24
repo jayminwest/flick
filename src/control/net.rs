@@ -1,5 +1,6 @@
 //! The control protocol over TCP, for peers in the user's tailnet. Off until the remote
-//! module calls `HOOKS.apply`. It fails closed at every step:
+//! module calls `HOOKS.apply`. A driven instance (`flick --drive`) serves loopback peers
+//! instead (`tailscale::Loopback`), never the tailnet. It fails closed at every step:
 //!
 //! - It binds one listener per Tailscale address of this machine (`is_tailnet`), never a
 //!   wildcard or LAN address. No Tailscale address means no listener.
@@ -26,7 +27,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::server::{self, Handler, Hub, Limits};
-use super::tailscale::{Cached, Cli, Tailnet};
+use super::tailscale::{Cached, Cli, Loopback, Tailnet};
 use crate::core::control::{
     Flags, LastConn, NetHooks, NetSettings, NetStatus, Reply, is_tailnet, net_policy, peer_matches,
     split_flags,
@@ -49,9 +50,8 @@ const MAX_CONNS: usize = 16;
 /// How long an accept thread pauses after `poll` fails, so a lasting error cannot spin.
 const POLL_RETRY: Duration = Duration::from_millis(100);
 
-/// This process's transport: the `tailscale` CLI, the real controller and event hub.
-static NET: LazyLock<Net> =
-    LazyLock::new(|| Net::new(Box::new(Cached::new(Cli)), net_on_main, &super::HUB));
+/// This process's transport: the real controller and event hub.
+static NET: LazyLock<Net> = LazyLock::new(|| Net::process(crate::platform::app::is_driven()));
 
 fn apply(settings: Option<NetSettings>) -> Result<NetStatus, String> {
     NET.apply(settings)
@@ -91,7 +91,8 @@ pub struct Net {
     tailnet: Box<dyn Tailnet>,
     handler: Handler,
     hub: &'static Hub,
-    /// Whether loopback addresses count as tailnet ones. Only `Net::loopback` (tests) sets it.
+    /// Whether loopback addresses count as tailnet ones: in a driven instance
+    /// (`Net::process`) and in tests (`Net::loopback`).
     loopback: bool,
     /// The running listeners. Held while they start or stop.
     run: Mutex<Option<Run>>,
@@ -127,6 +128,16 @@ impl Net {
             wanted: AtomicU64::new(0),
             conns: Mutex::new(HashMap::new()),
             next: AtomicU64::new(0),
+        }
+    }
+
+    /// This process's transport over the `tailscale` CLI; when `driven`, over `Loopback`:
+    /// loopback listeners and peers only, so a simulator on this Mac can reach a scratch Flick.
+    fn process(driven: bool) -> Net {
+        if driven {
+            Net { loopback: true, ..Net::new(Box::new(Loopback), net_on_main, &super::HUB) }
+        } else {
+            Net::new(Box::new(Cached::new(Cli)), net_on_main, &super::HUB)
         }
     }
 

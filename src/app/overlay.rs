@@ -2,7 +2,7 @@
 //! forms. Their keys, and how they open and close.
 
 use super::screen::{self, Back, ConfirmStep, Screen};
-use super::{State, VISIBLE_ROWS};
+use super::{State, VISIBLE_ROWS, with_state};
 use crate::core::{Binding, Tab};
 use crate::platform::panel::Key;
 use crate::ui;
@@ -239,6 +239,23 @@ impl State {
             self.registry.form_closed(form, &mut self.env.cx(""));
         }
     }
+}
+
+/// Draw the screen on the panel again: a driven instance's typing into a form (`drive`),
+/// which the real panel's fields show by themselves.
+pub fn redraw() {
+    with_state(State::render);
+}
+
+/// The form on the panel, if any: its field labels and the focused field (for `drive`).
+pub fn form_fields() -> Option<(Vec<String>, usize)> {
+    with_state(|s| match &s.screen {
+        Screen::Form(form) => {
+            Some((form.fields.iter().map(|f| f.label.clone()).collect(), form.focused))
+        }
+        _ => None,
+    })
+    .flatten()
 }
 
 fn form_is_background(screen: &Screen) -> bool {

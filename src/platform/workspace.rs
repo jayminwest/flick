@@ -8,6 +8,9 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSBundle, NSString, NSURL};
 
+/// Why a driven instance (`app::is_driven`) did not act on an app.
+const DRIVEN: &str = "a driven instance acts on no app";
+
 /// Folders searched for an app given by name, in order.
 const APP_DIRS: [&str; 5] = [
     "/Applications",
@@ -17,8 +20,12 @@ const APP_DIRS: [&str; 5] = [
     "/System/Library/CoreServices",
 ];
 
-/// Open `url` in its default app.
+/// Open `url` in its default app. Nothing here that opens, activates, quits, reveals or
+/// hides an app or file acts in a driven instance (`app::is_driven`).
 pub fn open_url(url: &str) {
+    if super::app::is_driven() {
+        return;
+    }
     if let Some(url) = NSURL::URLWithString(&NSString::from_str(url)) {
         NSWorkspace::sharedWorkspace().openURL(&url);
     }
@@ -103,6 +110,9 @@ fn subdirs(dir: &Path) -> Vec<PathBuf> {
 
 /// Open `url` with the app bundle at `app` (from `find_app`) instead of the default app.
 pub fn open_url_with(url: &str, app: &Path) {
+    if super::app::is_driven() {
+        return;
+    }
     let Some(url) = NSURL::URLWithString(&NSString::from_str(url)) else { return };
     let app = NSURL::fileURLWithPath(&NSString::from_str(&app.display().to_string()));
     NSWorkspace::sharedWorkspace().openURLs_withApplicationAtURL_configuration_completionHandler(
@@ -115,6 +125,9 @@ pub fn open_url_with(url: &str, app: &Path) {
 
 /// Open the file or app bundle at `path`.
 pub fn open_file(path: &Path) {
+    if super::app::is_driven() {
+        return;
+    }
     NSWorkspace::sharedWorkspace()
         .openURL(&NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string())));
 }
@@ -175,6 +188,9 @@ pub fn regular_apps(except: i32) -> Vec<RunningApp> {
 /// Needs no Accessibility permission. `Err` when no such app runs, `Ok(false)` when it has no
 /// bundle to open.
 pub fn open_app(pid: i32) -> Result<bool, &'static str> {
+    if super::app::is_driven() {
+        return Err(DRIVEN);
+    }
     let app =
         NSRunningApplication::runningApplicationWithProcessIdentifier(pid).ok_or("App quit")?;
     Ok(open_running(&app))
@@ -236,6 +252,9 @@ pub fn canonical(path: &Path) -> PathBuf {
 /// Ask app `pid` to quit, like cmd+Q: it may ask to save or refuse. Asynchronous; `true` only
 /// means the request was sent. `false` when `pid` is not a running app.
 pub fn terminate(pid: i32) -> bool {
+    if super::app::is_driven() {
+        return false;
+    }
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.terminate())
 }
@@ -243,6 +262,9 @@ pub fn terminate(pid: i32) -> bool {
 /// Force app `pid` to quit, like Force Quit: unsaved work is lost. `false` when `pid` is not a
 /// running app or the request failed.
 pub fn force_terminate(pid: i32) -> bool {
+    if super::app::is_driven() {
+        return false;
+    }
     NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .is_some_and(|a| a.forceTerminate())
 }
@@ -250,6 +272,9 @@ pub fn force_terminate(pid: i32) -> bool {
 /// Show the file, folder or bundle at `path` selected in a Finder window. Untested: it opens
 /// Finder.
 pub fn reveal(path: &Path) {
+    if super::app::is_driven() {
+        return;
+    }
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.display().to_string()));
     NSWorkspace::sharedWorkspace()
         .activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[url]));
@@ -257,6 +282,9 @@ pub fn reveal(path: &Path) {
 
 /// Hide the frontmost app, like cmd+H.
 pub fn hide_frontmost() -> Result<(), &'static str> {
+    if super::app::is_driven() {
+        return Err(DRIVEN);
+    }
     let app = NSWorkspace::sharedWorkspace().frontmostApplication().ok_or("No frontmost app")?;
     app.hide();
     Ok(())

@@ -70,6 +70,14 @@ unsafe extern "C" {
 const COMBINED_SESSION: i32 = 0;
 const ANY_INPUT: u32 = !0;
 
+/// Deliver posted events (`post`) to `sink` on the main thread, but observe nothing: no
+/// workspace, sleep, screen or pasteboard observers and no poll timer. For a driven instance
+/// (`flick --drive`), which must not read the user's desktop or clipboard. Call once, instead
+/// of `start`.
+pub fn start_posted(sink: fn(Event)) {
+    let _ = SINK.set(sink);
+}
+
 /// Start every observer; each event goes to `sink` on the main thread. Call once.
 pub fn start(sink: fn(Event)) {
     if SINK.set(sink).is_err() {

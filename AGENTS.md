@@ -12,6 +12,14 @@ or the control socket. Update it in the same commit when one of those contracts 
 - Tests under `src/characterization/` pin user-visible behavior. A changed assertion there is a
   behavior change; say so in the commit.
 
+## Check the launcher yourself first
+
+Before you ask the owner to look at the launcher, drive it: a driven instance (`flick --drive`
+with scratch `FLICK_CONFIG` and `FLICK_SOCKET`) opens views, action menus, confirms and forms
+with `flick drive key|type|field` and reads them with `flick drive scene|shot|wait`, with
+nothing on screen. Recipe: `docs/drive.md`. Ask for a hand check only of what
+`docs/hand-check.md` lists. Never drive the owner's running Flick or its socket.
+
 ## Quality gates
 
 `scripts/check-all.sh` runs every gate in order: lint (rustfmt + clippy), check:layers,

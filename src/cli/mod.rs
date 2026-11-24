@@ -1,5 +1,5 @@
 //! The command line: `flick` with no arguments runs the launcher; anything else is a
-//! subcommand. `snapshot`, `import-raycast`, `config example` and `config path` run in this process; every other command is
+//! subcommand. `--drive` (`crate::drive`), `snapshot`, `import-raycast`, `config example` and `config path` run in this process; every other command is
 //! a request to the running Flick over its control socket, or with `--host` (or
 //! `$FLICK_HOST`) to another Mac's Flick over TCP.
 
@@ -20,6 +20,10 @@ use crate::platform::app as macos;
 use crate::{app, config, control, raycast, ui};
 
 const USAGE: &str = "usage: flick                              run the launcher
+       flick --drive                      run a driven launcher for agents: nothing on
+                                          screen, in-memory store; needs FLICK_CONFIG
+                                          and FLICK_SOCKET set to scratch paths
+       flick drive key|type|field|scene|shot|wait|card|surface ...  drive a driven launcher
        flick [--json] <module> <verb> [args]  ask the running Flick (--json: raw reply;
                                           FLICK_REMOTE set: marks the request --remote)
        flick --host <name[:port]> ...     ask the Flick on another Mac over Tailscale
@@ -48,6 +52,8 @@ fn usage_for(config: &crate::config::Config) -> String {
 pub enum Command {
     /// Run the launcher.
     Launch,
+    /// Run a driven instance (`crate::drive`).
+    Drive,
     /// Arguments after `snapshot`.
     Snapshot(Vec<String>),
     /// The file after `import-raycast`, if any.
@@ -121,6 +127,8 @@ fn parse_local(args: &[String], flick_remote: Option<&OsStr>) -> Command {
     match first.as_str() {
         // Older macOS passes a process serial number to apps opened from Finder.
         psn if psn.starts_with("-psn_") => Command::Launch,
+        "--drive" if args.len() == 1 => Command::Drive,
+        "--drive" => Command::Usage,
         "snapshot" => Command::Snapshot(args[1..].to_vec()),
         "import-raycast" => Command::ImportRaycast(args.get(1).cloned()),
         "help" | "--help" | "-h" => Command::Help,
@@ -150,6 +158,7 @@ fn parse_local(args: &[String], flick_remote: Option<&OsStr>) -> Command {
 pub fn run(command: Command) -> i32 {
     match command {
         Command::Launch => 0,
+        Command::Drive => crate::drive::launch(),
         Command::Snapshot(args) => snapshot(&args),
         Command::ImportRaycast(path) => import_raycast(path.as_deref()),
         Command::ConfigExample => {
@@ -267,6 +276,8 @@ mod tests {
     fn subcommands_keep_their_arguments() {
         assert_eq!(parsed(&[]), Command::Launch);
         assert_eq!(parsed(&["-psn_0_123"]), Command::Launch);
+        assert_eq!(parsed(&["--drive"]), Command::Drive);
+        assert_eq!(parsed(&["--drive", "x"]), Command::Usage);
         assert_eq!(parsed(&["snapshot"]), Command::Snapshot(vec![]));
         assert_eq!(
             parsed(&["snapshot", "a.png", "vsc", "extra"]),
@@ -340,6 +351,7 @@ mod tests {
             &["--host", "mbp:0", "task"],
             &["--host", "mbp"],
             &["--host", "mbp", "snapshot", "a.png"],
+            &["--host", "mbp", "--drive"],
             &["--host", "mbp", "help"],
             &["--host", "mbp", "config", "example"],
             &["--host", "mbp", "config", "path"],
@@ -369,6 +381,7 @@ mod tests {
         assert_eq!(env(&[], Some("my-server")), Command::Launch);
         assert_eq!(env(&["help"], Some("my-server")), Command::Help);
         assert_eq!(env(&["snapshot"], Some("my-server")), Command::Snapshot(vec![]));
+        assert_eq!(env(&["--drive"], Some("my-server")), Command::Drive);
         assert_eq!(env(&["--json"], Some("my-server")), Command::Usage);
     }
 
